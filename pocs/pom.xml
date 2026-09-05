@@ -14,11 +14,9 @@
     <description>Independently runnable experiments.</description>
 
     <modules>
+        <module>caching</module>
         <module>kafka</module>
         <module>redis</module>
-        <module>databases</module>
-        <module>authentication</module>
-        <module>caching</module>
-        <module>concurrency</module>
+        <module>spark</module>
     </modules>
 </project>
