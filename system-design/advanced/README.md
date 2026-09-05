@@ -1,20 +1,79 @@
 # System Design - Advanced
 
-Advanced system design topics. Assumes you're comfortable with
-[`../basics`](../basics).
+Advanced system design and low-level design (LLD) topics. Assumes you're
+comfortable with [`../basics`](../basics/README.md). Check items off as you learn them.
 
-## Topics to cover here
-- Distributed systems (CAP/PACELC, consensus, replication, partitioning)
-- Advanced scalability (sharding, async processing, autoscaling, bottlenecks)
-- Messaging & streaming (queues vs logs, delivery semantics, ordering)
-- Microservices (decomposition, resilience, data ownership, sagas)
-- Architecture patterns (hexagonal, CQRS, event sourcing, outbox)
-- Advanced databases (isolation levels, quorums, multi-region)
-- Case studies (end-to-end designs)
-- Trade-offs deep dives
+---
 
-See the top-level [`../README.md`](../README.md) for the consolidated notes,
-and split individual topics into their own `.md` files here as they grow.
+## 1. LLD: Behavioral Design Patterns
+- [ ] Strategy, Observer, Command, State
+- [ ] Iterator, Mediator, Chain of Responsibility, Template Method
 
-## Status
-Skeleton. Add one markdown file per topic (e.g. `distributed-systems.md`).
+## 2. LLD: Real-World Machine Coding Case Studies
+- [ ] E-commerce cart calculation engine
+- [ ] Movie ticket booking system (BookMyShow)
+- [ ] Parking lot tracker
+- [ ] Ride-sharing dispatch model
+
+## 3. Concurrency Control, Race Conditions & Locking
+- [ ] **Failures:** race conditions, lost update, dirty reads, non-repeatable reads, phantom reads
+- [ ] **Isolation levels:** Read Uncommitted, Read Committed, Repeatable Read, Serializable
+- [ ] **Locking:** optimistic vs pessimistic
+- [ ] **Atomic state:** CAS (compare-and-set), versioning patterns, distributed locks
+
+## 4. Distributed Transactions & Consensus
+- [ ] Two-Phase Commit (2PC)
+- [ ] Saga pattern (orchestration vs choreography)
+- [ ] Paxos / Raft consensus
+- [ ] Distributed state machine replication
+
+## 5. Event-Driven Systems & Message Queues
+- [ ] **Kafka deep dive:** brokers, topics, partitions, offsets, log segments, controller node
+- [ ] **Delivery & idempotency:** exactly-once vs at-least-once, producer & consumer idempotency
+- [ ] **Reliability:** retries, acks (0/1/all), CDC, event sourcing, CQRS, Apache Flink
+- [ ] **Error handling:** poison pills, circuit-breaking consumers, dead-letter topics (DLT)
+
+## 6. Idempotency & Retries
+- [ ] Designing idempotent API endpoints, unique idempotency keys
+- [ ] Handling retry storms, deduplication layers
+
+## 7. Distributed Caching & High-Concurrency Failures
+- [ ] Cache stampede (thundering herd)
+- [ ] Hot-key / big-key mitigation
+- [ ] Cache penetration, cache avalanche, Bloom filters
+
+## 8. Rate Limiting & Throttling
+- [ ] **Algorithms:** fixed window, sliding window log, token bucket, leaky bucket
+- [ ] **Scopes:** per-user vs per-IP vs per-API
+- [ ] **Architecture:** distributed rate limiting (Redis token bucket, in-memory instances, gateway throttling)
+- [ ] **Trade-offs:** accuracy (strict sync) vs performance/latency
+
+## 9. Fault Tolerance, Resilience & Failure Handling
+- [ ] **Strategies:** fail-fast vs graceful degradation, timeouts, retries with exponential backoff + jitter
+- [ ] **Patterns:** circuit breakers, bulkheads, isolating partial failures, cascading failure prevention
+
+## 10. Data Consistency & Clock Synchronization
+- [ ] **CAP theorem:** consistency vs availability vs partition tolerance
+- [ ] **PACELC theorem:** normal (latency vs consistency) vs partition state
+- [ ] **Consistency models:** strong, eventual, read-your-writes, monotonic reads
+- [ ] **Distributed clocks:** vector clocks, Lamport timestamps, TrueTime
+
+## 11. Storage Types - Latency, Cost & Trade-offs
+- [ ] **Physical:** NVMe SSDs vs HDDs, sequential vs random access
+- [ ] **File-based:** network file systems, object storage (S3), distributed FS (HDFS)
+- [ ] **Database:** block storage volumes, log-structured storage engines
+- [ ] **Log/sequential:** append-only transaction logs, write-ahead logs (WAL)
+
+## 12. Observability, Monitoring & Alerting
+- [ ] **Pillars:** metrics vs logs vs traces
+- [ ] **Frameworks:** RED (Rate, Errors, Duration), USE (Utilization, Saturation, Errors), 4 Golden Signals
+- [ ] **Governance:** SLIs, SLOs, SLAs
+- [ ] **Logistics:** distributed tracing (span propagation, trace contexts), alert fatigue, thresholds, OpenTelemetry, Jaeger, Prometheus, ELK
+
+## 13. Single Region vs Multi-Region Deployment
+- [ ] **Topologies:** single region active-only, active-passive, active-active
+- [ ] **Metrics:** RPO vs RTO under different faults, split-brain handling, global traffic management
+
+---
+
+> Split any topic into its own `.md` file here as your notes grow (e.g. `kafka.md`).
