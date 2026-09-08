@@ -511,16 +511,7 @@ Recap requirements, architecture, key trade-offs, degraded behavior, current bot
 8. CLOSE
    Requirements met, risks, bottleneck, 10x evolution
 ```
-### 11.2 Formula sheet
-```text
-Average QPS = operations per day / 86,400
-Peak QPS = average QPS * peak factor
-Bandwidth = QPS * bytes per operation
-Storage = records * bytes per record * retention
-Concurrent work ≈ throughput * latency in seconds
-Instances = peak QPS / safe per-instance QPS
-```
-### 11.3 Final takeaways
+### 11.2 Final takeaways
 > - Start with **requirements and constraints**, not products.
 > - Make assumptions explicit so the design can change without collapsing.
 > - Estimate **peak traffic, storage, bandwidth, concurrency, and headroom** only far enough to inform decisions.
