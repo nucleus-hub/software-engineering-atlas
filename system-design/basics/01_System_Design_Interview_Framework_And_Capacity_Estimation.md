@@ -28,15 +28,7 @@
 ### 1.1 What is a system design interview framework?
 A **system design interview framework** is a repeatable process for converting an underspecified problem into an architecture whose decisions can be explained and defended.
 
-```mermaid
-flowchart LR
-    A[Ambiguous prompt] --> B[Requirements]
-    B --> C[Scale estimates]
-    C --> D[Interfaces and data model]
-    D --> E[High-level design]
-    E --> F[Bottlenecks and deep dives]
-    F --> G[Trade-offs and evolution]
-```
+![Six-stage interview framework from clarification through defensible trade-offs](assets/interview_framework.png)
 
 The diagram shows progressive constraint discovery. Each stage reduces the design space; jumping directly from the prompt to technology selection skips the evidence needed to justify those choices.
 ### 1.2 Why it matters
@@ -105,15 +97,7 @@ This makes the design adjustable. If the interviewer changes a number, update th
 
 ## <span style="color:#1E6FEB">3. How the Interview Framework Works</span>
 ### 3.1 A practical 45-minute flow
-```mermaid
-flowchart TD
-    A[0-5 min<br/>Clarify scope] --> B[5-10 min<br/>Estimate scale]
-    B --> C[10-15 min<br/>Define APIs and data]
-    C --> D[15-25 min<br/>Draw high-level design]
-    D --> E[25-38 min<br/>Deep-dive critical risks]
-    E --> F[38-43 min<br/>Failures and trade-offs]
-    F --> G[43-45 min<br/>Summarize and evolve]
-```
+![Proportional 45-minute system design interview timeline with seven phases](assets/interview_timeline.png)
 
 The time boxes are guidance, not ceremony. The important behavior is to reserve most of the interview for architecture and deep dives while preventing requirement discovery from becoming an archaeological expedition.
 ### 3.2 Step 1 — Clarify the problem and control scope
@@ -162,15 +146,7 @@ Link {
 
 The interface reveals validation, idempotency, authentication, and consistency needs. The entity reveals keys, indexes, storage size, and lifecycle.
 ### 3.5 Step 4 — Draw the critical path first
-```mermaid
-flowchart LR
-    Client --> Edge[DNS / CDN / Load Balancer]
-    Edge --> API[Stateless API]
-    API --> Cache[(Cache)]
-    Cache -->|miss| DB[(Primary Data Store)]
-    API -.events.-> Queue[(Event Queue)]
-    Queue --> Worker[Async Workers]
-```
+![Synchronous user request path with optional work moved to an asynchronous queue](assets/critical_path.png)
 
 This generic shape separates the synchronous user path from optional asynchronous work. Explain each arrow: request direction, data transferred, and behavior when the destination is slow or unavailable.
 ### 3.6 Step 5 — Find bottlenecks and choose deep dives
@@ -225,16 +201,7 @@ Provisioned instances = required instances * headroom factor
 
 The concurrency relationship is Little's Law applied to in-flight requests. For example, 10,000 requests/second at 200 ms average latency implies roughly 2,000 concurrent requests.
 ### 4.3 A disciplined estimation sequence
-```mermaid
-flowchart LR
-    U[Users] --> O[Operations per user]
-    O --> A[Average QPS]
-    A --> P[Peak QPS]
-    P --> B[Bandwidth]
-    O --> S[Storage growth]
-    P --> C[Concurrency and compute]
-    S --> R[Replication and retention]
-```
+![Capacity estimation flow deriving bandwidth, concurrency, compute, and storage from traffic](assets/capacity_estimation.png)
 
 Start from user behavior, derive operations, and only then size infrastructure. This prevents unrelated assumptions from quietly contradicting one another.
 ### 4.4 Useful approximations
@@ -304,14 +271,7 @@ Provisioning each zone near 100% under normal traffic guarantees overload during
 
 ## <span style="color:#1E6FEB">5. Design Alternatives and Decision Framework</span>
 ### 5.1 Make decisions from requirements
-```mermaid
-flowchart TD
-    R[Requirement or risk] --> A[Candidate alternatives]
-    A --> T[Compare trade-offs]
-    T --> D[Decision]
-    D --> V[Validation signal]
-    V --> E[Evolution or rollback plan]
-```
+![Architecture decision framework connecting requirements to alternatives, validation, and evolution](assets/decision_framework.png)
 
 A defensible decision links a requirement to alternatives, trade-offs, and a validation method. "Use Kafka because it scales" skips four of those five steps.
 ### 5.2 A compact decision record
@@ -339,13 +299,7 @@ A defensible decision links a requirement to alternatives, trade-offs, and a val
 
 ## <span style="color:#1E6FEB">6. Scalability, Reliability, Security, and Cost Trade-offs</span>
 ### 6.1 The quality-attribute tension map
-```mermaid
-flowchart LR
-    Scale[Scalability] <-->|coordination cost| Consistency[Consistency]
-    Reliability[Reliability] <-->|redundancy cost| Cost[Cost efficiency]
-    Security[Security] <-->|latency and complexity| Performance[Performance]
-    Availability[Availability] <-->|staleness risk| Consistency
-```
+![Four visual scales showing system design tensions between competing quality attributes](assets/quality_tradeoffs.png)
 
 These are tensions, not universal laws. The interview task is to locate which side matters more for each operation—for example, payments may favor correctness while a social feed may tolerate stale reads.
 ### 6.2 Trade-off checklist
@@ -392,17 +346,7 @@ A senior answer distinguishes:
 - provisioning to benchmark maximum instead of a safe operating rate;
 - omitting downstream fan-out from QPS calculations.
 ### 7.3 Operational questions that reveal maturity
-```mermaid
-flowchart TD
-    F[Dependency fails] --> T{Critical path?}
-    T -->|No| Q[Queue, defer, or drop safely]
-    T -->|Yes| R{Fallback valid?}
-    R -->|Yes| G[Degrade gracefully]
-    R -->|No| B[Fail fast within timeout budget]
-    Q --> O[Observe and recover]
-    G --> O
-    B --> O
-```
+![Dependency failure decision tree for deferring, degrading, or failing fast](assets/failure_response.png)
 
 The diagram provides a simple failure walk-through. Do not retry everything automatically: retries consume capacity and can turn a partial failure into a retry storm.
 
@@ -454,16 +398,7 @@ Replicated storage = 840 GB * 3 ≈ 2.5 TB
 
 The throughput is moderate; record count and read latency are more influential than raw write QPS. Start simple, partition when demonstrated limits or operational requirements demand it.
 ### 8.3 High-level design
-```mermaid
-flowchart LR
-    Client --> LB[Load Balancer]
-    LB --> API[Link API]
-    API --> Cache[(Distributed Cache)]
-    Cache -->|miss| DB[(Link Store)]
-    API -->|click event| Q[(Durable Queue)]
-    Q --> W[Analytics Workers]
-    W --> A[(Analytics Store)]
-```
+![URL shortener architecture separating fast redirects, durable writes, and asynchronous analytics](assets/url_shortener_architecture.png)
 
 **Redirect path:** the API looks up `short_code` in cache, falls back to the durable link store, populates the cache, and returns a redirect.
 
@@ -594,6 +529,21 @@ Instances = peak QPS / safe per-instance QPS
 > - Discuss failures, operations, migration, security, and cost to demonstrate seniority.
 > - Prefer a simple architecture with explicit evolution triggers over speculative complexity.
 > - Finish by summarizing the design, its biggest risk, and its next scaling step.
+
+---
+
+## <span style="color:#1E6FEB">Regenerating the Diagrams</span>
+
+All figures in this note are produced by `plot_system_design_figures.py`, which lives beside the document:
+
+```bash
+uv run --with matplotlib \
+  --index-url https://pypi.ci.artifacts.walmart.com/artifactory/api/pypi/external-pypi/simple \
+  --allow-insecure-host pypi.ci.artifacts.walmart.com \
+  python basics/plot_system_design_figures.py
+```
+
+Pass figure names to rebuild selected assets, for example: `... plot_system_design_figures.py interview_timeline`.
 
 ---
 *End of Topic 01 — System Design Interview Framework & Capacity Estimation.*
