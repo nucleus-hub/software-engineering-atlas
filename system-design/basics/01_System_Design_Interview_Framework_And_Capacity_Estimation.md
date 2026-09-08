@@ -531,19 +531,4 @@ Instances = peak QPS / safe per-instance QPS
 > - Finish by summarizing the design, its biggest risk, and its next scaling step.
 
 ---
-
-## <span style="color:#1E6FEB">Regenerating the Diagrams</span>
-
-All figures in this note are produced by `plot_system_design_figures.py`, which lives beside the document:
-
-```bash
-uv run --with matplotlib \
-  --index-url https://pypi.ci.artifacts.walmart.com/artifactory/api/pypi/external-pypi/simple \
-  --allow-insecure-host pypi.ci.artifacts.walmart.com \
-  python basics/plot_system_design_figures.py
-```
-
-Pass figure names to rebuild selected assets, for example: `... plot_system_design_figures.py interview_timeline`.
-
----
 *End of Topic 01 — System Design Interview Framework & Capacity Estimation.*
