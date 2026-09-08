@@ -14,30 +14,44 @@ system-design/
 ## Curriculum at a Glance
 
 ### [Basics](basics/README.md)
-1. LLD: Object-Oriented Principles & Clean Code
-2. LLD: Creational & Structural Design Patterns
-3. API Design & Service Communication
-4. Load Balancing & Proxying
-5. Caching Core
-6. Database Fundamentals & Internal Architecture
-7. Data Partitioning, Sharding & Replication
-8. Asynchronous Processing Basics
-9. Threads, Thread Pools, Parallelization
+1. System Design Interview Framework & Capacity Estimation
+2. LLD: Object-Oriented Principles & Clean Code
+3. LLD: Creational & Structural Design Patterns
+4. Networking & Request Lifecycle
+5. Architecture Styles & Service Decomposition
+6. API Correctness, Security & Resource Design
+7. API Design & Service Communication
+8. Load Balancing & Proxying
+9. Caching Core
+10. Database Fundamentals & Internal Architecture
+11. Practical Data Modeling & Query Design
+12. Data Partitioning, Sharding & Replication
+13. Asynchronous Processing Basics
+14. Availability & Deployment Fundamentals
+15. Distributed ID Generation
+16. Threads, Thread Pools, Parallelization
 
 ### [Advanced](advanced/README.md)
 1. LLD: Behavioral Design Patterns
 2. LLD: Real-World Machine Coding Case Studies
 3. Concurrency Control, Race Conditions & Locking
 4. Distributed Transactions & Consensus
-5. Event-Driven Systems & Message Queues
-6. Idempotency & Retries
-7. Distributed Caching & High-Concurrency Failures
-8. Rate Limiting & Throttling
-9. Fault Tolerance, Resilience & Failure Handling
-10. Data Consistency & Clock Synchronization
-11. Storage Types - Latency, Cost & Trade-offs
-12. Observability, Monitoring & Alerting
-13. Single Region vs Multi-Region Deployment
+5. Advanced Replication, Quorums & Conflict Resolution
+6. Event-Driven Systems & Message Queues
+7. Idempotency & Retries
+8. Distributed Caching & High-Concurrency Failures
+9. Rate Limiting & Throttling
+10. Backpressure, Admission Control & Overload Protection
+11. Fault Tolerance, Resilience & Failure Handling
+12. Data Consistency & Clock Synchronization
+13. Storage Types - Latency, Cost & Trade-offs
+14. Observability, Monitoring & Alerting
+15. Single Region vs Multi-Region Deployment
+16. Data Migration & Zero-Downtime Evolution
+17. Disaster Recovery & Operational Readiness
+18. Batch, Stream & Workflow Processing
+19. Multi-Tenancy, Isolation & Fairness
+20. Security, Privacy & Abuse Resistance
 
 ## How to use these notes
 - Read a topic, then try to **draw the system** or **code the design** from memory.
