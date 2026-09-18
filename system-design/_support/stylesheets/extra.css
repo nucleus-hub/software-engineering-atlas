@@ -1,0 +1,75 @@
+:root {
+  --atlas-navy: #0b3d91;
+  --atlas-blue: #1e6feb;
+  --atlas-pale: #eaf1ff;
+  --atlas-ink: #12213d;
+}
+
+.md-header,
+.md-tabs {
+  background-color: var(--atlas-navy);
+}
+
+.md-typeset h1 {
+  color: var(--atlas-navy);
+  font-weight: 800;
+}
+
+.md-typeset h2 {
+  color: var(--atlas-blue);
+  font-weight: 750;
+  border-bottom: 1px solid #d5deec;
+  padding-bottom: 0.3rem;
+}
+
+.md-typeset h3 {
+  color: var(--atlas-navy);
+  font-weight: 700;
+}
+
+.md-typeset img {
+  display: block;
+  width: 100%;
+  margin: 1.25rem auto;
+  border: 1px solid #d5deec;
+  border-radius: 0.4rem;
+  background: #fff;
+}
+
+.md-typeset table:not([class]) {
+  display: table;
+  width: 100%;
+}
+
+.md-typeset table:not([class]) th {
+  color: #fff;
+  background: var(--atlas-navy);
+}
+
+.hero-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+.hero-card {
+  padding: 1rem 1.25rem;
+  border: 1px solid #c9dcff;
+  border-radius: 0.6rem;
+  background: var(--atlas-pale);
+}
+
+.hero-card h2 {
+  margin-top: 0;
+  border: 0;
+}
+
+[data-md-color-scheme="slate"] .hero-card {
+  background: #17243c;
+}
+
+.compact td,
+.compact th {
+  padding: 0.45rem 0.6rem !important;
+}

@@ -5,7 +5,7 @@ Run from the system-design directory:
     uv run --with matplotlib \
       --index-url https://pypi.ci.artifacts.walmart.com/artifactory/api/pypi/external-pypi/simple \
       --allow-insecure-host pypi.ci.artifacts.walmart.com \
-      python basics/plot_system_design_figures.py
+      python _support/tools/plot_topic_01_figures.py
 
 Pass figure names to render only selected assets.
 """
@@ -15,96 +15,30 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import matplotlib
+import matplotlib.pyplot as plt
+from matplotlib.patches import Circle, FancyBboxPatch, Rectangle
 
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-from matplotlib.patches import Circle, FancyArrowPatch, FancyBboxPatch, Rectangle  # noqa: E402
+from figure_style import (
+    AMBER,
+    BLUE,
+    DPI,
+    GREEN,
+    GREY,
+    INK,
+    LINE,
+    MIST,
+    NAVY,
+    PALE,
+    RED,
+    SKY,
+    WHITE,
+    arrow,
+    box,
+    canvas,
+    heading,
+)
 
-ASSETS = Path(__file__).resolve().parent / "assets"
-NAVY = "#0B3D91"
-BLUE = "#1E6FEB"
-SKY = "#5B9BFF"
-MIST = "#C9DCFF"
-PALE = "#EAF1FF"
-INK = "#12213D"
-GREY = "#7183A3"
-LINE = "#D5DEEC"
-RED = "#C0392B"
-GREEN = "#1E8449"
-AMBER = "#D68910"
-WHITE = "#FFFFFF"
-DPI = 200
-
-
-def canvas(width: float = 14, height: float = 6) -> tuple[plt.Figure, plt.Axes]:
-    """Return a clean, consistently styled drawing surface."""
-    fig, ax = plt.subplots(figsize=(width, height), facecolor=WHITE)
-    ax.set_xlim(0, 100)
-    ax.set_ylim(0, 100)
-    ax.axis("off")
-    return fig, ax
-
-
-def heading(ax: plt.Axes, title: str, subtitle: str = "") -> None:
-    ax.text(50, 96, title, ha="center", va="top", fontsize=19,
-            fontweight="bold", color=NAVY)
-    if subtitle:
-        ax.text(50, 89, subtitle, ha="center", va="top", fontsize=10.5,
-                color=INK, style="italic")
-
-
-def box(
-    ax: plt.Axes,
-    x: float,
-    y: float,
-    width: float,
-    height: float,
-    title: str,
-    subtitle: str = "",
-    *,
-    face: str = PALE,
-    edge: str = BLUE,
-    title_color: str = NAVY,
-    radius: float = 1.4,
-    linewidth: float = 1.8,
-) -> None:
-    patch = FancyBboxPatch(
-        (x, y), width, height,
-        boxstyle=f"round,pad=0.5,rounding_size={radius}",
-        facecolor=face, edgecolor=edge, linewidth=linewidth,
-    )
-    ax.add_patch(patch)
-    cy = y + height / 2
-    ax.text(x + width / 2, cy + (2.2 if subtitle else 0), title,
-            ha="center", va="center", fontsize=10.5, fontweight="bold",
-            color=title_color)
-    if subtitle:
-        ax.text(x + width / 2, cy - 3.1, subtitle,
-                ha="center", va="center", fontsize=8.2, color=INK)
-
-
-def arrow(
-    ax: plt.Axes,
-    start: tuple[float, float],
-    end: tuple[float, float],
-    *,
-    color: str = BLUE,
-    label: str = "",
-    curve: float = 0,
-    dashed: bool = False,
-) -> None:
-    patch = FancyArrowPatch(
-        start, end, arrowstyle="-|>", mutation_scale=14,
-        linewidth=1.8, color=color,
-        connectionstyle=f"arc3,rad={curve}",
-        linestyle="--" if dashed else "-",
-    )
-    ax.add_patch(patch)
-    if label:
-        mx, my = (start[0] + end[0]) / 2, (start[1] + end[1]) / 2
-        ax.text(mx, my + 3, label, ha="center", va="center", fontsize=8,
-                color=color, bbox=dict(facecolor=WHITE, edgecolor="none", pad=1))
+ASSETS = Path(__file__).resolve().parent.parent.parent / "basics" / "assets" / "topic-01"
 
 
 def save(name: str, fig: plt.Figure) -> None:
@@ -112,7 +46,7 @@ def save(name: str, fig: plt.Figure) -> None:
     output = ASSETS / f"{name}.png"
     fig.savefig(output, dpi=DPI, bbox_inches="tight", facecolor=WHITE)
     plt.close(fig)
-    print(f"wrote basics/assets/{output.name}")
+    print(f"wrote basics/assets/topic-01/{output.name}")
 
 
 def interview_framework() -> plt.Figure:

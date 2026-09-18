@@ -97,6 +97,9 @@ pnpm-debug.log*
 .Trashes
 Icon?
 
+# ----- MkDocs -----
+site/
+
 # ----- Misc -----
 *.tmp
 *.bak
