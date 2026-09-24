@@ -43,19 +43,53 @@ The synchronous path determines user latency and immediate availability. Optiona
 
 ### Capacity is derived—not guessed
 
-![Capacity estimation derived from user behavior](assets/topic-01/capacity_estimation.png)
+Start with users and operations, not formulas. Each quantity below only matters because it feeds a decision, so walk through one small running example first: a photo-sharing feed with **10 million daily active users**, each opening the feed **5 times a day**, where each feed response is about **20 KB**.
 
-Start with users and operations. Derive average and peak traffic, then compute only the quantities that can change an architectural decision.
+**QPS (queries per second)** is just how many requests land on the system every second. It is rarely stated directly — you derive it from daily active users and how often they act:
 
 ```text
-Average QPS = operations per day / 86,400
-Peak QPS = average QPS × peak factor
-Bandwidth = QPS × payload size
-Storage = records × record size × retention × replicas
-Concurrency ≈ throughput × latency in seconds
+Average QPS = operations per day / 86,400   (seconds in a day)
+            = (10,000,000 users × 5 opens) / 86,400
+            ≈ 578 requests/second
 ```
 
-Estimates should be rounded, unit-consistent, and tied to a consequence such as caching, partitioning, connection limits, or capacity headroom.
+Traffic is never flat — lunchtime, a push notification, or a viral post can spike load well above the daily average. A **peak factor** captures that spike as a multiplier on the average:
+
+```text
+Peak QPS = average QPS × peak factor
+         = 578 × 3 (assume 3× at busiest hour)
+         ≈ 1,734 requests/second
+```
+
+**Payload size** is how many bytes travel in one request or response — here, each feed response is ~20 KB. Multiplying it by QPS answers “how much network throughput must I provision?”, i.e. **bandwidth**:
+
+```text
+Bandwidth = QPS × payload size
+          = 1,734 × 20 KB
+          ≈ 34.7 MB/second at peak
+```
+
+That single number tells you whether one server's network interface is enough or whether you need a CDN or fan-out across many hosts.
+
+**Storage** answers a different question — not "traffic right now" but "how much disk will this consume over time?" It multiplies how many records you keep, how large each one is, how long you retain them, and how many copies you store for durability. Assume this app also has **1 million new photos uploaded per day**, each about 500 KB:
+
+```text
+Storage = records × record size × retention × replicas
+        = 1,000,000 photos/day × 500 KB × 30-day retention × 3 replicas
+        ≈ 45 TB
+```
+
+Finally, **concurrency** is how many requests are in flight at once — the number your connection pools and thread counts must support. It comes from Little's Law: throughput multiplied by how long each request takes to complete:
+
+```text
+Concurrency ≈ throughput × latency in seconds
+            = 1,734 requests/second × 0.2 seconds
+            ≈ 347 concurrent requests
+```
+
+![Capacity estimation derived from user behavior](assets/topic-01/capacity_estimation.png)
+
+Estimates should be rounded, unit-consistent, and tied to a consequence such as caching, partitioning, connection limits, or capacity headroom. If a number cannot move one of those decisions, it is not worth computing.
 
 ---
 
@@ -90,6 +124,8 @@ Estimates should be rounded, unit-consistent, and tied to a consequence such as 
 4. Which paths prioritize consistency, availability, or latency?
 5. What are the retention, security, privacy, and residency constraints?
 6. Is this greenfield, or must it coexist with an existing system?
+7. What is the expected growth over the next year or two — is today's design meant to survive 10× traffic, or is this a v1 that will be revisited?
+8. What does success look like to the business, and are there any hard deadlines, budget limits, or team/operational constraints shaping the solution?
 
 ### Minimum capacity worksheet
 
@@ -120,20 +156,20 @@ Use this sentence structure:
 
 | Decision | Simple starting point | Scale-oriented option | Evolution trigger |
 |---|---|---|---|
-| Compute | Vertical scaling | Stateless horizontal scaling | Saturation or availability target |
-| Data | One relational database | Replicas, partitioning, specialized store | QPS, size, or access-pattern limit |
-| Reads | Database reads | Cache, CDN, read replicas | Latency or database pressure |
-| Work | Synchronous processing | Queue and workers | Slow, non-critical, or fan-out work |
-| Geography | Single region | Active-passive or active-active | RTO, residency, or global latency |
+| Compute | Vertical scaling — run on one bigger box; simplest to build, reason about, and debug | Stateless horizontal scaling — add interchangeable instances behind a load balancer so no single host is special | CPU/memory saturation, or an availability target that requires surviving the loss of one instance |
+| Data | One relational database — a single writer with strong consistency and easy joins across entities | Read replicas, partitioning/sharding, or a specialized store (search, time-series, graph) matched to the access pattern | Write QPS, data size, or an access pattern the relational model can no longer serve efficiently |
+| Reads | Database reads on every request — no extra moving parts, always fresh | Cache (in-memory), CDN (edge/static), or read replicas to absorb read traffic away from the primary | Read latency exceeds target, or read load threatens the database's ability to serve writes |
+| Work | Synchronous, in-request processing — the caller waits for the full result | Queue plus background workers, decoupling slow or optional work from the response path | Work is slow, not required for the response, or fans out to many downstream calls |
+| Geography | Single region — lowest cost and operational complexity | Active-passive (standby takes over on failure) or active-active (multiple regions serve writes) | A recovery-time objective (RTO), a data-residency law, or unacceptable latency for distant users |
 
 ![Visual comparison of competing system quality attributes](assets/topic-01/quality_tradeoffs.png)
 
 | Tension | Favor the left when… | Favor the right when… | Cost to discuss |
 |---|---|---|---|
-| Consistency vs availability | Incorrect/stale data is dangerous | Continued service is more valuable | Coordination or staleness |
-| Reliability vs cost | Downtime impact is high | Workload is non-critical | Redundancy or recovery time |
-| Security vs performance | Data or action is sensitive | Path is public and low-risk | Checks, cryptography, complexity |
-| Simplicity vs flexibility | Requirements are stable | Multiple use cases genuinely differ | Abstraction and operations |
+| Consistency vs availability | Stale or incorrect data causes real harm — e.g., an account balance or an inventory count that could oversell | Continuing to serve users matters more than perfect freshness — e.g., a social feed or a product recommendation | Coordination overhead (locking, consensus) if you pick consistency; the staleness window readers must tolerate if you pick availability |
+| Reliability vs cost | Downtime has real financial, safety, or trust impact — e.g., checkout or payments | The workload is non-critical, low-traffic, or cheaply retried — e.g., an internal report or batch job | Extra redundancy (replicas, multi-AZ) if you pick reliability; a longer recovery time if you pick cost |
+| Security vs performance | The data or action is sensitive — e.g., PII, credentials, or money movement | The path is public, low-risk, and latency-sensitive — e.g., serving a public product page | Additional checks, cryptographic overhead, and complexity if you pick security; residual risk if you pick performance |
+| Simplicity vs flexibility | Requirements are stable and well understood today | Multiple use cases genuinely need different behavior — not just a hypothetical future one | Abstraction layers to design and maintain if you pick flexibility; rework later if you pick simplicity and requirements diverge |
 
 There is no globally correct position. Choose per operation, based on product impact.
 
@@ -145,12 +181,12 @@ There is no globally correct position. Choose per operation, based on product im
 
 | Failure | Safe response | Guardrail |
 |---|---|---|
-| Non-critical dependency fails | Queue, defer, or drop according to policy | Bounded queue and observable loss |
-| Critical dependency is slow | Fail fast or use a safe fallback | End-to-end timeout budget |
-| Cache fails | Controlled origin fallback | Concurrency limit; prevent stampede |
-| Durable store fails | Reject writes that cannot be guaranteed | Never acknowledge an undurable write |
-| Queue consumers lag | Scale consumers or shed optional events | Lag alert and retention headroom |
-| Zone fails | Shift traffic to surviving capacity | N+1 capacity and tested failover |
+| Non-critical dependency fails (e.g., a recommendation or personalization call enriching a response) | Queue the work for later, defer it, or drop it according to policy — the primary response must not fail because of it | A bounded queue so a backlog can't grow forever, and visibility into how much work is being dropped |
+| Critical dependency is slow (e.g., the database behind a checkout) | Fail fast once a timeout budget is exceeded, or fall back to a safe, pre-approved default instead of hanging | An end-to-end timeout budget shared across the whole call chain, not reset at every hop |
+| Cache fails or goes cold | Fall back to the origin store, but bound how many requests can hit it at once | A concurrency limit on the origin plus request coalescing, so one cache miss doesn't become a stampede |
+| Durable store fails, or can't confirm a write | Reject the write rather than pretend it succeeded | Never acknowledge a write to the caller unless it is actually durable |
+| Queue consumers lag | Scale out consumers, or intentionally shed the least important events first | A lag alert plus enough retention headroom to catch up without losing data |
+| Zone fails | Shift traffic to the surviving zones or regions | N+1 capacity provisioned ahead of time, and a failover path that has actually been tested, not just diagrammed |
 
 For each dependency, state:
 
@@ -160,78 +196,72 @@ For each dependency, state:
 - fallback validity and maximum staleness;
 - detection, recovery, and reconciliation steps.
 
-### Common interview failure modes
-
-- Jumping to products before clarifying requirements.
-- Sizing from averages while ignoring peaks and failures.
-- Assuming uniform traffic and missing hot keys.
-- Drawing only the read path or only the happy path.
-- Adding caches, queues, shards, or regions without a requirement.
-- Naming technology without explaining mechanics and operational cost.
-
 ---
 
 ## 6. One focused worked example
 
 ### URL shortener
 
-**Scope:** create short links, redirect them, and optionally expire them. Analytics queries and custom domains are out of scope.
+**The prompt you actually get:** “Design a URL shortener.” That is the entire brief — one deliberately vague sentence. Everything below is the work of turning it into something specific enough to design against, and the first few minutes belong to questions, not boxes and arrows.
 
-**Targets:** redirects should be highly available with p99 below 100 ms; acknowledged link creation must be durable; newly created links need read-after-write behavior.
+**Questions to ask before designing anything**
+
+Each one either pins down a requirement or rules something out of scope:
+
+1. Who creates links, and who follows them — internal tool or public service? Decides whether we need auth, rate limiting, and abuse protection.
+2. How many links per month, and how many clicks per link? This read/write ratio drives most of the architecture.
+3. System-generated codes only, or custom aliases like `/spring-sale`? Aliases add uniqueness checks, conflicts, and squatting.
+4. Do links expire — fixed TTL, user-specified date, or never? Decides whether we need a cleanup path and whether storage grows forever.
+5. How fast must a redirect be, and what breaks if redirects are down? A slow redirect looks the same as a broken link, so this sets latency and availability targets.
+6. Must a new link work instantly, or is a brief 404 acceptable? The read-after-write question — it decides whether reads can come from lagging replicas.
+7. Are click analytics needed, and must they be real time? Decides whether analytics sits on the redirect path or behind a queue.
+8. Any safety or compliance needs — malicious-URL scanning, residency, takedowns? Cheap to plan for, expensive to retrofit.
+
+**Scope:** create a short link, redirect a short code to the original URL, and expire links once their lifetime passes. Analytics dashboards and customer-owned domains are out of scope — though click events are still collected asynchronously, so reporting can be added later without touching the redirect path.
+
+**Targets:** redirects are the critical path — highly available, p99 under 100 ms, since a slow redirect is indistinguishable from a broken link. Link creation is low volume but must be durable: once the API returns a short code, that code can never be lost. New links also need read-after-write behavior, because the creator is usually the first person to click.
 
 **Assumptions**
 
+None of these numbers come from the prompt — they are estimates you state out loud so the interviewer can correct them before you build on top of them. The shape that matters is write-once, read-many: a link is created once but clicked many times, so reads dominate writes by a wide margin.
+
 ```text
-20 million new links/month
-100 redirects per link creation
-10× peak factor
-700 bytes stored per link
-5-year retention, 3 replicas
+20 million new links/month        (write volume)
+100 redirects per link creation   (read/write ratio — reads dominate)
+10× peak factor                   (busiest second vs. the daily average)
+700 bytes stored per link         (long URL, short code, owner, timestamps)
+5-year retention, 3 replicas      (how long links live, and copies kept for durability)
 ```
 
 **Derived scale**
 
+With the assumptions stated, the numbers follow mechanically — spread the monthly volume across seconds, then multiply outward to reach peak load and total storage:
+
 ```text
-Average creates/s ≈ 20M / 2.6M ≈ 8
-Peak creates/s ≈ 80
-Peak redirects/s ≈ 8 × 100 × 10 ≈ 8,000
+Average creates/s ≈ 20M / 2.6M ≈ 8        (≈2.6M seconds in a 30-day month)
+Peak creates/s ≈ 80                        (8 × 10× peak factor)
+Peak redirects/s ≈ 8 × 100 × 10 ≈ 8,000    (creates × redirect ratio × peak factor)
 Replicated storage ≈ 20M × 12 × 5 × 700 B × 3 ≈ 2.5 TB
+                     (links/month × months/year × years retained × bytes × replicas)
 ```
+
+The headline number here is **8,000 peak redirects per second against roughly 80 peak creates per second** — a two-orders-of-magnitude gap between reads and writes. That single ratio is what justifies putting a cache in front of redirects instead of spending effort optimizing the write path, and it is worth saying explicitly rather than leaving the interviewer to infer it. The storage figure matters for a different reason: at roughly 2.5 TB replicated over five years, this comfortably fits on a single well-provisioned database, so sharding would be complexity without a requirement behind it.
 
 ![URL shortener architecture](assets/topic-01/url_shortener_architecture.png)
 
 | Choice | Optimizes for | Costs / risks |
 |---|---|---|
-| Stateless API | Horizontal scaling and replacement | State moves to shared dependencies |
-| Cache-aside redirects | Low latency and lower store QPS | Staleness, hot keys, cache failure |
-| Durable link store | Correct acknowledged writes | Higher write latency |
-| Async click analytics | Fast and resilient redirects | Lag and duplicate processing |
-| Single region initially | Simplicity and cost | Regional outage and distant-user latency |
+| Stateless API | Horizontal scaling and easy replacement — any instance can serve any request | State moves to shared dependencies (store, cache), so those must scale instead |
+| Cache-aside redirects | Low latency and far lower load on the durable store, since 8,000 reads/s would otherwise all hit it | Staleness between cache and store, hot keys on viral links, and a cold-cache stampede on failure |
+| Durable link store | Correct, acknowledged writes — a create is never lost once confirmed | Higher write latency than an in-memory or eventually-consistent option |
+| Async click analytics | Redirects stay fast and resilient even if analytics is degraded or backed up | Analytics lag, and possible duplicate or out-of-order click events |
+| Single region initially | Simplicity and lower cost — no cross-region coordination to design or operate | A full regional outage takes the service down, and distant users see extra latency |
 
-**Failure walk-through:** cached redirects may survive a store outage, but link creation must fail if durability cannot be guaranteed. Analytics delays must not block redirects. A viral short code requires hot-key mitigation or edge caching.
-
----
-
-## 7. Senior/Principal interview signals
-
-| Senior signal | Staff/Principal extension |
-|---|---|
-| Decisions tied to measurable requirements | Requirements reconciled across products and teams |
-| Normal and degraded paths explained | Blast radius and dependency criticality managed |
-| Dominant workloads quantified | Capacity and cost modeled across growth stages |
-| Complexity introduced only when justified | Migration, compatibility, and rollback planned |
-| Metrics validate assumptions | Uncertainty retired through tests and production evidence |
-| Operational cost acknowledged | Ownership and organizational scalability addressed |
-
-### Defend a choice clearly
-
-> “Given 8,000 peak redirects per second and a 100 ms p99 target, I would start with cache-aside rather than database-only reads. It reduces origin load and tail latency, at the cost of invalidation and another dependency. I would validate hit rate, p99 latency, and origin QPS; edge caching becomes worthwhile if global traffic or hot links dominate.”
-
-When requirements change, identify the affected quality attribute, trace the impacted path, revise only the necessary components, and state the newly introduced cost.
+**Failure walk-through:** during a store outage, cached redirects can keep serving correctly for links that are already warm in the cache, so most traffic continues to work even while the database is unreachable. Link creation, by contrast, must fail loudly and return an error rather than silently accept a write it cannot durably confirm — handing back a short code that was never persisted is far worse than refusing to create one. Analytics delays are acceptable by design and must never block or slow down a redirect, which is exactly why click events go through a queue instead of being written inline. Finally, a single viral short code can turn into a hot key that overwhelms one cache shard even while total QPS looks unremarkable; mitigating that needs request coalescing so concurrent misses collapse into one origin read, a short per-key TTL, or promoting that link into an edge/CDN cache closer to users.
 
 ---
 
-## 8. Final revision checklist
+## 7. Final revision checklist
 
 ```text
 [ ] CLARIFY users, use cases, constraints, and out-of-scope items
