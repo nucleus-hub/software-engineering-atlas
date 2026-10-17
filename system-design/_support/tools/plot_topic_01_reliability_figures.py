@@ -1,14 +1,14 @@
-"""Render the new and corrected diagrams for System Design topic 01 (v2).
+"""Render the reliability charts for topic 01: availability, latency, timeouts, retries.
 
-Unchanged diagrams are reused from ``basics/assets/topic-01``; this script only
-renders figures that are new in v2 or that fix a v1 diagram.
+The framework, estimation, and worked-example diagrams live in
+``plot_topic_01_figures.py``; both scripts write to ``basics/assets/topic-01``.
 
 Run from the system-design directory:
 
     uv run --with matplotlib \
       --index-url https://pypi.ci.artifacts.walmart.com/artifactory/api/pypi/external-pypi/simple \
       --allow-insecure-host pypi.ci.artifacts.walmart.com \
-      python _support/tools/plot_topic_01_v2_figures.py
+      python _support/tools/plot_topic_01_reliability_figures.py
 
 Pass figure names to render only selected assets.
 """
@@ -24,16 +24,18 @@ from matplotlib.patches import Rectangle
 
 from figure_style import (
     AMBER,
+    AMBER_FACE,
     BLUE,
     DPI,
     GREEN,
+    GREEN_FACE,
     GREY,
     INK,
     LINE,
-    MIST,
     NAVY,
     PALE,
     RED,
+    RED_FACE,
     WHITE,
     arrow,
     box,
@@ -41,8 +43,7 @@ from figure_style import (
     heading,
 )
 
-ASSETS = Path(__file__).resolve().parent.parent.parent / "basics" / "assets" / "topic-01-v2"
-AMBER_FACE, RED_FACE, GREEN_FACE, DEAD = "#FFF5DC", "#FDEDEC", "#E9F7EF", "#F2F2F2"
+ASSETS = Path(__file__).resolve().parent.parent.parent / "basics" / "assets" / "topic-01"
 
 
 def save(name: str, fig: plt.Figure) -> None:
@@ -50,7 +51,7 @@ def save(name: str, fig: plt.Figure) -> None:
     output = ASSETS / f"{name}.png"
     fig.savefig(output, dpi=DPI, bbox_inches="tight", facecolor=WHITE)
     plt.close(fig)
-    print(f"wrote basics/assets/topic-01-v2/{output.name}")
+    print(f"wrote basics/assets/topic-01/{output.name}")
 
 
 def style_chart(ax: plt.Axes, title: str, xlabel: str, ylabel: str) -> None:
@@ -64,61 +65,6 @@ def style_chart(ax: plt.Axes, title: str, xlabel: str, ylabel: str) -> None:
         ax.spines[side].set_visible(False)
     for side in ("left", "bottom"):
         ax.spines[side].set_color(GREY)
-
-
-def capacity_estimation() -> plt.Figure:
-    """Fixed v1 diagram: every branch now descends from its true parent."""
-    fig, ax = canvas(14, 6.4)
-    heading(ax, "Capacity Estimation: Derive Infrastructure from User Behavior",
-            "Writes drive storage; peak traffic drives bandwidth, concurrency, and compute")
-    box(ax, 4, 60, 14, 15, "Users", "DAU / MAU", face=WHITE, edge=NAVY)
-    box(ax, 26, 60, 16, 15, "Operations", "actions per user")
-    box(ax, 50, 60, 16, 15, "Traffic", "average + peak QPS", face=MIST)
-    arrow(ax, (18.5, 67.5), (25.5, 67.5))
-    arrow(ax, (42.5, 67.5), (49.5, 67.5))
-    ax.text(85, 67.5, "Peak factor\n+ headroom", ha="center", va="center",
-            fontsize=10, fontweight="bold", color=RED,
-            bbox=dict(boxstyle="round,pad=0.6", facecolor=RED_FACE, edgecolor=RED))
-    arrow(ax, (77, 67.5), (66.5, 67.5), color=RED)
-    # Storage hangs off write operations, not off read traffic.
-    box(ax, 3, 14, 21, 15, "Storage", "writes x size x retention x copies",
-        face=WHITE, edge=AMBER, title_color=AMBER)
-    arrow(ax, (34, 59.5), (13.5, 29.5), color=AMBER, label="writes")
-    # Traffic feeds a bus so each branch visibly shares one parent.
-    ax.plot([58, 58], [59.5, 45], color=BLUE, linewidth=1.8)
-    ax.plot([39, 83], [45, 45], color=BLUE, linewidth=1.8)
-    for x, title, subtitle, color in [
-        (30, "Bandwidth", "QPS x payload", BLUE),
-        (52, "Concurrency", "QPS x latency", NAVY),
-        (74, "Compute", "QPS / safe QPS per host", GREEN),
-    ]:
-        box(ax, x, 14, 18, 15, title, subtitle, face=WHITE, edge=color, title_color=color)
-        arrow(ax, (x + 9, 45), (x + 9, 29.5), color=color)
-    return fig
-
-
-def estimate_to_decision() -> plt.Figure:
-    fig, ax = canvas(14, 8)
-    heading(ax, "Every Estimate Must Terminate in a Decision",
-            "If a number cannot move one of these arrows, do not compute it")
-    rows = [
-        ("Read:write >= 10:1", "Cache-aside or read replicas"),
-        ("Working set > one node's RAM", "Shard the cache, or cache only the hot set"),
-        ("Data > ~10 TB, or growing without bound", "Partition, tier to cold storage, or add TTL"),
-        ("Write QPS near one primary's limit", "Shard writes, or buffer via a queue"),
-        ("Peak >> average", "Autoscale + queue + load shedding"),
-        ("Distant users with a tight p99", "CDN / edge cache, then multi-region"),
-    ]
-    for i, (estimate, decision) in enumerate(rows):
-        y = 70 - i * 12
-        box(ax, 5, y, 36, 8, estimate, face=PALE)
-        box(ax, 59, y, 36, 8, decision, face=GREEN_FACE, edge=GREEN, title_color=GREEN)
-        arrow(ax, (41.5, y + 4), (58.5, y + 4), color=GREY)
-    ax.text(23, 81, "IF THE ESTIMATE SAYS...", ha="center", fontsize=8,
-            fontweight="bold", color=GREY)
-    ax.text(77, 81, "...THEN CONSIDER", ha="center", fontsize=8,
-            fontweight="bold", color=GREY)
-    return fig
 
 
 def availability_composition() -> plt.Figure:
@@ -281,43 +227,13 @@ def consistency_availability() -> plt.Figure:
     return fig
 
 
-def url_shortener_degraded() -> plt.Figure:
-    fig, ax = canvas(15, 7.4)
-    heading(ax, "URL Shortener, Degraded Mode: Link Store Down",
-            "Warm redirects keep working; creates fail loudly; analytics buffers")
-    box(ax, 3, 58, 11, 16, "Client", "create / redirect", face=WHITE, edge=NAVY)
-    box(ax, 20, 58, 13, 16, "Load balancer", "route + health")
-    box(ax, 39, 58, 13, 16, "Link API", "stateless", face=MIST)
-    box(ax, 60, 66, 13, 15, "Cache", "warm codes: HIT", face=GREEN_FACE, edge=GREEN,
-        title_color=GREEN)
-    box(ax, 60, 40, 13, 15, "Link store: DOWN", "unavailable", face=DEAD, edge=RED,
-        title_color=RED)
-    for start, end in [((14.5, 66), (19.5, 66)), ((33.5, 66), (38.5, 66))]:
-        arrow(ax, start, end)
-    arrow(ax, (52.5, 68), (59.5, 73.5), color=GREEN, label="hit")
-    arrow(ax, (52.5, 62), (59.5, 48), color=RED, label="create -> 503", dashed=True)
-    box(ax, 39, 18, 13, 14, "Event queue", "buffering", face=AMBER_FACE, edge=AMBER,
-        title_color=AMBER)
-    arrow(ax, (45.5, 57.5), (45.5, 32.5), color=AMBER, dashed=True, label="click event")
-    ax.text(80, 76, "WARM REDIRECTS", fontsize=8, fontweight="bold", color=GREEN)
-    ax.text(80, 71, "served from cache", fontsize=8, color=INK)
-    ax.text(80, 55, "COLD REDIRECTS", fontsize=8, fontweight="bold", color=AMBER)
-    ax.text(80, 50, "miss -> fail fast, bounded", fontsize=8, color=INK)
-    ax.text(80, 40, "CREATES", fontsize=8, fontweight="bold", color=RED)
-    ax.text(80, 35, "never ack an unsaved code", fontsize=8, color=INK)
-    return fig
-
-
 FIGURES = {
-    "capacity_estimation": capacity_estimation,
-    "estimate_to_decision": estimate_to_decision,
     "availability_composition": availability_composition,
     "latency_percentiles": latency_percentiles,
     "tail_amplification": tail_amplification,
     "timeout_budget": timeout_budget,
     "retry_amplification": retry_amplification,
     "consistency_availability": consistency_availability,
-    "url_shortener_degraded": url_shortener_degraded,
 }
 
 

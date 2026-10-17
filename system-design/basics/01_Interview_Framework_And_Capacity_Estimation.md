@@ -1,4 +1,4 @@
-# System Design Interview Framework & Capacity Estimation
+# Interview Framework & Capacity Estimation
 
 > A visual guide for turning an ambiguous prompt into a defensible design. Use it to structure the interview, quantify scale, reason about availability and latency, expose risks, and explain why each decision is appropriate.
 
@@ -100,7 +100,7 @@ Hosts = peak QPS / safe QPS per host = 1,734 / 500 ≈ 4
 
 Estimates should be rounded, unit-consistent, and tied to a consequence such as caching, partitioning, connection limits, or capacity headroom. **If a number cannot move a decision, it is not worth computing.**
 
-![Estimates terminating in architectural decisions](assets/topic-01-v2/estimate_to_decision.png)
+![Estimates terminating in architectural decisions](assets/topic-01/estimate_to_decision.png)
 
 ---
 
@@ -262,20 +262,19 @@ Payload math undercounts. Indexes, metadata, and storage-engine overhead typical
 
 ### The nines
 
-```text
-Availability   Downtime per year   Typical use
-  99%           3.65 days          batch / internal tooling
-  99.9%         8.77 hours         typical internal service
-  99.95%        4.38 hours
-  99.99%        52.6 minutes       typical customer-facing SLO
-  99.999%       5.26 minutes       rarely justified; usually aspirational
-```
+| Availability | Downtime per year | Typical use |
+|---:|---:|---|
+| 99% | 3.65 days | batch / internal tooling |
+| 99.9% | 8.77 hours | typical internal service |
+| 99.95% | 4.38 hours | |
+| 99.99% | 52.6 minutes | typical customer-facing SLO |
+| 99.999% | 5.26 minutes | rarely justified; usually aspirational |
 
 Each extra nine costs roughly an order of magnitude more engineering: redundancy, automation, testing, on-call. Ask what the business actually loses per minute of downtime before promising one.
 
 ### Availability composes
 
-![Serial dependencies multiply; redundant replicas complement](assets/topic-01-v2/availability_composition.png)
+![Serial dependencies multiply; redundant replicas complement](assets/topic-01/availability_composition.png)
 
 ```text
 Serial dependencies MULTIPLY (all must work):
@@ -295,7 +294,7 @@ The redundancy math assumes **independent failures**. Same AZ, same config push,
 
 **p99** means "1 in 100 requests is slower than this." At 8,000 requests/s, that is 80 unhappy users *every second*. The mean is a trap: a p50 of 20 ms and a p99 of 900 ms average to something that looks fine and describes nobody.
 
-![Latency histogram with mean hiding the long tail](assets/topic-01-v2/latency_percentiles.png)
+![Latency histogram with mean hiding the long tail](assets/topic-01/latency_percentiles.png)
 
 Always state latency targets as **percentile + operation**: "redirect p99 < 100 ms," never "fast."
 
@@ -310,7 +309,7 @@ Each dependency has p99 = 10 ms. Chance a request avoids EVERY slow path = 0.99^
   N = 100  -> 37% fast   the dependency's p99 is now the caller's MEDIAN
 ```
 
-![Fraction of fast requests collapsing as fan-out grows](assets/topic-01-v2/tail_amplification.png)
+![Fraction of fast requests collapsing as fan-out grows](assets/topic-01/tail_amplification.png)
 
 This block reframes "just add another microservice call" permanently. Mitigations: fewer synchronous hops, tighter per-dependency tails (p99.9, the green curve), **hedged requests** (send a backup request after the p95 and take whichever returns first), and moving fan-out off the synchronous path.
 
@@ -354,7 +353,7 @@ Two worked instances:
 
 ### Consistency and availability: choose per operation
 
-![Quadrant placing real operations by consistency and availability need](assets/topic-01-v2/consistency_availability.png)
+![Quadrant placing real operations by consistency and availability need](assets/topic-01/consistency_availability.png)
 
 One product contains every quadrant. A shop's inventory decrement must refuse rather than oversell. Its cart should merge and reconcile. Its view counter can be approximate and batched. **Never pick one consistency model for a whole system.**
 
@@ -389,13 +388,13 @@ Blast-radius thinking (does this hurt one user, one tenant, one shard, one zone,
 
 ### Timeouts: one deadline, propagated
 
-![A 500 ms deadline shrinking as it passes down the call chain](assets/topic-01-v2/timeout_budget.png)
+![A 500 ms deadline shrinking as it passes down the call chain](assets/topic-01/timeout_budget.png)
 
 Set one end-to-end deadline at the edge and pass the *remaining* time down (gRPC deadlines, or a header). A hop that starts a fresh 500 ms timeout keeps working on a request whose caller gave up long ago: all cost, no benefit.
 
 ### Retries: the mechanism behind most cascading outages
 
-![Three retrying layers turning one request into 27 database calls](assets/topic-01-v2/retry_amplification.png)
+![Three retrying layers turning one request into 27 database calls](assets/topic-01/retry_amplification.png)
 
 Retries at every layer **multiply**: 3 attempts × 3 layers = 27× load, arriving exactly when the dependency is weakest. Rules:
 
@@ -441,7 +440,7 @@ Applied to the URL shortener: API hosts are stateless (headroom is just "add mor
 
 **The prompt you actually get:** "Design a URL shortener." That is the entire brief, one deliberately vague sentence. The first few minutes belong to questions, not boxes and arrows.
 
-**Questions to ask before designing anything**
+### Questions to ask before designing anything
 
 Each one either pins down a requirement or rules something out of scope:
 
@@ -454,11 +453,15 @@ Each one either pins down a requirement or rules something out of scope:
 7. Are click analytics needed, and must they be real time? Decides whether analytics sits on the redirect path or behind a queue.
 8. Any safety or compliance needs: malicious-URL scanning, residency, takedowns? Cheap to plan for, expensive to retrofit.
 
-**Scope:** create a short link, redirect a short code to the original URL, and expire links once their lifetime passes. Analytics dashboards and customer-owned domains are out of scope, though click events are still collected asynchronously, so reporting can be added later without touching the redirect path.
+### Scope
 
-**Targets:** redirects are the critical path: 99.99% available, p99 under 100 ms. Link creation is low volume but must be durable: once the API returns a short code, that code can never be lost. New links need read-after-write behavior, because the creator is usually the first person to click. Standard fixes: read from the primary for a few seconds after a create, write the new link into the cache on create, or route the creator's reads sticky to the primary.
+Create a short link, redirect a short code to the original URL, and expire links once their lifetime passes. Analytics dashboards and customer-owned domains are out of scope, though click events are still collected asynchronously, so reporting can be added later without touching the redirect path.
 
-**Assumptions**
+### Targets
+
+Redirects are the critical path: 99.99% available, p99 under 100 ms. Link creation is low volume but must be durable: once the API returns a short code, that code can never be lost. New links need read-after-write behavior, because the creator is usually the first person to click. Standard fixes: read from the primary for a few seconds after a create, write the new link into the cache on create, or route the creator's reads sticky to the primary.
+
+### Assumptions
 
 None of these numbers come from the prompt. They are estimates you state out loud so the interviewer can correct them before you build on top of them. The shape that matters is write-once, read-many.
 
@@ -470,7 +473,7 @@ None of these numbers come from the prompt. They are estimates you state out lou
 5-year retention, 3 replicas      (how long links live, copies kept for durability)
 ```
 
-**Derived scale**
+### Derived scale
 
 ```text
 Average creates/s ≈ 20M / 2.6M ≈ 8        (≈2.6M seconds in a 30-day month)
@@ -513,7 +516,7 @@ A sensible default for a public service: **counter ranges per host, lightly scra
 
 ### Failure walk-through
 
-![URL shortener degraded mode with the link store down](assets/topic-01-v2/url_shortener_degraded.png)
+![URL shortener degraded mode with the link store down](assets/topic-01/url_shortener_degraded.png)
 
 | Failure | User-visible behavior | Detection | Recovery |
 |---|---|---|---|
@@ -553,7 +556,9 @@ The same question, answered at three levels:
 
 ## 11. Practice questions & drills
 
-**Estimation drills.** Answer in under two minutes each, then check which decision the number drives.
+### Estimation drills
+
+Answer in under two minutes each, then check which decision the number drives.
 
 ??? question "A chat app has 50M DAU sending 40 messages/day at ~200 B each. Peak QPS and daily storage?"
     50M × 40 = 2B messages/day ÷ 10^5 ≈ 23k/s average; at 3× ≈ 70k writes/s peak. Storage ≈ 2B × 200 B = 400 GB/day raw, ~1.2 TB/day with 3 replicas. **Decision:** write-heavy beyond one primary (§4), so partition by conversation ID from day one; tier old messages to cold storage.
@@ -570,7 +575,9 @@ The same question, answered at three levels:
 ??? question "A request takes 300 ms at 2,000 QPS. How many concurrent connections? What if latency triples?"
     Little's Law: 2,000 × 0.3 = 600. At 900 ms: 1,800. If the pool is 1,000, requests start queueing, latency rises further, and the system collapses. **Decision:** size pools with headroom, and fail fast before the pool fills.
 
-**Discussion questions.** Practice answering these out loud using the §6 template.
+### Discussion questions
+
+Practice answering these out loud using the §6 template.
 
 1. When would you choose a 301 over a 302 for a URL shortener, and what do you lose?
 2. Your SLO is 99.9% and you have burned 80% of the monthly error budget in week one. What do you do?

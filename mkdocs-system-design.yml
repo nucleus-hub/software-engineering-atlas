@@ -8,16 +8,19 @@ exclude_docs: |
 theme:
   name: material
   language: en
+  # Colours come from _support/stylesheets/theme.css (WCAG 2.2 AA checked).
+  # Google Fonts is blocked on the corporate network; theme.css uses system fonts.
+  font: false
   palette:
     - scheme: default
-      primary: blue
-      accent: indigo
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
     - scheme: slate
-      primary: blue
-      accent: indigo
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
@@ -34,7 +37,7 @@ theme:
 nav:
   - Home: README.md
   - Basics:
-      - Interview Framework & Capacity Estimation: basics/01_System_Design_Interview_Framework_And_Capacity_Estimation.md
+      - Interview Framework & Capacity Estimation: basics/01_Interview_Framework_And_Capacity_Estimation.md
       - Object-Oriented Principles & Clean Code: basics/02_LLD_Object_Oriented_Principles_And_Clean_Code.md
       - Creational & Structural Design Patterns: basics/03_LLD_Creational_And_Structural_Design_Patterns.md
 
@@ -52,4 +55,5 @@ markdown_extensions:
       alternate_style: true
 
 extra_css:
-  - _support/stylesheets/extra.css
+  - _support/stylesheets/layout.css
+  - _support/stylesheets/theme.css

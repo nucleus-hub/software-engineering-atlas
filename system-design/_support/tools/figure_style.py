@@ -20,6 +20,11 @@ RED = "#C0392B"
 GREEN = "#1E8449"
 AMBER = "#D68910"
 WHITE = "#FFFFFF"
+# Soft fills that pair with the matching edge colour above.
+AMBER_FACE = "#FFF5DC"
+RED_FACE = "#FDEDEC"
+GREEN_FACE = "#E9F7EF"
+DEAD = "#F2F2F2"
 DPI = 200
 
 
