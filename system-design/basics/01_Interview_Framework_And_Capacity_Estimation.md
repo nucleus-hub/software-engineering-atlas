@@ -354,15 +354,15 @@ Cost is a quality attribute, and a rough dollar figure is a strong Principal sig
 
 ![Decision tree for reacting to a dependency failure](assets/topic-01/failure_response.png)
 
-| Failure | Safe response | Guardrail | Blast radius |
+| Failure | Safe response | Guardrail to put in place | Blast radius (who is affected) |
 |---|---|---|---|
-| Non-critical dependency fails (recommendations, personalization) | Defer, queue, or drop per policy; the primary response must not fail | Bounded queue, visible drop rate | Feature degraded for everyone; core works |
-| Critical dependency is slow (DB behind checkout) | Fail fast once the deadline is spent, or return a pre-approved safe default | End-to-end deadline shared across the chain | Every request on that path |
-| Cache fails or goes cold | Fall back to origin, but bound concurrency to it | Origin concurrency limit plus request coalescing | Everyone, via origin overload if unbounded |
-| Durable store fails or cannot confirm a write | Reject the write rather than pretend it succeeded | Never acknowledge a write that is not durable | All writes; reads may survive via cache |
-| Queue consumers lag | Scale consumers, or shed the least important events first | Lag alert plus retention headroom to catch up | Delayed async features only |
-| Hot key / noisy tenant | Isolate, coalesce, or rate-limit that key or tenant | Per-key and per-tenant limits | One shard, which becomes everyone sharing it |
-| Zone fails | Shift traffic to surviving zones | N+1 capacity pre-provisioned; failover actually tested | One AZ's share, if headroom exists |
+| A non-critical dependency fails, such as recommendations or personalization. | Defer the work, queue it, or drop it according to policy. The main response must still succeed without it. | Use a bounded queue so the backlog cannot grow forever, and make the drop rate visible on a dashboard. | The feature is degraded for everyone, but the core product keeps working. |
+| A critical dependency is slow, such as the database behind checkout. | Fail fast once the request's time budget is used up, or return a safe default that the business approved in advance. | Set one end-to-end deadline and pass it along the whole call chain, so no service waits longer than the user will. | Every request that goes through that path. |
+| The cache fails, or restarts empty (cold). | Fall back to reading from the origin database, but limit how many requests can reach it at once. | Cap concurrent requests to the origin, and coalesce identical requests so one fetch serves them all. | Everyone, if the origin is unprotected: the flood of cache misses can overload it and take down the whole service. |
+| The durable store fails, or cannot confirm a write. | Reject the write and tell the client, rather than pretending it succeeded. | Never acknowledge a write until it is safely stored. | All writes fail, though reads may still be served from the cache. |
+| Queue consumers fall behind (lag). | Add more consumers, or drop the least important events first. | Alert on consumer lag, and keep enough message retention for consumers to catch up before data expires. | Only asynchronous features are delayed; the request path is unaffected. |
+| A hot key or noisy tenant overloads a shard. | Isolate that key or tenant, coalesce duplicate requests for it, or rate-limit it. | Set limits per key and per tenant, so no single one can consume a whole shard. | One shard, which means every other user who shares that shard. |
+| An availability zone fails. | Shift traffic to the zones that are still healthy. | Provision spare capacity in advance (N+1) so the remaining zones can absorb the load, and test failover regularly. | The users served by that zone, provided the other zones have room to take them. |
 
 Blast-radius thinking (does this hurt one user, one tenant, one shard, one zone, or everyone?) is a distinctly Staff+ habit. Cell-based architectures exist purely to shrink it.
 
