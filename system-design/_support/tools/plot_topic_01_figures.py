@@ -79,7 +79,8 @@ def interview_framework() -> plt.Figure:
             arrow(ax, (x + 12.5, 51), (xs[index + 1] - 0.5, 51))
     ax.text(50, 25, "OUTPUT", ha="center", va="center", fontsize=8,
             fontweight="bold", color=GREY)
-    box(ax, 34, 10, 32, 11, "A design whose assumptions and trade-offs are explicit",
+    # The label is ~43 units wide at this font size; 50 leaves even side padding.
+    box(ax, 25, 10, 50, 11, "A design whose assumptions and trade-offs are explicit",
         face=WHITE, edge=NAVY)
     return fig
 
