@@ -100,6 +100,10 @@ Icon?
 # ----- MkDocs -----
 site/
 
+# ----- Python -----
+__pycache__/
+*.pyc
+
 # ----- Misc -----
 *.tmp
 *.bak
