@@ -124,3 +124,30 @@ def stage_row(
                 fontweight="bold", color=WHITE)
         if index < len(xs) - 1:
             arrow(ax, (x + width + 0.5, y + height / 2), (xs[index + 1] - 0.5, y + height / 2))
+
+
+def card_row(
+    ax: plt.Axes,
+    cards: list[tuple[str, str, str, str, str, str]],
+    labels: tuple[str, str],
+) -> None:
+    """Draw five tall cards: (badge, name, first text, second text, colour, face).
+
+    Each card shows a coloured badge, a navy name, and two labelled sections,
+    e.g. ASK/SMELL or USE WHEN/COST. Sized for a 15 x 6.6 canvas.
+    """
+    for index, (badge, name, first, second, color, face) in enumerate(cards):
+        x = 3 + index * 19.2
+        centre_x = x + 8.5
+        box(ax, x, 8, 17, 64, "", face=face, edge=color)
+        ax.add_patch(Circle((centre_x, 79), 3.6, facecolor=color, edgecolor=color))
+        ax.text(centre_x, 79, badge, ha="center", va="center", fontsize=14,
+                fontweight="bold", color=WHITE)
+        ax.text(centre_x, 64, name, ha="center", va="center", fontsize=10.5,
+                fontweight="bold", color=NAVY)
+        ax.plot([x + 3, x + 14], [58, 58], color=LINE, linewidth=1.2)
+        for label, text, top in ((labels[0], first, 51), (labels[1], second, 30)):
+            ax.text(centre_x, top, label, ha="center", va="center", fontsize=7.5,
+                    fontweight="bold", color=GREY)
+            ax.text(centre_x, top - 9, text, ha="center", va="center", fontsize=8.8,
+                    color=INK, linespacing=1.45)

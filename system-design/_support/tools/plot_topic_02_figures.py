@@ -14,7 +14,6 @@ import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-from matplotlib.patches import Circle
 
 from figure_style import (
     AMBER,
@@ -35,6 +34,7 @@ from figure_style import (
     arrow,
     box,
     canvas,
+    card_row,
     heading,
     stage_row,
 )
@@ -146,21 +146,7 @@ def solid_principles() -> plt.Figure:
     fig, ax = canvas(15, 6.6)
     heading(ax, "SOLID: Five Questions About the Shape of Change",
             "Ask the question, look for the smell; the principle names the fix")
-    for index, (letter, name, ask, smell, color, face) in enumerate(SOLID):
-        x = 3 + index * 19.2
-        centre_x = x + 8.5
-        box(ax, x, 8, 17, 64, "", face=face, edge=color)
-        ax.add_patch(Circle((centre_x, 79), 3.6, facecolor=color, edgecolor=color))
-        ax.text(centre_x, 79, letter, ha="center", va="center", fontsize=14,
-                fontweight="bold", color=WHITE)
-        ax.text(centre_x, 64, name, ha="center", va="center", fontsize=10.5,
-                fontweight="bold", color=NAVY)
-        ax.plot([x + 3, x + 14], [58, 58], color=LINE, linewidth=1.2)
-        for label, text, top in (("ASK", ask, 51), ("SMELL", smell, 30)):
-            ax.text(centre_x, top, label, ha="center", va="center", fontsize=7.5,
-                    fontweight="bold", color=GREY)
-            ax.text(centre_x, top - 9, text, ha="center", va="center", fontsize=8.8,
-                    color=INK, linespacing=1.45)
+    card_row(ax, SOLID, ("ASK", "SMELL"))
     return fig
 
 
