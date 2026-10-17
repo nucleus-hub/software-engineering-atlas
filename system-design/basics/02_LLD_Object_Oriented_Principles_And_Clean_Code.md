@@ -23,13 +23,13 @@ The low-level design round is the same narrowing funnel as system design, one zo
 
 ![Five SOLID principles framed as questions about change](assets/topic-02/solid_principles.png)
 
-| Principle | Ask | Smell in review | Healthy outcome |
+| Principle | Question to ask | Smell in code review | What healthy looks like |
 |---|---|---|---|
-| **S** — Single Responsibility | Which actor asks for this class to change? | One class edited for finance, ops, and UX reasons | One cohesive reason to change |
-| **O** — Open/Closed | Can a new case arrive as a new class? | A `switch` on a type code that grows every sprint | Extension at a deliberate seam; tested code untouched |
-| **L** — Liskov Substitution | Can every subtype stand in for its base safely? | Overrides that throw, no-op, or demand more | Subtypes demand no more and promise no less |
-| **I** — Interface Segregation | Does each client use everything it depends on? | `UnsupportedOperationException` stubs | Small, client-shaped interfaces |
-| **D** — Dependency Inversion | Can the business policy run without infrastructure? | `new MySqlRepo()` inside a service | Policy owns the interface; details plug in |
+| **S** — Single Responsibility | Which person or team asks for this class to change? | One class gets edited for finance, operations, and UX reasons. | The class has one cohesive reason to change. |
+| **O** — Open/Closed | Can a new case be added as a new class, without editing tested code? | A `switch` on a type code grows every sprint. | New cases plug in at a deliberate extension point, and tested code stays untouched. |
+| **L** — Liskov Substitution | Can every subtype stand in for its base type without surprising callers? | Overrides throw, silently do nothing, or demand more from callers. | Subtypes demand no more and promise no less than their base type. |
+| **I** — Interface Segregation | Does each client use everything in the interface it depends on? | Implementations stub out methods by throwing `UnsupportedOperationException`. | Interfaces are small and shaped around what each client actually calls. |
+| **D** — Dependency Inversion | Can the business logic run, and be tested, without real infrastructure? | A service creates its own database client with `new MySqlRepo()`. | The business logic owns the interface, and infrastructure plugs in behind it. |
 
 !!! tip "The LLD round in one sentence"
     Find the likely changes, give each one a single owner behind a small contract, and prove that a new requirement becomes a new class rather than an edit.
@@ -59,13 +59,13 @@ Every principle in this guide tunes one of two dials. **Cohesion** measures how 
 
 Not all coupling is equal. From worst to most acceptable:
 
-| Coupling kind | What it looks like | Why it hurts |
+| Coupling kind | What it looks like | Why it matters |
 |---|---|---|
-| Content | Reaching into another class's fields or internals | Any internal refactor breaks you |
-| Global | Shared mutable statics; singletons holding state | Hidden dependencies; order-dependent tests |
-| Control | A boolean or enum argument telling the callee *what to do* | The caller knows the callee's internals |
-| Stamp | Passing a whole `Order` when only `orderId` is needed | Changes to unused fields ripple outward |
-| Data | Passing exactly the values the callee needs | The goal: the narrowest honest contract |
+| Content | One class reaches directly into another class's fields or internals. | Any internal refactor in the other class breaks yours. |
+| Global | Classes share mutable static state, or singletons that hold state. | Dependencies are hidden, and tests pass or fail depending on the order they run in. |
+| Control | A caller passes a boolean or enum that tells the callee *what to do*. | The caller has to know how the callee works inside. |
+| Stamp | A method receives a whole `Order` when it only needs the `orderId`. | Changes to fields the method never uses still ripple out to it. |
+| Data | A method receives exactly the values it needs, and nothing more. | This is the goal: the narrowest contract that is still honest. |
 
 ### Tell, don't ask
 
@@ -87,10 +87,10 @@ This is the **Law of Demeter**: talk to your immediate collaborators, not to the
 
 | Pillar | What it buys you | The misuse that costs points |
 |---|---|---|
-| **Encapsulation** | Invariants enforced in one place | Private fields with a public setter for each |
-| **Abstraction** | Callers depend on *what*, not *how* | Hiding a decision the caller needs (cost, latency, blocking) |
-| **Inheritance** | Reuse of a true, stable is-a contract | Inheriting for code reuse; deep hierarchies |
-| **Polymorphism** | Variation without conditionals in callers | One interface with one permanent implementation |
+| **Encapsulation** | Each invariant is enforced in exactly one place, by the object that owns the data. | Making fields private, then adding a public setter for every one of them. |
+| **Abstraction** | Callers depend on *what* an object does, not *how* it does it. | Hiding something the caller needs in order to decide, such as cost, latency, or blocking behavior. |
+| **Inheritance** | Subtypes reuse a true, stable is-a contract from their parent. | Inheriting just to reuse code, or building deep hierarchies. |
+| **Polymorphism** | Behavior varies by type without callers needing `if` or `switch` statements. | Creating an interface that will only ever have one implementation. |
 
 ### Encapsulation: the rule lives with the data
 
@@ -256,10 +256,10 @@ Matching method signatures is the easy part; LSP is about **behavior**. A subtyp
 
 | Rule | Meaning | Violation example |
 |---|---|---|
-| Preconditions | Cannot be **strengthened** | Base accepts any amount; subtype rejects amounts over 1,000 |
-| Postconditions | Cannot be **weakened** | Base guarantees a receipt; subtype returns `null` |
-| Invariants | Must be **preserved** | `Square extends Rectangle` breaks "width and height vary independently" |
-| Exceptions | No **new** failure modes | Base never throws on `refund`; subtype throws `UnsupportedOperationException` |
+| Preconditions | A subtype cannot **strengthen** what it requires from callers. | The base accepts any amount, but the subtype rejects amounts over 1,000. |
+| Postconditions | A subtype cannot **weaken** what it promises to return. | The base guarantees a receipt, but the subtype returns `null`. |
+| Invariants | A subtype must **preserve** every rule the base type keeps true. | `Square extends Rectangle` breaks the rule that width and height can change independently. |
+| Exceptions | A subtype cannot add **new** ways to fail. | The base never throws on `refund`, but the subtype throws `UnsupportedOperationException`. |
 
 The JDK has a famous case: `List.of(...)` returns a list whose `add()` throws. The Javadoc marks `add` as an *optional operation*, which keeps it technically legal and moves the failure from compile time to production. A senior answer names this as a deliberate trade-off (one `List` type instead of a mutable/immutable split), not a model to copy.
 
@@ -277,7 +277,7 @@ final class CreditCard implements Chargeable, Refundable { ... }
 final class GiftCard   implements Chargeable { ... }
 ```
 
-**How to prove it:** write one contract test against the base type and run it against every implementation (§9).
+**How to prove it:** write one contract test against the base type and run it against every implementation (§8).
 
 ### I — Interface Segregation: interfaces shaped by their clients
 
@@ -327,11 +327,11 @@ Interviewers probe two things. **Ownership:** the interface belongs to the high-
 
 SOLID decides where responsibilities go; these three decide **how much** abstraction to build. They pull in opposite directions, and that tension is the point.
 
-| Rule | Guards against | Apply when | Misuse to avoid |
+| Rule | Guards against | Apply it when | Misuse to avoid |
 |---|---|---|---|
-| **DRY** — Don't Repeat Yourself | One rule with several sources of truth | The same *knowledge* is written twice | Merging code that only looks alike |
-| **KISS** — Keep It Simple | Accidental complexity | Complexity buys no required capability | Hiding genuinely complex domain rules |
-| **YAGNI** — You Aren't Gonna Need It | Speculative features and abstractions | No current evidence for the variation | Refusing a cheap, obvious seam |
+| **DRY** — Don't Repeat Yourself | One business rule having several sources of truth that drift apart. | The same *knowledge* (a rule, a rate, a format) is written in more than one place. | Merging code that only looks alike but belongs to different owners. |
+| **KISS** — Keep It Simple | Accidental complexity that the requirements never asked for. | A layer or mechanism does not buy any capability you actually need. | Oversimplifying domain rules that are genuinely complex, such as tax or pricing. |
+| **YAGNI** — You Aren't Gonna Need It | Building features and abstractions for a future that may never come. | There is no current evidence that the variation will happen. | Refusing a cheap, obvious seam, such as an interface in front of a third-party API. |
 
 ### DRY is about knowledge, not text
 
@@ -366,12 +366,12 @@ One `PaymentGateway` interface with a single `StripeGateway` behind it costs one
 
 | Signal | Prefer | Avoid |
 |---|---|---|
-| Names | `ReservationExpiryPolicy`, `isEligibleForRefund()` | `Manager`, `Helper`, `Util`, `data`, `flag` |
-| Functions | One level of abstraction; guard clauses first | 80-line methods mixing rules and I/O |
-| Arguments | Value objects (`Money`, `OrderId`) | Boolean flag parameters; primitive obsession |
-| State | Immutable by default: `final` fields, records | A setter for everything; shared mutable state |
-| Errors | Typed results or specific exceptions | `catch (Exception e) {}`; `null` meaning "not found" |
-| Comments | Why a decision was made | What the next line does |
+| Names | Names that state intent, such as `ReservationExpiryPolicy` or `isEligibleForRefund()`. | Vague names such as `Manager`, `Helper`, `Util`, `data`, or `flag`. |
+| Functions | Short functions at one level of abstraction, with guard clauses first. | 80-line methods that mix business rules with I/O. |
+| Arguments | Value objects such as `Money` and `OrderId`. | Boolean flag parameters, and raw strings or numbers for domain concepts (primitive obsession). |
+| State | Immutable objects by default, using `final` fields and records. | A setter for every field, or mutable state shared between objects. |
+| Errors | Typed results or specific exceptions that callers can act on. | Empty `catch (Exception e) {}` blocks, or returning `null` to mean "not found". |
+| Comments | Comments that explain *why* a decision was made. | Comments that repeat *what* the next line does. |
 
 ---
 
@@ -390,21 +390,21 @@ Two worked instances:
 
 | Question | Prefer composition | Consider inheritance |
 |---|---|---|
-| Relationship | Object **has** a replaceable capability | Subtype **is** the base type, in every behavior |
-| Variation | Changes independently or at runtime | Hierarchy is stable and shallow (two levels at most) |
-| Reuse goal | Reuse a capability | Share a true invariant and contract |
-| Main risk | More objects and wiring | Fragile base class; subtypes coupled to parent internals |
-| How to test | Swap in a fake | Run base contract tests against every subtype |
+| Relationship | The object **has** a capability that could be replaced. | The subtype truly **is** the base type, in every behavior. |
+| Variation | The behavior changes independently, or needs to change at runtime. | The hierarchy is stable and shallow, two levels at most. |
+| Reuse goal | You want to reuse a capability across unrelated classes. | You want subtypes to share a true invariant and contract. |
+| Main risk | More objects to create and wire together. | A fragile base class: every subtype depends on the parent's internals. |
+| How to test | Swap in a fake implementation of the capability. | Run the base type's contract tests against every subtype. |
 
 ### Add an abstraction?
 
 | Evidence | Decision | Optimizes for | Cost |
 |---|---|---|---|
-| Two or more real implementations | Extract a contract | Substitution and OCP | Indirection |
-| One implementation, but it is I/O or a third party | Narrow port (interface) | Testability and isolation | One extra type |
-| One stable, in-process implementation | Keep it concrete | Readability | Extract later if change arrives |
-| Variants change weekly | Strategy or rule list | Local extension | Discovery and ordering rules |
-| Only a hypothetical future | Defer | YAGNI | Refactor when evidence appears |
+| You already have two or more real implementations. | Extract a shared interface (a contract). | Substitution, and adding new cases without editing old code. | One more level of indirection to read through. |
+| There is one implementation, but it does I/O or wraps a third party. | Put a narrow interface (a port) in front of it. | Testing with fakes, and isolating your code from the vendor. | One extra type to maintain. |
+| There is one stable implementation that runs in-process. | Keep it as a concrete class. | Readability. | Extracting an interface later, if change actually arrives. |
+| Variants change every week. | Use a strategy, or an ordered list of rules. | Adding a variant without touching existing ones. | Rules for how variants are discovered and ordered. |
+| The only reason is a hypothetical future. | Defer the abstraction. | YAGNI: no code written for guesses. | A refactor when real evidence appears. |
 
 ---
 
@@ -412,44 +412,24 @@ Two worked instances:
 
 ![Design smells connected to expensive change](assets/topic-02/design_smells.png)
 
-| Smell | How you spot it in review | Principle at stake | Refactoring move | Risk of the fix |
-|---|---|---|---|---|
-| God class | Edited in most PRs; name ends in `Manager` | SRP | Extract a class per actor | Splitting one invariant across classes |
-| Shotgun surgery | One rule change touches five or more files | DRY | Move the knowledge to one owner | Over-merging coincidental code |
-| Type switch | The same `switch` or `instanceof` in several places | OCP | Replace conditional with polymorphism | An interface for a closed, stable set |
-| Refused bequest | Overrides that throw or no-op | LSP | Split the hierarchy; compose capabilities | Many small types to wire |
-| Fat interface | Implementers stub methods | ISP | Role interfaces per client | Interface confetti |
-| Concrete coupling | `new` of infrastructure in business logic | DIP | Inject a policy-owned port | An interface that mirrors the driver |
-| Feature envy | A method uses another class's getters more than its own fields | Encapsulation | Move the method to the data's owner | Moving behavior into the wrong class |
-| Primitive obsession | `String email` and `long amountInCents` everywhere | Encapsulation | Introduce value objects | Wrapping values that have no rules |
-| Service locator | Dependencies fetched from a global registry mid-method | DIP | Constructor injection: the signature tells the truth | Constructors with many parameters (often an SRP hint) |
+| Smell (principle at stake) | How you spot it in review | How to fix it | What the fix can break |
+|---|---|---|---|
+| **God class** (SRP) | The class is edited in most pull requests, and its name often ends in `Manager`. | Extract one class per actor that asks for changes. | Splitting one invariant across several classes, so nobody owns it. |
+| **Shotgun surgery** (DRY) | Changing one rule means touching five or more files. | Move that knowledge into a single owner. | Merging code that was only coincidentally similar. |
+| **Type switch** (OCP) | The same `switch` or `instanceof` check appears in several places. | Replace the conditional with polymorphism. | Adding an interface for a closed, stable set that a sealed switch would handle better. |
+| **Refused bequest** (LSP) | Subclasses override inherited methods to throw or do nothing. | Split the hierarchy, and compose capabilities instead. | Many small types that all need wiring. |
+| **Fat interface** (ISP) | Implementations stub out methods they cannot support. | Split it into role interfaces, one per kind of client. | Interface confetti: dozens of one-method interfaces. |
+| **Concrete coupling** (DIP) | Business logic creates infrastructure directly with `new`. | Inject an interface owned by the business logic. | An interface that just mirrors the database driver, which is indirection, not inversion. |
+| **Feature envy** (Encapsulation) | A method uses another class's getters more than its own fields. | Move the method to the class that owns the data. | Moving behavior into the wrong class. |
+| **Primitive obsession** (Encapsulation) | Raw types like `String email` and `long amountInCents` appear everywhere. | Introduce value objects that validate themselves. | Wrapping values that have no rules, which adds types for nothing. |
+| **Service locator** (DIP) | Methods fetch dependencies from a global registry halfway through. | Use constructor injection, so the signature shows every dependency. | Constructors with many parameters, which often hints at an SRP problem. |
 
 !!! warning "Refactor from evidence, not taste"
     Name the change that hurt (or will), measure its blast radius, and make the smallest boundary move that contains it. "This could be cleaner" is not a reason. "This rule changed three times and we missed a copy twice" is.
 
 ---
 
-## 8. Finding the change hotspot
-
-"Make it extensible" is only useful with a method for finding *where*:
-
-```text
-1. List the likely changes: ask the interviewer, or read them off the requirements.
-     new variant | new rule | swapped vendor | new client | new failure mode
-2. For each change, trace the classes you would EDIT (not add).
-3. Blast radius = classes edited + tests that must change.
-4. The change with the LARGEST radius is your deep dive.
-5. Say it out loud: "Adding a channel today edits N classes.
-   With a Sender seam, it edits none and adds one."
-```
-
-Applied to the notification service: adding a channel, tuning retries, and adding quiet hours are all likely. In the naive design (one `NotificationService` with a channel `switch`), adding a channel has the largest radius: the switch, the validation, the retry code that special-cases SMS, and all their tests. That seam is worth designing first. Retry timing is a constant until proven otherwise.
-
-**Universal change killers.** Look for these in any class diagram or code sample: a **type switch repeated in several places**, **static mutable state**, **`new` of infrastructure inside policy**, **boolean flag parameters**, and **inheritance deeper than two levels**.
-
----
-
-## 9. Worked example: notification service
+## 8. Worked example: notification service
 
 **Prompt:** "Design the classes for a service that notifies users about order events by email, SMS, or push."
 
@@ -457,11 +437,11 @@ Applied to the notification service: adding a channel, tuning retries, and addin
 
 | Question | Why it matters | Assumed answer |
 |---|---|---|
-| Which channels now, and which next? | Decides whether a channel seam is evidence-based | Email, SMS, push now; WhatsApp planned |
-| Can users opt out per channel or set quiet hours? | Whether preferences need their own policy | Yes, both |
-| What happens when a provider fails? | Retry semantics shape the `Sender` contract | Retry transient failures; stop on permanent ones |
-| Must each notification arrive at most once? | Idempotency key in the model | Yes: no duplicate texts on retry |
-| Synchronous to the caller, or queued? | Where retries and latency live | Called by a queue worker; may take seconds |
+| Which channels are needed now, and which are coming next? | It decides whether a channel extension point is backed by evidence. | Email, SMS, and push now; WhatsApp is planned. |
+| Can users opt out per channel, or set quiet hours? | It decides whether preferences need their own policy class. | Yes, both. |
+| What should happen when a provider fails? | Retry rules shape the `Sender` contract. | Retry temporary failures, and stop on permanent ones. |
+| Must each notification be delivered at most once? | It means the model needs an idempotency key. | Yes: users must never get duplicate texts on a retry. |
+| Is sending synchronous to the caller, or queued? | It decides where retries and latency are handled. | A queue worker calls the service, so a send may take a few seconds. |
 
 **Scope.** *In:* route an order event to each channel the user allows, render the content, deliver it, retry transient failures, and report a per-channel outcome. *Out:* the queue itself, scheduling, analytics, and template authoring.
 
@@ -469,12 +449,12 @@ Applied to the notification service: adding a channel, tuning retries, and addin
 
 | Class | Responsibility | Changes when | Principle at work |
 |---|---|---|---|
-| `Notification` (record) | A valid message: recipient, channel, body, idempotency key | Message fields change | Encapsulation |
-| `Sender` (interface) | Deliver one notification and classify the outcome | Rarely: it is the stable contract | ISP, DIP |
-| `EmailSender`, `SmsSender`, `PushSender` | Speak one provider's API | That provider changes | OCP, SRP |
-| `PreferencePolicy` | Decide which channels a user allows right now | Product rules change | SRP |
-| `RetryPolicy` | Decide whether and when to retry | Reliability tuning | Composition |
-| `NotificationService` | Orchestrate: channels → render → send → collect | The workflow changes | SRP (coordination only) |
+| `Notification` (record) | Holds a valid message: recipient, channel, body, and idempotency key. | The message fields change. | Encapsulation: it validates itself on construction. |
+| `Sender` (interface) | Delivers one notification and classifies the outcome. | Rarely: it is the stable contract everything depends on. | ISP and DIP: it is small, and owned by the policy side. |
+| `EmailSender`, `SmsSender`, `PushSender` | Each one speaks a single provider's API. | That provider's API or terms change. | OCP and SRP: a new provider is a new class. |
+| `PreferencePolicy` | Decides which channels a user allows right now. | Product rules about opt-outs or quiet hours change. | SRP: preference rules live in one place. |
+| `RetryPolicy` | Decides whether to retry a failed send, and when. | Reliability settings are tuned. | Composition: it is plugged into the service, not inherited. |
+| `NotificationService` | Orchestrates the flow: pick channels, render, send, and collect results. | The workflow itself changes. | SRP: it coordinates, but holds no channel or retry logic. |
 
 ### Contracts
 
@@ -530,11 +510,11 @@ Three details worth saying out loud. Building the map with `toMap` throws at sta
 
 | Change request | What you edit | What you add | What stays untouched |
 |---|---|---|---|
-| Add WhatsApp | One wiring line | `WhatsAppSender` | Service, policies, other adapters |
-| Quiet hours 22:00–07:00 | `PreferencePolicy` | Its tests | Service and all adapters |
-| Swap SMS provider | Wiring | `TwilioSmsSender` | Everything else |
-| Exponential backoff | `RetryPolicy` | — | Everything else |
-| Daily digest instead of instant sends | `NotificationService` | `DigestScheduler` | Adapters and their contract |
+| Add WhatsApp as a channel. | One wiring line that registers the new sender. | A `WhatsAppSender` class. | The service, both policies, and every other adapter. |
+| Add quiet hours from 22:00 to 07:00. | `PreferencePolicy`. | Tests for the new rule. | The service and all the adapters. |
+| Switch to a different SMS provider. | The wiring that picks the SMS sender. | A `TwilioSmsSender` class. | Everything else. |
+| Use exponential backoff for retries. | `RetryPolicy`. | Nothing. | Everything else. |
+| Send a daily digest instead of instant messages. | `NotificationService`, because the workflow itself changes. | A `DigestScheduler` class. | The adapters and their contract. |
 
 The last row matters. A digest is a **workflow** change, and the orchestrator is supposed to change for workflow reasons. OCP protects the axes you anticipated, not every possible change, and saying so is a stronger answer than claiming the design is closed to everything.
 
@@ -562,20 +542,7 @@ Every new adapter inherits the whole suite. This is where LSP stops being a slog
 
 ---
 
-## 10. Senior / Staff / Principal signals
-
-The same question, answered at three levels:
-
-| Dimension | Senior answer | Staff answer | Principal answer |
-|---|---|---|---|
-| Requirements | Asks about use cases | Asks which changes are likely, and designs seams for those only | Asks who owns each part, and draws boundaries around teams |
-| Modeling | Clean classes with clear names | Encapsulates invariants in value objects | Identifies the few contracts that must stay stable across services |
-| SOLID | Recites and applies the principles | Explains each through a concrete change and its cost | Knows when to break one, and says what that saves |
-| Extensibility | Adds interfaces | Adds interfaces only where variation is proven | Plans the migration from today's code, not a greenfield ideal |
-| Correctness | Writes unit tests | Writes contract tests that every implementation runs | Defines compatibility and versioning rules for plugin ecosystems |
-| Trade-offs | Lists pros and cons | Picks one and defends the cost | Names the signal that would reverse the decision |
-
-### Anti-patterns that cost points
+## 9. Anti-patterns that cost points
 
 - Drawing a 20-class diagram before writing one line of the core flow.
 - An interface for every class "for testability", each with exactly one implementation.
@@ -587,41 +554,7 @@ The same question, answered at three levels:
 
 ---
 
-## 11. Practice questions & drills
-
-### Code-review drills
-
-Spot the smell, name the principle, and propose the smallest fix before opening the answer.
-
-??? question "A `ReportService` loads orders from SQL, computes totals, renders a PDF, and emails it. Which change hurts most, and what do you split first?"
-    Four actors: data (schema), finance (totals), design (PDF), and comms (email). Finance rules change most and are the riskiest to break, so extract `RevenueCalculator` first and test it without SQL or PDF. Then put loading behind an `OrderSource` port. **Principle:** SRP, then DIP. Don't split all four at once without a reason.
-
-??? question "`ReadOnlyAccount extends Account` and overrides `withdraw()` to throw. What is wrong, and what replaces it?"
-    It strengthens a precondition (no withdrawals at all) on a type whose callers expect withdrawal to work: an LSP violation that compiles and fails in production. Model the capability (`Withdrawable` only on accounts that allow it), or make "frozen" a state the account enforces with a documented error. **Principle:** LSP. Prefer modeling a capability or state over a subtype that lies.
-
-??? question "A `switch` over `STANDARD`, `EXPRESS`, and `SAME_DAY` appears in pricing, ETA, and label printing. Polymorphism or sealed switch?"
-    Ask which axis grows. If new delivery types arrive often, move pricing, ETA, and labels behind a `DeliveryOption` interface so a new type is one class. If the set is fixed but new *operations* keep appearing (insurance, carbon cost), a sealed type with exhaustive switches keeps each operation in one place, and the compiler catches missing cases. **Principle:** OCP, decided by the expression problem.
-
-??? question "`OrderService` calls `new KafkaProducer<>(props)` in its constructor, so unit tests need a running broker. Fix it."
-    Define an `OrderEvents` port in the order package (`void orderPlaced(Order order)`), inject it, and implement `KafkaOrderEvents` in the infrastructure package. Tests pass a recording fake. Don't name the port `MessageProducer` with Kafka-shaped methods: that is indirection, not inversion. **Principle:** DIP with a policy-owned interface.
-
-??? question "Two teams' `validate()` methods are identical today. A teammate wants one shared `Validator`. Do you agree?"
-    Only if it is the same knowledge with one owner. Signup validation (product) and KYC validation (compliance) change for different actors and will diverge; merging them produces a flag-driven method. Keep both, and revisit on a third copy or if they turn out to encode the same regulation. **Principle:** DRY is about knowledge; SRP decides ownership.
-
-### Discussion questions
-
-Practice answering these out loud using the §6 template.
-
-1. When is inheritance the right choice in modern Java, and how do you keep the hierarchy safe?
-2. Your team adds an interface for every service "for mocking". What do you keep, and what do you collapse?
-3. How would you introduce a `Sender` seam into a 3,000-line legacy `NotificationManager` without a big-bang rewrite?
-4. Where does validation belong: the controller, the service, or the domain object? Defend one answer.
-5. Exceptions or result types for expected failures? Where would you draw the line in the notification example?
-6. A principal engineer asks, "Why not put every channel behind its own microservice?" Argue both sides.
-
----
-
-## 12. Final revision checklist
+## 10. Final revision checklist
 
 ```text
 [ ] CLARIFY use cases, scope, and the 1–2 changes most likely to come
