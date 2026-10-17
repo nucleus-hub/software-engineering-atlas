@@ -57,3 +57,6 @@ markdown_extensions:
 extra_css:
   - _support/stylesheets/layout.css
   - _support/stylesheets/theme.css
+
+extra_javascript:
+  - _support/javascripts/toc-toggle.js

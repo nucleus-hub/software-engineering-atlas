@@ -329,3 +329,35 @@
     border-right: 1px solid var(--atlas-border);
   }
 }
+
+/* Collapse button (structure in layout.css). Icon contrast >= 6:1. */
+.atlas-toc-toggle {
+  color: var(--atlas-accent);
+  background: var(--atlas-surface);
+  border: 1px solid var(--atlas-border-strong);
+  border-radius: 50%;
+  box-shadow: var(--atlas-shadow);
+  transition: color 0.15s, background-color 0.15s, border-color 0.15s;
+}
+
+.atlas-toc-toggle svg {
+  width: 1rem;
+  height: 1rem;
+  fill: currentcolor;
+  transition: transform 0.25s ease;
+}
+
+.atlas-toc-toggle:hover {
+  color: var(--atlas-surface);
+  background: var(--atlas-accent);
+  border-color: var(--atlas-accent);
+}
+
+.atlas-toc-toggle:focus-visible {
+  outline: 2px solid var(--atlas-accent);
+  outline-offset: 2px;
+}
+
+[data-atlas-toc="collapsed"] .atlas-toc-toggle svg {
+  transform: rotate(180deg);
+}

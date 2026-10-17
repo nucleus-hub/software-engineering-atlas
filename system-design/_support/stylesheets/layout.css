@@ -2,6 +2,9 @@
 :root {
   --atlas-drawer-width: 12.1rem; /* Material's sidebar width */
   --atlas-page-width: 80rem;     /* Material default: 61rem */
+  --atlas-header-height: 2.4rem; /* Material's header; the TOC sticks below it */
+  --atlas-toc-rail-width: 1rem;  /* what is left of the TOC when collapsed */
+  --atlas-toc-toggle-size: 1.5rem;
 }
 
 /* ------------------------------------------------------------------
@@ -66,5 +69,61 @@
     height: 100%;
     opacity: 1;
     transition: width 0ms, height 0ms, opacity 0.25s;
+  }
+}
+
+/* ------------------------------------------------------------------
+   Collapsible left TOC. toc-toggle.js adds the button and sets
+   html[data-atlas-toc="collapsed"]; the TOC only shows from 60em up.
+   ------------------------------------------------------------------ */
+.atlas-toc-toggle {
+  display: none;
+}
+
+@media screen and (min-width: 60em) {
+  .md-sidebar--secondary {
+    transition: width 0.25s ease;
+  }
+
+  .md-sidebar--secondary .md-sidebar__scrollwrap {
+    transition: opacity 0.2s ease, visibility 0.2s;
+  }
+
+  [data-atlas-toc="collapsed"] .md-sidebar--secondary {
+    width: var(--atlas-toc-rail-width);
+  }
+
+  /* visibility (not just opacity) also removes the links from tab order. */
+  [data-atlas-toc="collapsed"] .md-sidebar--secondary .md-sidebar__scrollwrap {
+    visibility: hidden;
+    opacity: 0;
+  }
+
+  /* Centre on the visible TOC panel: the sidebar's 1.2rem top padding plus
+     half the panel height, which toc-toggle.js mirrors from Material (it
+     changes as the page scrolls). The fallback assumes a stuck sidebar. */
+  .atlas-toc-toggle {
+    position: absolute;
+    top: calc(
+      1.2rem +
+      (var(--atlas-toc-panel-height, calc(100vh - 2 * var(--atlas-header-height)))
+        - var(--atlas-toc-toggle-size)) / 2
+    );
+    right: -0.55rem; /* straddles the TOC divider line */
+    z-index: 2;
+    display: grid;
+    place-items: center;
+    width: var(--atlas-toc-toggle-size);
+    height: var(--atlas-toc-toggle-size);
+    padding: 0;
+    cursor: pointer;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-sidebar--secondary,
+  .md-sidebar--secondary .md-sidebar__scrollwrap,
+  .atlas-toc-toggle svg {
+    transition: none;
   }
 }
