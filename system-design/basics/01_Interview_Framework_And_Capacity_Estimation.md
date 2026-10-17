@@ -144,7 +144,7 @@ A question is only useful if the answer changes something. Each one below states
 
 ### The minimal contract
 
-The Contract phase is 11% of the clock and is where many candidates wave their hands. Keep it small: the fewest endpoints, entities, and access patterns that cover the use cases. Using the URL shortener from §9:
+The Contract phase is 11% of the clock and is where many candidates wave their hands. Keep it small: the fewest endpoints, entities, and access patterns that cover the use cases. Using the URL shortener from §8:
 
 ```text
 POST /links      {url, alias?, ttl?}   ->  201 {code, short_url}
@@ -169,77 +169,57 @@ Also state **idempotency** for every write: can the client safely retry `POST /l
 
 ## 4. Capacity estimation toolkit
 
+You do not need memorized benchmark tables. You need a few shortcuts, one method, and the habit of tying every number to a decision.
+
 ### Unit sanity
 
-Unit errors cause more whiteboard embarrassment than bad assumptions do. Memorize these:
+Most estimation mistakes are unit mistakes, not bad assumptions. Three shortcuts cover almost every conversion:
 
-```text
-86,400 s/day      ≈ 10^5     "per day -> per second": divide by 100k, then adjust up ~15%
-2.6M  s/month     ≈ 2.5 × 10^6
-31.5M s/year      ≈ 3 × 10^7
-1 KB = 10^3 B  |  1 MB = 10^6  |  1 GB = 10^9  |  1 TB = 10^12  |  1 PB = 10^15
-1 million/day ≈ 12/s          1 billion/day ≈ 12,000/s
-```
+| Shortcut | How to use it |
+|---|---|
+| **1 day ≈ 100,000 seconds** | Per day → per second: divide by 100,000. So 1 million/day ≈ 12/s, and 1 billion/day ≈ 12,000/s |
+| **1 month ≈ 2.6 million seconds** | Per month → per second: divide by 2.6 million (30 days × 86,400 s) |
+| **Each size unit is 1,000× the last** | KB → MB → GB → TB → PB |
+
+Round freely. You want the right order of magnitude, not the exact figure.
 
 ### Choosing a peak factor
 
-The two examples in this doc use 3× and 10×. That difference is deliberate, not sloppy:
+Systems break at the peak, not the average. Multiply average traffic by a **peak factor** that matches how users arrive:
 
-| Traffic shape | Typical peak ÷ average |
+| How traffic arrives | Peak factor |
 |---|---|
-| Global consumer social, spread across time zones | 2–3× |
-| Regional or business-hours workload | 3–5× |
-| Event-driven: flash sale, live sports, ticket drop, push campaign | 10–100× |
+| Spread across time zones (global consumer apps) | 2–3× |
+| Concentrated in business or local hours | 3–5× |
+| All at once (flash sales, live events, push campaigns) | 10× or more |
 
-Push notifications and marketing emails are **self-inflicted thundering herds**: you chose the second everyone arrives. Stagger the sends, or budget for the spike.
+This is why the examples here use 3× for steady traffic and 10× for viral links. When *you* trigger the spike, with a push notification or a marketing email, you can also soften it by staggering the sends.
 
-### Reference numbers to sanity-check against
+### Sanity-check by order of magnitude
 
-Computing "8,000 QPS" is useless if you do not know whether that means one server or a hundred. These are **order-of-magnitude** figures. Real numbers depend on hardware, payload, and query shape, so say "roughly" out loud.
+A number only helps if you know what it means for the design. Instead of memorizing benchmarks, ask four questions:
 
-| Resource | Rough single-node capability |
+| Question | Rule of thumb |
 |---|---|
-| Stateless app server, simple request | ~10k–50k QPS |
-| Postgres/MySQL primary, simple OLTP writes | ~1k–10k writes/s |
-| Redis, single instance | ~100k ops/s |
-| Kafka, single partition | ~10 MB/s (scale via partitions) |
-| 1 Gbps NIC | ~125 MB/s |
-| Commodity server RAM | 64–512 GB, which bounds what fits in cache |
+| Can stateless app servers handle the load? | Almost always: add more instances |
+| Can one database primary take the writes? | Writes are usually the first ceiling; start worrying in the low thousands per second |
+| Does the hot data fit in one machine's memory? | Tens to hundreds of GB fit; beyond that, shard the cache |
+| Are users far away? | Distance adds 100+ ms that no server fix removes; only moving data closer (CDN, more regions) helps |
 
-| Latency | Rough cost |
-|---|---|
-| L1 cache / main memory read | ~1 ns / ~100 ns |
-| SSD random read | ~100 µs |
-| Network round trip, same AZ | ~0.5 ms |
-| HDD seek | ~10 ms |
-| Cross-continent round trip | ~150 ms: physics, and no cache on the server fixes it |
-
-That last line wins the "why a CDN / why multi-region?" conversation: when users are far away, only moving bytes closer helps.
+Say "roughly" out loud. The interviewer is grading the reasoning, not the figure.
 
 ### Working set and cache hit ratio
 
-The **working set** is the data actually touched often enough to be worth keeping in memory. It is usually the most decision-relevant estimate on the page, because it decides whether "add a cache" means one node or a cluster:
+Two ideas decide most caching conversations:
 
-```text
-Working set = hot records × record size
-  1.2B links total (URL shortener, §9); assume 20% get 80% of traffic
-  240M × 700 B  ≈ 168 GB   -> more than one commodity node's RAM
-  -> shard the cache, or cache only the hottest 1%: 12M × 700 B ≈ 8.4 GB
-```
+- **Working set:** the data accessed often enough to be worth keeping in memory (hot records × record size). It decides whether a cache is one node or a cluster. Access is usually skewed, with a small share of records getting most of the traffic, so you rarely need to cache everything.
+- **Hit ratio:** the share of reads the cache answers. Load on the database = total load × (1 − hit ratio). Dropping from 99% to 95% looks small, but it sends **5× more traffic** to the database.
 
-The **hit ratio** then decides how much load survives to the origin:
-
-```text
-Origin QPS = QPS × (1 - hit ratio)
-  8,000 × (1 - 0.95) = 400 QPS   -> probably wants read replicas
-  8,000 × (1 - 0.99) =  80 QPS   -> one modest database, done
-```
-
-**A 4-point change in hit ratio changes the entire data tier.** That is why hit ratio is an SLI worth alerting on, and why a cold cache after a restart is a real incident rather than a curiosity.
+This is why hit ratio is worth alerting on, and why a cold cache after a restart is a real incident.
 
 ### Storage reality check
 
-Payload math undercounts. Indexes, metadata, and storage-engine overhead typically put the real footprint at **1.5–3×** the raw payload. Add a line saying so and you gain credibility for free.
+Raw payload math undercounts. Indexes, metadata, and storage-engine overhead make the real footprint **1.5–3×** the raw payload, before replication. Saying so earns credibility for free.
 
 ### Minimum capacity worksheet
 
@@ -262,13 +242,13 @@ Payload math undercounts. Indexes, metadata, and storage-engine overhead typical
 
 ### The nines
 
-| Availability | Downtime per year | Typical use |
-|---:|---:|---|
-| 99% | 3.65 days | batch / internal tooling |
-| 99.9% | 8.77 hours | typical internal service |
-| 99.95% | 4.38 hours | |
-| 99.99% | 52.6 minutes | typical customer-facing SLO |
-| 99.999% | 5.26 minutes | rarely justified; usually aspirational |
+| Level | Availability | Downtime per year | Typical use |
+|---|---:|---:|---|
+| **Two nines** | 99% | 3.65 days | Batch jobs, internal tooling |
+| **Three nines** | 99.9% | 8.77 hours | Typical internal service |
+| **Three and a half nines** | 99.95% | 4.38 hours | Common cloud-provider SLA |
+| **Four nines** | 99.99% | 52.6 minutes | Typical customer-facing SLO |
+| **Five nines** | 99.999% | 5.26 minutes | Rarely justified; usually aspirational |
 
 Each extra nine costs roughly an order of magnitude more engineering: redundancy, automation, testing, on-call. Ask what the business actually loses per minute of downtime before promising one.
 
@@ -317,9 +297,9 @@ This block reframes "just add another microservice call" permanently. Mitigation
 
 | Term | What it is | Example |
 |---|---|---|
-| **SLI** | The measurement | % of redirects returning 3xx in < 100 ms |
-| **SLO** | The target for that measurement | 99.9% over a rolling 30 days |
-| **Error budget** | 100% − SLO: the failure you are *allowed* | 0.1% ≈ 43 min/month of "bad" |
+| **SLI** (Service Level Indicator) | A measured number that shows how the service behaves from the user's point of view, usually the percentage of requests that were good | % of redirects returning 3xx in under 100 ms |
+| **SLO** (Service Level Objective) | The target you set for an SLI over a time window: the line between "reliable enough" and "needs work" | 99.9% of redirects good, over a rolling 30 days |
+| **Error budget** | The amount of failure the SLO still allows (100% − SLO). Spend it on releases and experiments; when it runs out, reliability work comes first | 0.1% ≈ 43 minutes of bad redirects per month |
 
 The error budget **turns reliability from an argument into arithmetic**. Budget left means ship faster; budget burned means freeze risky launches and fix reliability. Alert on *burn rate* (how fast the budget is being consumed), not on single blips.
 
@@ -336,20 +316,20 @@ Two worked instances:
 
 > Given **8,000 peak redirects/s** and a **100 ms p99**, choose **cache-aside** over reading the store directly because it cuts origin load **~100×**. It costs **staleness bounded by TTL and stampede risk on a cold start**. Validate with **hit ratio and origin QPS**. Evolve to an **edge/CDN tier** when one hot key exceeds a single cache shard.
 
-> Given **~2.5 TB over five years** and **80 writes/s**, choose **one replicated database** over **sharding** because it keeps **transactions, uniqueness checks, and operations simple**. It costs **a vertical-scaling ceiling**. Validate with **disk growth and primary CPU**. Evolve when **write QPS or data size approaches single-primary limits** (§4 reference numbers).
+> Given **~2.5 TB over five years** and **80 writes/s**, choose **one replicated database** over **sharding** because it keeps **transactions, uniqueness checks, and operations simple**. It costs **a vertical-scaling ceiling**. Validate with **disk growth and primary CPU**. Evolve when **write QPS or data size approaches single-primary limits** (§4 sanity checks).
 
 ### Common evolution choices
 
-| Decision | Simple starting point | Scale-oriented option | Evolution trigger |
+| Decision | Simple starting point | Scale-oriented option | When to evolve |
 |---|---|---|---|
-| Compute | Vertical scaling: one bigger box, simplest to build and debug | Stateless horizontal scaling behind a load balancer; no host is special | CPU/memory saturation, or an availability target that requires surviving the loss of one instance |
-| Data | One relational database: single writer, strong consistency, easy joins | Read replicas, partitioning/sharding, or a specialized store matched to the access pattern | Write QPS, data size, or an access pattern the relational model can no longer serve efficiently |
-| Reads | Database reads on every request: no extra moving parts, always fresh | Cache, CDN, or read replicas to absorb reads away from the primary | Read latency exceeds target, or read load threatens the primary's ability to serve writes |
-| Work | Synchronous, in-request processing | Queue plus background workers, decoupling slow or optional work | Work is slow, not needed for the response, or fans out to many downstream calls |
-| Search | `LIKE '%term%'` on the primary | Inverted index (Elasticsearch/OpenSearch) fed by change events | Full scans hurt the primary, or relevance ranking/typo tolerance is required |
-| Analytics | Ad-hoc queries on the OLTP database | Stream or batch into an OLAP warehouse | Reporting queries compete with production traffic, or need history the OLTP store drops |
-| Traffic control | No limits: trust your clients | Per-client rate limits plus load shedding by priority | One client can starve others, or peaks exceed provisioned capacity |
-| Geography | Single region: lowest cost and complexity | Active-passive, or active-active across regions | An RTO the single region cannot meet, a residency law, or unacceptable latency for distant users |
+| Compute | Run on one larger server (vertical scaling). It is the simplest to build, deploy, and debug. | Run many identical, stateless servers behind a load balancer (horizontal scaling), so any one of them can fail or be replaced. | When one server's CPU or memory is maxed out, or when the availability target requires surviving the loss of a server. |
+| Data | Use one relational database. It gives one source of truth, strong consistency, and easy joins. | Add read replicas, split the data across shards, or move a workload to a store built for its access pattern. | When writes, data volume, or a specific query pattern outgrow what one database can serve efficiently. |
+| Reads | Read from the database on every request. Data is always fresh, and there are no extra components. | Serve repeated reads from a cache, a CDN, or read replicas, so the primary database is protected. | When read latency misses its target, or read traffic starts slowing down writes on the primary. |
+| Work | Do all the work inside the request before responding. It is easy to follow and debug. | Put slow or optional work on a queue, and let background workers process it later. | When work is slow, is not needed for the response, or triggers many downstream calls. |
+| Search | Search with `LIKE '%term%'` queries on the main database. It works for small data with no extra systems. | Maintain a dedicated search index (Elasticsearch/OpenSearch), kept up to date from database change events. | When search queries slow down the main database, or users need relevance ranking and typo tolerance. |
+| Analytics | Run reports directly against the production database. | Copy data, by stream or batch, into a separate analytics warehouse built for large queries. | When reports compete with customer traffic, or need history the production database does not keep. |
+| Traffic control | Accept every request with no limits, trusting clients to behave. | Apply per-client rate limits, and shed low-priority traffic first when overloaded. | When one client can starve the others, or peaks exceed the capacity you provisioned. |
+| Geography | Run in a single region. It has the lowest cost and complexity. | Run in several regions: active-passive for disaster recovery, or active-active to serve users from the nearest region. | When recovery-time goals cannot be met from one region, data-residency laws require it, or distant users see unacceptable latency. |
 
 ### Consistency and availability: choose per operation
 
@@ -416,27 +396,7 @@ For each dependency, state: timeout and retry owner; idempotency and duplicate b
 
 ---
 
-## 8. Bottleneck analysis
-
-"Deep-dive the largest risk" is only useful with a method for finding it:
-
-```text
-1. Walk the critical path hop by hop.
-2. At each hop ask: which resource saturates first?
-     CPU | memory | disk IOPS | network | connections | locks
-3. Compute headroom = known capacity / current peak load   (§4 reference numbers)
-4. The hop with the LEAST headroom is your deep dive.
-5. Say it out loud: "The bottleneck is X at roughly Y× today's peak.
-   When we get there, I would do Z."
-```
-
-Applied to the URL shortener: API hosts are stateless (headroom is just "add more"), and the database sees ~80 QPS at a 99% hit ratio (~50–100× headroom). But a cache is sharded by key, so **one viral code lands on one shard**. If a link goes out in a TV ad or a mass push, that single key can blow far past the planned 8,000/s peak, all on one node, while every other shard is idle. The bottleneck is a hot key, not total QPS, so that is where the deep dive goes.
-
-**Universal scalability killers.** Look for these on any diagram: a **single writer**, a **shared lock**, a **hot key or partition**, an **unbounded queue**, and **synchronous fan-out**.
-
----
-
-## 9. Worked example: URL shortener
+## 8. Worked example: URL shortener
 
 **The prompt you actually get:** "Design a URL shortener." That is the entire brief, one deliberately vague sentence. The first few minutes belong to questions, not boxes and arrows.
 
@@ -481,7 +441,7 @@ Peak creates/s    ≈ 80                     (8 × 10× peak factor)
 Peak redirects/s  ≈ 8 × 100 × 10 ≈ 8,000   (creates × redirect ratio × peak factor)
 Total links       ≈ 20M × 12 × 5 ≈ 1.2B
 Replicated storage ≈ 1.2B × 700 B × 3 ≈ 2.5 TB   (~4-7 TB with index overhead)
-Origin QPS at 99% hit ratio ≈ 80           (§4 working-set math)
+Origin QPS at 99% hit ratio ≈ 80           (§4 hit-ratio formula)
 ```
 
 The headline number is **8,000 peak redirects per second against roughly 80 peak creates per second**, a two-orders-of-magnitude gap. That ratio justifies a cache in front of redirects instead of optimizing the write path; say it explicitly. The storage figure matters differently: even with index overhead, this fits one well-provisioned database, so **sharding would be complexity without a requirement behind it.**
@@ -529,20 +489,7 @@ The one non-negotiable: **never hand back a short code that was not durably save
 
 ---
 
-## 10. Senior / Staff / Principal signals
-
-The same question, answered at three levels:
-
-| Dimension | Senior answer | Staff answer | Principal answer |
-|---|---|---|---|
-| Requirements | Asks good clarifying questions | Pushes back when two requirements conflict | Reframes the problem; questions whether the system should exist in this shape |
-| Scale | Computes QPS correctly | Ties each number to a decision and states the uncertainty | Names the estimate the design is most sensitive to, and de-risks that one |
-| Availability | Says "replicate it" | Composes the dependency chain and removes a hard dependency | Sets the SLO from business impact and spends the error budget deliberately |
-| Failure | Mentions retries and timeouts | Gives a deadline budget and explains retry amplification | Designs the degraded mode as a product decision, with blast radius bounded |
-| Trade-offs | Lists pros and cons | Picks one and defends the cost | Names the metric that reverses the decision, and the migration path |
-| Scope | Builds what was asked | Explicitly de-scopes and says why | Sequences v1 → v2 → v3 around team, cost, and organizational constraints |
-
-### Anti-patterns that cost points
+## 9. Anti-patterns that cost points
 
 - Jumping to microservices before stating a single requirement.
 - Sharding 2 TB of data. (It fits on one machine. You know this now.)
@@ -554,41 +501,7 @@ The same question, answered at three levels:
 
 ---
 
-## 11. Practice questions & drills
-
-### Estimation drills
-
-Answer in under two minutes each, then check which decision the number drives.
-
-??? question "A chat app has 50M DAU sending 40 messages/day at ~200 B each. Peak QPS and daily storage?"
-    50M × 40 = 2B messages/day ÷ 10^5 ≈ 23k/s average; at 3× ≈ 70k writes/s peak. Storage ≈ 2B × 200 B = 400 GB/day raw, ~1.2 TB/day with 3 replicas. **Decision:** write-heavy beyond one primary (§4), so partition by conversation ID from day one; tier old messages to cold storage.
-
-??? question "A service calls 4 hard dependencies, each 99.95%. What can it promise?"
-    0.9995^4 ≈ 99.8%, about 17.5 h/year, before counting its own bugs. It cannot promise 99.95%. **Decision:** make at least two dependencies soft (cache or fallback), or accept a lower SLO.
-
-??? question "A page fans out to 30 services, each with p99 = 50 ms. What fraction of page loads hit at least one slow call?"
-    1 − 0.99^30 ≈ 26%. A quarter of page loads see someone's p99. **Decision:** cut synchronous fan-out, hedge the worst offenders, or make slow sections render asynchronously.
-
-??? question "Your cache hit ratio drops from 99% to 90% at 20k QPS. What happens to the database?"
-    Origin goes from 200 to 2,000 QPS: 10×. A database sized for 200 QPS is now in trouble. **Decision:** alert on hit ratio, protect origin with a concurrency limit and coalescing.
-
-??? question "A request takes 300 ms at 2,000 QPS. How many concurrent connections? What if latency triples?"
-    Little's Law: 2,000 × 0.3 = 600. At 900 ms: 1,800. If the pool is 1,000, requests start queueing, latency rises further, and the system collapses. **Decision:** size pools with headroom, and fail fast before the pool fills.
-
-### Discussion questions
-
-Practice answering these out loud using the §6 template.
-
-1. When would you choose a 301 over a 302 for a URL shortener, and what do you lose?
-2. Your SLO is 99.9% and you have burned 80% of the monthly error budget in week one. What do you do?
-3. Where exactly would you put the retry in a client → gateway → service → database chain, and why there?
-4. A single tenant is responsible for 40% of traffic. How does that change your design?
-5. Your estimate says one database is enough. What would make you wrong, and how would you notice early?
-6. Design the degraded mode for a checkout when the recommendations service is down, and when the payment provider is down. Why are they different?
-
----
-
-## 12. Final revision checklist
+## 10. Final revision checklist
 
 ```text
 [ ] CLARIFY users, use cases, constraints, and out-of-scope items
@@ -596,7 +509,7 @@ Practice answering these out loud using the §6 template.
 [ ] DEFINE minimal APIs/events, entities, and ranked access patterns
 [ ] DRAW read, write, async, and trust-boundary paths
 [ ] COMPOSE availability across hard dependencies; state latency as percentiles
-[ ] FIND the bottleneck hop with the least headroom and deep-dive it
+[ ] FIND the likely bottleneck and deep-dive it
 [ ] EXPLAIN deadlines, retry owner, bounds, degradation, and blast radius
 [ ] DEFEND each choice: optimizes, costs, validates, evolves
 [ ] CLOSE with requirements met, biggest risk, and 10× evolution
