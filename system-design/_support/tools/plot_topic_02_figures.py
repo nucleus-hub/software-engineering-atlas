@@ -1,4 +1,12 @@
-"""Render visual diagrams for Topic 02: OOP principles and clean code."""
+"""Render the diagrams for Topic 02: OOP principles and clean code.
+
+Run from the system-design directory (optionally pass figure names):
+
+    uv run --with matplotlib \
+      --index-url https://pypi.ci.artifacts.walmart.com/artifactory/api/pypi/external-pypi/simple \
+      --allow-insecure-host pypi.ci.artifacts.walmart.com \
+      python _support/tools/plot_topic_02_figures.py
+"""
 
 from __future__ import annotations
 
@@ -6,13 +14,15 @@ import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-from matplotlib.patches import Circle, FancyBboxPatch
+from matplotlib.patches import Circle
 
 from figure_style import (
     AMBER,
+    AMBER_FACE,
     BLUE,
     DPI,
     GREEN,
+    GREEN_FACE,
     GREY,
     INK,
     LINE,
@@ -20,12 +30,13 @@ from figure_style import (
     NAVY,
     PALE,
     RED,
-    SKY,
+    RED_FACE,
     WHITE,
     arrow,
     box,
     canvas,
     heading,
+    stage_row,
 )
 
 ASSETS = Path(__file__).resolve().parent.parent.parent / "basics" / "assets" / "topic-02"
@@ -39,147 +50,197 @@ def save(name: str, fig: plt.Figure) -> None:
     print(f"wrote basics/assets/topic-02/{output.name}")
 
 
-def oop_mental_model() -> plt.Figure:
-    fig, ax = canvas(14, 5.8)
-    heading(ax, "Object Design: Protect State, Expose Behavior, Compose Change",
-            "Good boundaries keep invariants local and variation replaceable")
-    stages = [
-        (4, "Encapsulate", "protect invariants", NAVY, PALE),
-        (23, "Abstract", "small contracts", BLUE, PALE),
-        (42, "Polymorphism", "swap behavior", GREEN, "#E9F7EF"),
-        (61, "Compose", "assemble capabilities", AMBER, "#FFF5DC"),
-        (80, "Evolve", "local change", NAVY, MIST),
+def panel_title(ax: plt.Axes, x: float, text: str, color: str = NAVY) -> None:
+    ax.text(x, 79, text, ha="center", va="center", fontsize=10, fontweight="bold", color=color)
+
+
+def policy_boundary(ax: plt.Axes, x0: float, x1: float, y: float) -> None:
+    """Dashed line separating stable policy (above) from volatile details (below)."""
+    ax.plot([x0, x1], [y, y], color=GREY, linewidth=1.2, linestyle=(0, (5, 4)))
+    ax.text(x0, y + 1.8, "POLICY: stable", ha="left", va="bottom", fontsize=7.5,
+            fontweight="bold", color=NAVY)
+    ax.text(x0, y - 1.8, "DETAILS: volatile", ha="left", va="top", fontsize=7.5,
+            fontweight="bold", color=NAVY)
+
+
+def lld_interview_framework() -> plt.Figure:
+    fig, ax = canvas(14, 5.4)
+    heading(ax, "From Vague Prompt to Extensible Design",
+            "Each stage leaves an artifact the interviewer can see and challenge")
+    steps = [
+        ("01", "Clarify", "use cases + scope"),
+        ("02", "Model", "entities + roles"),
+        ("03", "Contract", "interfaces + rules"),
+        ("04", "Relate", "class diagram"),
+        ("05", "Code", "core flow"),
+        ("06", "Extend", "change + tests"),
     ]
-    for index, (x, title, subtitle, color, face) in enumerate(stages):
-        box(ax, x, 43, 15, 23, title, subtitle, face=face, edge=color,
-            title_color=color)
-        ax.add_patch(Circle((x + 7.5, 73), 3, facecolor=color, edgecolor=color))
-        ax.text(x + 7.5, 73, str(index + 1), ha="center", va="center",
-                fontsize=8, fontweight="bold", color=WHITE)
-        if index < len(stages) - 1:
-            arrow(ax, (x + 15.5, 54.5), (stages[index + 1][0] - 0.5, 54.5),
-                  color=GREY)
-    ax.text(50, 26, "DESIGN OUTCOME", ha="center", fontsize=8,
-            fontweight="bold", color=GREY)
-    box(ax, 29, 10, 42, 12,
-        "A change affects the smallest reasonable set of classes",
+    stage_row(ax, steps, [4, 20, 36, 52, 68, 84], y=39, width=12, height=24, highlight=(4, 5))
+    ax.text(50, 25, "OUTPUT", ha="center", va="center", fontsize=8, fontweight="bold", color=GREY)
+    box(ax, 21, 10, 58, 11, "A design where the next requirement is a new class, not an edit",
         face=WHITE, edge=NAVY)
     return fig
 
 
-def solid_principles() -> plt.Figure:
-    fig, axes = plt.subplots(1, 5, figsize=(15, 5.2), facecolor=WHITE)
-    fig.suptitle("SOLID: Five Questions About the Shape of Change",
-                 fontsize=19, fontweight="bold", color=NAVY, y=0.98)
-    principles = [
-        ("S", "Single\nResponsibility", "One reason\nto change", NAVY),
-        ("O", "Open / Closed", "Extend without\nediting stable code", BLUE),
-        ("L", "Liskov\nSubstitution", "Subtypes preserve\nexpectations", GREEN),
-        ("I", "Interface\nSegregation", "Depend only on\nwhat you use", AMBER),
-        ("D", "Dependency\nInversion", "Policy depends on\nabstractions", RED),
+def oop_mental_model() -> plt.Figure:
+    fig, ax = canvas(14, 5.4)
+    heading(ax, "Object Design: Protect State, Expose Behavior, Compose Change",
+            "Good boundaries keep invariants local and variation replaceable")
+    stages = [
+        ("1", "Encapsulate", "protect invariants"),
+        ("2", "Abstract", "hide the how"),
+        ("3", "Substitute", "one contract, many impls"),
+        ("4", "Compose", "assemble capabilities"),
+        ("5", "Evolve", "change stays local"),
     ]
-    for ax, (letter, title, prompt, color) in zip(axes, principles):
-        ax.set_xlim(0, 10)
-        ax.set_ylim(0, 10)
-        ax.axis("off")
-        ax.add_patch(FancyBboxPatch((0.6, 0.8), 8.8, 7.8,
-                                   boxstyle="round,pad=0.4,rounding_size=0.5",
-                                   facecolor=PALE, edgecolor=color, linewidth=2))
-        ax.add_patch(Circle((5, 7.3), 1.15, facecolor=color, edgecolor=color))
-        ax.text(5, 7.3, letter, ha="center", va="center", fontsize=18,
-                fontweight="bold", color=WHITE)
-        ax.text(5, 5.0, title, ha="center", va="center", fontsize=10,
-                fontweight="bold", color=NAVY)
-        ax.text(5, 2.5, prompt, ha="center", va="center", fontsize=8.5,
-                color=INK, linespacing=1.4)
-    fig.tight_layout(rect=[0, 0, 1, 0.9])
+    stage_row(ax, stages, [4, 23, 42, 61, 80], y=39, width=15, height=24, highlight=(4,))
+    ax.text(50, 25, "DESIGN OUTCOME", ha="center", va="center", fontsize=8,
+            fontweight="bold", color=GREY)
+    box(ax, 23, 10, 54, 11, "A change affects the smallest reasonable set of classes",
+        face=WHITE, edge=NAVY)
     return fig
 
 
-def clean_code_guardrails() -> plt.Figure:
-    fig, axes = plt.subplots(1, 3, figsize=(14, 5), facecolor=WHITE)
-    fig.suptitle("DRY, KISS, and YAGNI Guard Different Failure Modes",
-                 fontsize=19, fontweight="bold", color=NAVY, y=0.98)
-    cards = [
-        ("DRY", "Knowledge duplicated", "One rule, one source",
-         "Do not merge code that merely looks alike", BLUE),
-        ("KISS", "Accidental complexity", "Simplest clear design",
-         "Simple is not simplistic", GREEN),
-        ("YAGNI", "Speculative capability", "Build proven needs",
-         "Keep an evolution path, not unused machinery", AMBER),
+def coupling_cohesion() -> plt.Figure:
+    fig, ax = canvas(13, 7.6)
+    heading(ax, "Coupling and Cohesion: The Two Dials of Every Boundary",
+            "Things that change together live together; everything else talks through narrow contracts")
+    quadrants = [
+        (14, 45, "Modular", "the goal: a change stays local",
+         "e.g. a Notification that validates itself", GREEN, GREEN_FACE),
+        (55, 45, "Tangled modules", "right pieces, wired too tightly",
+         "e.g. services sharing database tables", AMBER, AMBER_FACE),
+        (14, 9, "Junk drawer", "unrelated code, loosely grouped",
+         "e.g. StringUtils, CommonHelper", AMBER, AMBER_FACE),
+        (55, 9, "Big ball of mud", "every change ripples everywhere",
+         "e.g. an OrderManager that does it all", RED, RED_FACE),
     ]
-    for ax, (name, smell, action, caution, color) in zip(axes, cards):
-        ax.set_xlim(0, 10)
-        ax.set_ylim(0, 10)
-        ax.axis("off")
-        ax.add_patch(FancyBboxPatch((0.5, 0.8), 9, 7.6,
-                                   boxstyle="round,pad=0.5,rounding_size=0.5",
-                                   facecolor=WHITE, edgecolor=color, linewidth=2))
-        ax.text(5, 7.2, name, ha="center", fontsize=18, fontweight="bold",
-                color=color)
-        ax.text(5, 5.6, f"Prevents: {smell}", ha="center", fontsize=9,
+    for x, y, title, subtitle, example, edge, face in quadrants:
+        box(ax, x, y, 38, 31, title, subtitle, face=face, edge=edge)
+        ax.text(x + 19, y + 6.5, example, ha="center", va="center", fontsize=8,
+                color=INK, style="italic")
+    arrow(ax, (14, 3), (93, 3), color=GREY)
+    ax.text(53.5, 0.5, "COUPLING: how far a change here forces change elsewhere  \u2192",
+            ha="center", va="top", fontsize=8.5, fontweight="bold", color=NAVY)
+    arrow(ax, (9, 9), (9, 76), color=GREY)
+    ax.text(6, 42.5, "COHESION: how related the code inside is  \u2192", rotation=90,
+            ha="center", va="center", fontsize=8.5, fontweight="bold", color=NAVY)
+    return fig
+
+
+SOLID = [
+    ("S", "Single Responsibility", "Who asks for\nthis to change?",
+     "God class: unrelated\nedits collide", NAVY, PALE),
+    ("O", "Open / Closed", "Can a new case be\na new class?",
+     "A switch on a type\ncode keeps growing", BLUE, PALE),
+    ("L", "Liskov Substitution", "Can every subtype\nstand in safely?",
+     "Overrides that throw\nor silently no-op", GREEN, GREEN_FACE),
+    ("I", "Interface Segregation", "Does each client\nuse all of it?",
+     "Stubs that throw\nUnsupportedOperation", AMBER, AMBER_FACE),
+    ("D", "Dependency Inversion", "Can the policy run\nwithout infrastructure?",
+     "new MySqlRepo()\ninside business logic", RED, RED_FACE),
+]
+
+
+def solid_principles() -> plt.Figure:
+    fig, ax = canvas(15, 6.6)
+    heading(ax, "SOLID: Five Questions About the Shape of Change",
+            "Ask the question, look for the smell; the principle names the fix")
+    for index, (letter, name, ask, smell, color, face) in enumerate(SOLID):
+        x = 3 + index * 19.2
+        centre_x = x + 8.5
+        box(ax, x, 8, 17, 64, "", face=face, edge=color)
+        ax.add_patch(Circle((centre_x, 79), 3.6, facecolor=color, edgecolor=color))
+        ax.text(centre_x, 79, letter, ha="center", va="center", fontsize=14,
+                fontweight="bold", color=WHITE)
+        ax.text(centre_x, 64, name, ha="center", va="center", fontsize=10.5,
                 fontweight="bold", color=NAVY)
-        ax.text(5, 4.0, action, ha="center", fontsize=10, color=INK)
-        ax.plot([2, 8], [3.1, 3.1], color=LINE, linewidth=1.5)
-        ax.text(5, 2.0, caution, ha="center", va="center", fontsize=8,
-                color=GREY, style="italic", wrap=True)
-    fig.tight_layout(rect=[0, 0, 1, 0.9])
+        ax.plot([x + 3, x + 14], [58, 58], color=LINE, linewidth=1.2)
+        for label, text, top in (("ASK", ask, 51), ("SMELL", smell, 30)):
+            ax.text(centre_x, top, label, ha="center", va="center", fontsize=7.5,
+                    fontweight="bold", color=GREY)
+            ax.text(centre_x, top - 9, text, ha="center", va="center", fontsize=8.8,
+                    color=INK, linespacing=1.45)
+    return fig
+
+
+def dependency_inversion() -> plt.Figure:
+    fig, ax = canvas(14, 6.6)
+    heading(ax, "Dependency Inversion: Flip the Arrow Across the Boundary",
+            "Source dependencies point toward policy; at runtime, calls still reach the database")
+    ax.plot([46, 46], [4, 82], color=LINE, linewidth=1.5)
+    panel_title(ax, 23, "BEFORE: policy depends on detail", RED)
+    panel_title(ax, 73, "AFTER: detail depends on policy's interface", GREEN)
+
+    box(ax, 12, 52, 22, 13, "OrderService", "business rules")
+    box(ax, 12, 20, 22, 13, "MySqlOrderRepo", "infrastructure", face=RED_FACE, edge=RED)
+    arrow(ax, (23, 51.5), (23, 33.5), color=RED)
+    ax.text(24.5, 42.5, "imports + new", ha="left", va="center", fontsize=8, color=RED)
+    ax.text(23, 9, "Untestable without MySQL;\nswapping stores edits the policy",
+            ha="center", va="center", fontsize=8.5, color=RED, linespacing=1.4)
+
+    policy_boundary(ax, 49, 98, 43)
+    box(ax, 50, 52, 20, 13, "OrderService", "business rules")
+    box(ax, 76, 52, 20, 13, "OrderRepository", "interface owned by policy", edge=NAVY)
+    arrow(ax, (70.5, 58.5), (75.5, 58.5), color=NAVY)
+    box(ax, 50, 18, 20, 13, "InMemoryOrderRepo", "test fake", face=WHITE)
+    box(ax, 76, 18, 20, 13, "MySqlOrderRepo", "production", face=GREEN_FACE, edge=GREEN)
+    arrow(ax, (86, 31.5), (86, 51.5), color=GREEN, dashed=True)
+    arrow(ax, (60, 31.5), (80, 51.5), color=BLUE, dashed=True)
+    ax.text(73, 7, "Both arrows cross the line upward: details depend on policy",
+            ha="center", va="center", fontsize=8.5, fontweight="bold", color=GREEN)
     return fig
 
 
 def composition_vs_inheritance() -> plt.Figure:
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6), facecolor=WHITE)
-    fig.suptitle("Inheritance Reuses Identity; Composition Reuses Capability",
-                 fontsize=19, fontweight="bold", color=NAVY, y=0.98)
+    fig, ax = canvas(14, 6.4)
+    heading(ax, "Inheritance Reuses Identity; Composition Reuses Capability",
+            "If a subclass must override a method to throw or do nothing, it was never an is-a")
+    ax.plot([50, 50], [4, 82], color=LINE, linewidth=1.5)
+    panel_title(ax, 25, "INHERITANCE: is-a, fixed at compile time")
+    panel_title(ax, 75, "COMPOSITION: has-a, chosen at runtime")
 
-    left, right = axes
-    for ax in axes:
-        ax.set_xlim(0, 10)
-        ax.set_ylim(0, 10)
-        ax.axis("off")
+    box(ax, 13, 56, 24, 13, "Bird", "promises fly()")
+    box(ax, 13, 33, 24, 13, "Penguin extends Bird", "overrides fly() to throw")
+    box(ax, 13, 10, 24, 13, "Runtime surprise", "bird.fly() crashes the caller",
+        face=RED_FACE, edge=RED)
+    arrow(ax, (25, 46.5), (25, 55.5))
+    ax.text(26.5, 51, "extends", ha="left", va="center", fontsize=8, color=BLUE)
+    arrow(ax, (25, 32.5), (25, 23.5), color=RED)
+    ax.text(26.5, 28, "breaks callers", ha="left", va="center", fontsize=8, color=RED)
 
-    left.set_title("Inheritance — stable 'is-a' relationship", fontsize=12,
-                   fontweight="bold", color=NAVY, pad=12)
-    for y, title, subtitle in [
-        (7.2, "Bird", "fly()"),
-        (4.6, "Penguin", "inherits fly()?"),
-        (2.0, "Runtime surprise", "contract is broken"),
+    box(ax, 55, 37, 16, 16, "Bird", "has a FlyBehavior", face=MIST)
+    for y, title, subtitle, color, face in [
+        (61, "WingedFlight", "sparrow", GREEN, GREEN_FACE),
+        (39, "NoFlight", "penguin: no override", AMBER, AMBER_FACE),
+        (17, "FakeFlight", "test double", BLUE, PALE),
     ]:
-        color = RED if y == 2.0 else BLUE
-        face = "#FDEDEC" if y == 2.0 else PALE
-        left.add_patch(FancyBboxPatch((2.5, y), 5, 1.25,
-                                     boxstyle="round,pad=0.25,rounding_size=0.25",
-                                     facecolor=face, edgecolor=color, linewidth=1.8))
-        left.text(5, y + 0.82, title, ha="center", fontsize=9.5,
-                  fontweight="bold", color=color)
-        left.text(5, y + 0.3, subtitle, ha="center", fontsize=7.5, color=INK)
-    left.annotate("inherits", xy=(5, 7.15), xytext=(5, 5.9), ha="center",
-                  arrowprops=dict(arrowstyle="-|>", color=BLUE, lw=1.6),
-                  fontsize=7.5, color=BLUE)
-    left.annotate("violates expectation", xy=(5, 3.35), xytext=(5, 4.55),
-                  ha="center", arrowprops=dict(arrowstyle="-|>", color=RED, lw=1.6),
-                  fontsize=7.5, color=RED)
+        box(ax, 79, y, 17, 12, title, subtitle, face=face, edge=color)
+        arrow(ax, (71.5, 45), (78.5, y + 6), color=color)
+    ax.text(75, 7, "A penguin is just new Bird(new NoFlight())", ha="center", va="center",
+            fontsize=8.5, color=INK, style="italic")
+    return fig
 
-    right.set_title("Composition — replaceable 'has-a' capability", fontsize=12,
-                    fontweight="bold", color=NAVY, pad=12)
-    right.add_patch(FancyBboxPatch((0.7, 4.2), 3.2, 2,
-                                  boxstyle="round,pad=0.3,rounding_size=0.3",
-                                  facecolor=MIST, edgecolor=BLUE, linewidth=1.8))
-    right.text(2.3, 5.35, "Bird", ha="center", fontsize=10,
-               fontweight="bold", color=NAVY)
-    right.text(2.3, 4.7, "has FlyBehavior", ha="center", fontsize=8, color=INK)
-    for y, title, color in [(6.8, "WingedFlight", GREEN), (3.9, "NoFlight", AMBER),
-                            (1.0, "RocketFlight", RED)]:
-        right.add_patch(FancyBboxPatch((6.0, y), 3.3, 1.35,
-                                      boxstyle="round,pad=0.25,rounding_size=0.25",
-                                      facecolor=WHITE, edgecolor=color, linewidth=1.8))
-        right.text(7.65, y + 0.68, title, ha="center", va="center",
-                   fontsize=8.5, fontweight="bold", color=color)
-        right.annotate("", xy=(5.9, y + 0.68), xytext=(4.0, 5.2),
-                       arrowprops=dict(arrowstyle="-|>", color=color, lw=1.5))
-    right.text(5, 0.2, "Behavior changes without changing Bird's identity",
-               ha="center", fontsize=8.5, color=GREY, style="italic")
-    fig.tight_layout(rect=[0, 0, 1, 0.9])
+
+def clean_code_guardrails() -> plt.Figure:
+    fig, ax = canvas(14, 5.2)
+    heading(ax, "DRY, KISS, and YAGNI Pull From Opposite Ends",
+            "Too little abstraction duplicates knowledge; too much buries it. Evidence picks the spot")
+    zones = [
+        (5, "Under-abstracted", "copy-pasted rules, type switches", RED, RED_FACE),
+        (36.5, "Just enough", "one owner per rule; proven seams", GREEN, GREEN_FACE),
+        (68, "Over-abstracted", "speculative interfaces, plugin frameworks", RED, RED_FACE),
+    ]
+    for x, title, subtitle, edge, face in zones:
+        box(ax, x, 32, 27, 17, title, subtitle, face=face, edge=edge)
+    arrow(ax, (8, 64), (36, 64), color=BLUE, label="DRY: give every rule one home")
+    arrow(ax, (92, 64), (64, 64), color=AMBER, label="KISS + YAGNI: every layer must earn its place")
+    for x, note in [(18.5, "DRY misused: merging code\nthat only looks alike"),
+                    (81.5, "KISS/YAGNI misused: skipping\na cheap, obvious seam")]:
+        ax.text(x, 22, note, ha="center", va="top", fontsize=8.5, color=INK,
+                style="italic", linespacing=1.4)
+    ax.text(50, 22, "Rule of three: abstract on the\nthird real case, not the first guess",
+            ha="center", va="top", fontsize=9.5, fontweight="bold", color=GREEN, linespacing=1.4)
     return fig
 
 
@@ -209,41 +270,40 @@ def design_smells() -> plt.Figure:
 
 
 def notification_architecture() -> plt.Figure:
-    fig, ax = canvas(15, 7)
-    heading(ax, "Notification Service: Policy Depends on Small Contracts",
-            "Composition adds channels without editing orchestration")
-    box(ax, 3, 58, 13, 17, "Caller", "send(request)", face=WHITE, edge=NAVY)
-    box(ax, 23, 58, 17, 17, "NotificationService", "validate + orchestrate", face=MIST)
-    box(ax, 47, 58, 15, 17, "Sender", "interface / port", face=PALE, edge=NAVY)
-    arrow(ax, (16.5, 66.5), (22.5, 66.5))
-    arrow(ax, (40.5, 66.5), (46.5, 66.5), label="depends on")
+    fig, ax = canvas(15, 7.6)
+    heading(ax, "Notification Service: Stable Policy, Replaceable Details",
+            "New channels plug in below the line; nothing above it is edited")
+    box(ax, 6, 60, 21, 13, "PreferencePolicy", "opt-outs, quiet hours")
+    box(ax, 39.5, 60, 21, 13, "NotificationService", "orchestrates only", face=MIST)
+    box(ax, 73, 60, 21, 13, "RetryPolicy", "bounded; retryable only", face=AMBER_FACE, edge=AMBER)
+    arrow(ax, (39, 66.5), (27.5, 66.5), label="has-a")
+    arrow(ax, (61, 66.5), (72.5, 66.5), color=AMBER, label="has-a")
+    box(ax, 39.5, 37, 21, 12, "Sender", "interface: send() returns SendResult", edge=NAVY)
+    arrow(ax, (50, 59.5), (50, 49.5), color=NAVY)
+    ax.text(51.5, 54.5, "depends on", ha="left", va="center", fontsize=8, color=NAVY)
 
-    adapters = [
-        (72, "EmailSender", BLUE),
-        (49, "SmsSender", GREEN),
-        (26, "PushSender", AMBER),
-    ]
-    for y, title, color in adapters:
-        box(ax, 71, y, 17, 14, title, "adapter", face=WHITE, edge=color,
-            title_color=color)
-        arrow(ax, (62.5, 66.5), (70.5, y + 7), color=color,
-              label="implemented by" if y == 72 else "", curve=(59 - y) / 90)
-
-    box(ax, 23, 27, 17, 14, "Template", "encapsulated data", face=WHITE, edge=BLUE)
-    box(ax, 47, 27, 15, 14, "RetryPolicy", "composed behavior", face=WHITE, edge=AMBER)
-    arrow(ax, (31.5, 57.5), (31.5, 41.5), color=BLUE, label="has-a")
-    arrow(ax, (40.5, 62), (54.5, 41.5), color=AMBER, label="has-a")
-
-    ax.text(50, 12, "New channel = new Sender implementation; stable policy stays closed to edits",
-            ha="center", fontsize=10, fontweight="bold", color=NAVY)
+    policy_boundary(ax, 4, 96, 31)
+    senders = [(5, "EmailSender", "SMTP provider"), (28.5, "SmsSender", "SMS gateway"),
+               (52, "PushSender", "APNs / FCM")]
+    for (x, title, subtitle), end_x in zip(senders, (44, 48, 52)):
+        box(ax, x, 9, 19, 12, title, subtitle, face=WHITE)
+        arrow(ax, (x + 9.5, 21.5), (end_x, 36.5), dashed=True)
+    box(ax, 75.5, 9, 19, 12, "WhatsAppSender", "added later: one new class",
+        face=GREEN_FACE, edge=GREEN)
+    arrow(ax, (85, 21.5), (56, 36.5), color=GREEN, dashed=True)
+    ax.text(50, 2.5, "Dashed arrows: implements.   Solid arrows: depends on / has-a.",
+            ha="center", va="center", fontsize=8, color=INK, style="italic")
     return fig
 
 
 FIGURES = {
+    "lld_interview_framework": lld_interview_framework,
     "oop_mental_model": oop_mental_model,
+    "coupling_cohesion": coupling_cohesion,
     "solid_principles": solid_principles,
-    "clean_code_guardrails": clean_code_guardrails,
+    "dependency_inversion": dependency_inversion,
     "composition_vs_inheritance": composition_vs_inheritance,
+    "clean_code_guardrails": clean_code_guardrails,
     "design_smells": design_smells,
     "notification_architecture": notification_architecture,
 }
