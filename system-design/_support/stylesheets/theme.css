@@ -308,6 +308,18 @@
   box-shadow: none;
 }
 
+/* Fade links out as they slide under the title, instead of slicing them mid-letter. */
+.md-sidebar--secondary .md-nav__title::after {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: 0;
+  height: 0.7rem;
+  content: "";
+  background: linear-gradient(var(--atlas-bg), transparent);
+  pointer-events: none;
+}
+
 .md-sidebar--secondary .md-nav__link {
   color: var(--atlas-muted);
 }
