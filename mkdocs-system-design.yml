@@ -38,7 +38,6 @@ nav:
   - Home: README.md
   - Basics:
       - Interview Framework & Capacity Estimation: basics/01_Interview_Framework_And_Capacity_Estimation.md
-      - Interview Framework & Capacity Estimation (v2, gentle start): basics/01_Interview_Framework_And_Capacity_Estimation_v2.md
       - Object-Oriented Principles & Clean Code: basics/02_LLD_Object_Oriented_Principles_And_Clean_Code.md
       - Creational & Structural Design Patterns: basics/03_LLD_Creational_And_Structural_Design_Patterns.md
 

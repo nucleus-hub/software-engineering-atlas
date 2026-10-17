@@ -1,519 +1,481 @@
 # Interview Framework & Capacity Estimation
 
-> A visual guide for turning an ambiguous prompt into a defensible design. Use it to structure the interview, quantify scale, reason about availability and latency, expose risks, and explain why each decision is appropriate.
+## Terms to know before you start
+
+You do not need to memorize these. Come back to this table whenever a term feels unfamiliar.
+
+| Term | What it means in plain words |
+|---|---|
+| **QPS** (queries per second) | The number of requests that reach the system every second. It is the basic unit of "how busy is this system?" |
+| **Average vs peak** | The average is the load spread evenly over a whole day. The peak is the load during the busiest moment, which is always higher and is what the system must survive. |
+| **Read/write ratio** | How many times data is read compared to how many times it is written. A ratio of 100:1 means every piece of data is read about 100 times after it is created. |
+| **Latency** | How long one request takes from the moment it is sent until the response arrives, usually measured in milliseconds (ms). |
+| **p99 latency** | The time within which 99% of requests finish. If the p99 is 100 ms, then only 1 request in 100 is slower than 100 ms. We use percentiles because averages hide the slow requests that users actually notice. |
+| **Availability** | The percentage of time (or of requests) the system answers successfully. 99.9% availability allows about 8.8 hours of downtime per year. |
+| **Replica** | An extra copy of the data kept on another machine, so the data survives if one machine fails. |
+| **Cache** | A small, fast store kept in memory that holds frequently read data, so most reads do not have to reach the slower database. |
+| **Working set** | The portion of the data that is read often enough to be worth keeping in the cache. |
 
 ---
 
-## 1. One-page visual summary
+## 1. What a system design interview looks like
 
 ![Six-stage system design interview framework](assets/topic-01/interview_framework.png)
 
-The framework is a narrowing funnel: establish what matters, quantify it, define contracts, draw critical paths, stress the risky parts, and defend the resulting trade-offs.
+A system design interview starts with a deliberately vague prompt such as "Design a URL shortener." Your job is not to produce a perfect architecture; your job is to show a clear, step-by-step way of thinking. The framework above is a funnel: you start broad by understanding what matters, then narrow down by putting numbers on it, defining the interface, drawing the design, and finally explaining the trade-offs you made.
 
 ![Proportional 45-minute system design interview timeline](assets/topic-01/interview_timeline.png)
 
-| Phase | Time | Deliverable | On the whiteboard before moving on |
-|---|---:|---|---|
-| Clarify | 0–5 min | Core use cases, constraints, out-of-scope items | 2–3 use cases, an explicit out-of-scope list |
-| Quantify | 5–10 min | Peak QPS, read/write ratio, storage, SLOs | 4–6 rounded numbers, each tied to a decision |
-| Contract | 10–15 min | Minimal APIs/events and core entities | 2–4 endpoints, 1–2 entities, ranked access patterns |
-| Design | 15–25 min | Read, write, and asynchronous paths | One diagram with the synchronous path clearly marked |
-| Stress | 25–38 min | Deep dives into the largest risks | The named bottleneck and what you would do about it |
-| Fail | 38–43 min | Degraded behavior and recovery | Behavior when each critical dependency is down |
-| Close | 43–45 min | Decisions, trade-offs, and evolution trigger | The metric that triggers the next layer of complexity |
-
-**60-minute Staff/Principal loops:** the extra time goes almost entirely into *Stress* (13 → ~25 min). Clarify and Quantify should not grow. Spending the extra minutes on requirements reads as stalling.
+| Phase | Time | What you are trying to achieve |
+|---|---:|---|
+| Clarify | 0–5 min | Agree with the interviewer on the two or three most important use cases, and say out loud what you are choosing not to build. |
+| Quantify | 5–10 min | Estimate the traffic, storage, and other numbers that will actually influence the design. This page spends most of its time here. |
+| Contract | 10–15 min | Define the small set of API endpoints and data entities the system needs to support the use cases. |
+| Design | 15–25 min | Draw one diagram that shows how a request flows through the system, from the user to the data and back. |
+| Stress | 25–38 min | Pick the part of the design most likely to break under load and explain how you would handle it. |
+| Fail | 38–43 min | Explain what the user experiences when an important component, such as the database, goes down. |
+| Close | 43–45 min | Summarize the design, the main trade-off you made, and what you would change if traffic grew tenfold. |
 
 !!! tip "The interview in one sentence"
-    Given the requirements and scale, choose the simplest architecture that works; explain its failure behavior, cost, and trigger for evolution.
+    Given the requirements and the expected scale, choose the simplest architecture that works, and be ready to explain what it costs and when it would need to change.
+
+As a beginner, focus on getting the first four phases right. The Stress, Fail, and Close phases build on topics later in the curriculum, and you will get much better at them as you work through those topics.
 
 ---
 
-## 2. Core mental model
+## 2. Requirements: deciding what you are building
 
-### Requirements → load → paths → pressure → decision
+Before drawing anything, sort what you learn about the problem into four buckets. Doing this out loud shows the interviewer that you design from needs rather than from favorite technologies.
 
-1. **Requirements** define what success means.
-2. **Load estimates** reveal which resources may become constrained.
-3. **Critical paths** show where latency and availability are spent.
-4. **Pressure tests** expose bottlenecks and failure propagation.
-5. **Decisions** balance product priorities rather than chasing universal "best practices."
+| Type | The question it answers | URL shortener example |
+|---|---|---|
+| **Functional** | What must the system do for its users? | Users can create a short link for a long URL, and anyone who visits the short link is redirected to the original URL. |
+| **Non-functional** | How well must the system behave while doing it? | Redirects should be fast (p99 under 100 ms) and highly available, because a broken short link looks like a broken website. |
+| **Constraint** | What boundary must the design respect? | The service must be built by a small team, so it should avoid operationally heavy components unless they are clearly needed. |
+| **Out of scope** | What are we deliberately not building today? | Analytics dashboards, custom domains, and user accounts are out of scope for this interview. |
 
-![Synchronous critical path and decoupled asynchronous work](assets/topic-01/critical_path.png)
+Non-functional requirements are only useful when they are specific. "Redirects should be fast" cannot guide a decision, but "redirects should finish within 100 ms for 99% of requests" can, because you can check whether a design meets it.
 
-The synchronous path determines user latency and immediate availability. Optional analytics, notifications, and fan-out work should leave that path when delayed completion is acceptable. §5 shows why this matters: every hop on the synchronous path multiplies into your availability and your tail latency.
+??? info "Go deeper (optional): what the 'nines' of availability mean"
+    Availability is often described by counting the nines in the percentage. Each extra nine cuts the allowed downtime by ten, and typically costs far more engineering effort to achieve, so only promise what the business actually needs.
 
-### Capacity is derived, not guessed
+    | Availability | Allowed downtime per year | Where it is typical |
+    |---:|---:|---|
+    | 99% | About 3.65 days | Batch jobs and internal tools that can be rerun later |
+    | 99.9% | About 8.8 hours | A typical internal service |
+    | 99.99% | About 53 minutes | A typical customer-facing service |
+    | 99.999% | About 5 minutes | Rarely justified, and very expensive to achieve |
 
-Start with users and operations, not formulas. Each quantity below only matters because it feeds a decision, so walk through one small running example first: a photo-sharing feed with **10 million daily active users**, each opening the feed **5 times a day**, where each feed response is about **20 KB**.
+    The arithmetic for combining the availability of several components is covered in **Basics 14 (Availability & Deployment Fundamentals)**.
 
-**QPS (queries per second)** is how many requests land on the system every second. It is rarely stated directly. You derive it from daily active users and how often they act:
+---
+
+## 3. Clarifying questions that actually change the design
+
+A clarifying question is only worth asking if the answer would change something in your design. Each question below states what its answer decides, along with the answer we will assume for the URL shortener.
+
+| Question | What the answer decides | Assumed answer for the URL shortener |
+|---|---|---|
+| Who are the users, and what are the top two or three things they do? | It decides which request path is the most important one to make fast and reliable. | The public creates links and clicks them. Clicking (redirecting) is by far the most common action. |
+| What is explicitly out of scope? | It decides where you are allowed to stop designing, so you do not waste time on features nobody asked for. | Analytics dashboards and custom domains are out of scope. |
+| Roughly how much traffic should we expect? | It decides whether a single server and database are enough, or whether the design must scale out. | About 20 million new links per month, and each link is clicked about 100 times. |
+| How long must the data be kept? | It decides how much storage the system needs and whether storage keeps growing forever. | Links are kept for five years. |
+| How fast and how reliable must the most important action be? | It decides the latency and availability targets that the design will be measured against. | Redirects should finish within 100 ms for 99% of requests and should almost never fail. |
+
+The interviewer may not give you every number. When they do not, propose a reasonable value, say it out loud, and ask whether it sounds right. Stating an assumption clearly is always better than silently guessing.
+
+---
+
+## 4. Capacity estimation, one step at a time
+
+![Capacity estimation derived from user behavior](assets/topic-01/capacity_estimation.png)
+
+Capacity estimation means turning user behavior into infrastructure needs. You start with how many users there are and what they do, derive the traffic from that, and then derive storage, bandwidth, memory, and server counts from the traffic. The diagram above shows that chain.
+
+The goal is not precision. You want the right order of magnitude (is it 10, 1,000, or 100,000 requests per second?), because that is what changes the design. Round your numbers freely, and always finish an estimate by saying what it means for the design.
+
+!!! tip "The one rule of estimation"
+    If a number cannot change a decision, it is not worth computing. Every estimate below ends with a short "what this tells us" statement for exactly this reason.
+
+The sections below form a ladder. Each level introduces one new idea, applies it to the URL shortener, and then gives you a practice problem. The practice problems all use the same second example, a note-taking app, so you can carry your answers forward from one level to the next.
+
+### Level 0: Unit shortcuts
+
+Most estimation mistakes are unit mistakes rather than bad assumptions. These shortcuts let you do the arithmetic in your head.
+
+| Shortcut | Why it works and how to use it |
+|---|---|
+| **1 day ≈ 100,000 seconds** | A day has 86,400 seconds, which is close enough to 100,000. To turn "per day" into "per second", divide by 100,000. |
+| **1 month ≈ 2.5 million seconds** | Thirty days of 86,400 seconds is about 2.6 million, and 2.5 million makes the division easier. To turn "per month" into "per second", divide by 2.5 million. |
+| **Each size unit is 1,000 times the previous one** | A kilobyte (KB) is 1,000 bytes, then megabyte (MB), gigabyte (GB), terabyte (TB), and petabyte (PB), each 1,000 times larger. |
+| **Network speeds are quoted in bits, not bytes** | One byte is 8 bits, so multiply bytes per second by 8 to compare against a network link rated in megabits or gigabits per second. |
+
+For example, 1 million events per day is 1,000,000 / 100,000 = **10 per second**, and 1 billion events per day is **10,000 per second**.
+
+!!! question "Practice"
+    1. An app logs 50 million events per day. About how many events per second is that?
+    2. A service handles 2 billion requests per month. About how many requests per second is that?
+
+??? success "Answer"
+    1. 50,000,000 / 100,000 = **500 events per second**.
+    2. 2,000,000,000 / 2,500,000 = **800 requests per second**.
+
+### Level 1: Average QPS from user behavior
+
+Traffic is rarely given to you as QPS. You derive it by multiplying the number of actions per period, then dividing by the number of seconds in that period.
 
 ```text
-Average QPS = operations per day / 86,400   (seconds in a day)
-            = (10,000,000 users × 5 opens) / 86,400
-            ≈ 578 requests/second
+Average QPS = actions per period / seconds in that period
 ```
 
-Traffic is never flat. Lunchtime, a push notification, or a viral post can spike load well above the daily average. A **peak factor** captures that spike as a multiplier on the average (§4 gives guidance on choosing one):
+For the URL shortener, users create 20 million links per month:
 
 ```text
-Peak QPS = average QPS × peak factor
-         = 578 × 3 (consumer social: assume 3× at busiest hour)
-         ≈ 1,734 requests/second
+Average create QPS = 20,000,000 / 2,500,000 ≈ 8 creates per second
 ```
 
-**Payload size** is how many bytes travel in one request or response. Here each feed response is ~20 KB. Multiplying it by QPS answers "how much network throughput must I provision?", i.e. **bandwidth**:
+**What this tells us:** eight writes per second is a very light load. Any ordinary database can handle it, so the write path is not where this design will struggle.
+
+!!! question "Practice: the note-taking app"
+    A note-taking app has 5 million daily active users, and each user saves 4 notes per day. What is the average write QPS?
+
+??? success "Answer"
+    5,000,000 users × 4 notes = 20,000,000 notes per day.
+    20,000,000 / 100,000 = **200 writes per second** on average.
+
+### Level 2: Read/write ratio and peak traffic
+
+Two adjustments turn the average write rate into the numbers the design must actually handle.
+
+First, apply the **read/write ratio**. Most systems read data far more often than they write it, and the reads usually dominate the load. Second, apply a **peak factor**. Traffic is never spread evenly over the day; lunchtime, a push notification, or a viral post can multiply it. Systems fail at the peak, not at the average, so you design for the peak.
 
 ```text
-Bandwidth = QPS × payload size
-          = 1,734 × 20 KB
-          ≈ 34.7 MB/second at peak
+Average read QPS = average write QPS × reads per write
+Peak QPS         = average QPS × peak factor
 ```
 
-**Storage** answers a different question: not "traffic right now" but "how much disk will this consume over time?" Assume this app also has **1 million new photos uploaded per day**, each about 500 KB:
+Choose the peak factor based on how users arrive:
+
+| How the traffic arrives | Typical peak factor |
+|---|---|
+| Users are spread across many time zones, as in a global consumer app. | 2–3× |
+| Usage is concentrated in business hours or a single region's waking hours. | 3–5× |
+| Users arrive all at once, as with flash sales, live events, or links going viral on social media. | 10× or more |
+
+For the URL shortener, each link is clicked about 100 times, and short links are shared on social media where they can go viral, so we use a 10× peak factor:
 
 ```text
-Storage = records × record size × retention × replicas
-        = 1,000,000 photos/day × 500 KB × 30-day retention × 3 replicas
-        ≈ 45 TB
+Average redirect QPS = 8 × 100      = 800 per second
+Peak redirect QPS    = 800 × 10     = 8,000 per second
+Peak create QPS      = 8 × 10       = 80 per second
 ```
 
-**Concurrency** is how many requests are in flight at once, which is the number your connection pools and thread counts must support. It comes from **Little's Law**: in-flight work = throughput × time each item spends in the system.
+**What this tells us:** redirects outnumber creates by about 100 to 1. This is a read-heavy system, so the design should focus on making reads fast and cheap, which usually points towards a cache in front of the database.
+
+!!! question "Practice: the note-taking app"
+    Each saved note is read about 10 times, and the app is used mostly during local working hours, so assume a 3× peak factor. What are the peak read QPS and the peak write QPS?
+
+??? success "Answer"
+    Average reads = 200 × 10 = 2,000 per second, so **peak reads = 6,000 per second**.
+    **Peak writes = 200 × 3 = 600 per second.**
+
+### Level 3: Storage over time
+
+Traffic tells you how busy the system is right now. Storage tells you how much disk the data will consume over its lifetime. Build it up in four steps so that no factor is forgotten.
 
 ```text
-Concurrency ≈ throughput × latency in seconds
-            = 1,734 requests/second × 0.2 seconds
-            ≈ 347 concurrent requests
+1. Size of one record
+2. Number of records  = records created per period × retention period
+3. Raw storage        = number of records × size of one record
+4. Real storage       = raw storage × replicas × overhead for indexes and metadata
 ```
 
-Little's Law is reusable everywhere: connection pools, thread pools, queue depth. It also warns you about collapse. If latency doubles to 0.4 s at the same throughput, concurrency doubles to ~700, pools exhaust, requests queue, latency rises further, and the system falls over non-linearly. **p99 latency and saturation are the same conversation.**
+The overhead factor matters because databases store more than your raw data. Indexes, metadata, and the storage engine's own bookkeeping usually make the real footprint 1.5 to 3 times the raw size, before replication.
 
-Finally, **compute** turns load into machines. Assume one host safely serves ~500 feed requests/s (it does real work per request, not just static bytes):
+For the URL shortener, one link record holds the short code, the long URL, the creation time, and the expiry time. Rounding generously, that is about 500 bytes.
 
 ```text
-Hosts = peak QPS / safe QPS per host = 1,734 / 500 ≈ 4
-      + headroom to lose one host (N+1) and one of 3 zones  -> ~6 hosts
+Number of links  = 20 million per month × 12 months × 5 years = 1.2 billion
+Raw storage      = 1.2 billion × 500 bytes                     = 600 GB
+With 3 replicas  = 600 GB × 3                                  = 1.8 TB
+With overhead    = 1.8 TB × 1.5 to 3                           ≈ 3 to 5 TB
 ```
 
-![Capacity estimation derived from user behavior](assets/topic-01-v2/capacity_estimation.png)
+**What this tells us:** a few terabytes fits comfortably on one well-provisioned database server with replicas. Splitting the data across many database servers (sharding) would add a lot of complexity without any requirement that needs it.
 
-Estimates should be rounded, unit-consistent, and tied to a consequence such as caching, partitioning, connection limits, or capacity headroom. **If a number cannot move a decision, it is not worth computing.**
+!!! question "Practice: the note-taking app"
+    Each note is about 2 KB, notes are kept for 3 years, and the database keeps 3 replicas. Ignoring index overhead, how much storage does the app need? What does that suggest for the design?
+
+??? success "Answer"
+    Notes per day = 20 million, so data per day = 20,000,000 × 2 KB = 40 GB.
+    Over 3 years: 40 GB × 365 × 3 ≈ 44 TB of raw data, and with 3 replicas that is **about 130 TB**.
+
+    That is far more than one database server should hold. The design will need to split the data across several machines, or move old, rarely read notes to cheaper storage. Both options are covered in **Basics 12 (Partitioning, Sharding & Replication)**.
+
+### Level 4: Bandwidth
+
+Bandwidth is the amount of data moving over the network every second. It tells you whether the network, rather than the servers or the database, could become the bottleneck.
+
+```text
+Bandwidth = peak QPS × size of each response (or request)
+```
+
+A redirect response is tiny, because it only contains a status code and the destination URL in a header. Assume about 500 bytes:
+
+```text
+Peak redirect bandwidth = 8,000 × 500 bytes = 4 MB per second (about 32 megabits per second)
+```
+
+**What this tells us:** 32 megabits per second is a small fraction of what a single server's network card can handle, so bandwidth is not a concern for this design and we can move on.
+
+!!! question "Practice: the note-taking app"
+    1. Using the peak read QPS from Level 2 and 2 KB per note, what is the peak read bandwidth?
+    2. Now imagine every read also downloads a 2 MB image attachment. What happens to the bandwidth, and what would you change?
+
+??? success "Answer"
+    1. 6,000 × 2 KB = **12 MB per second**, which is easy for any server to handle.
+    2. 6,000 × 2 MB = **12 GB per second**, which is a thousand times more and far beyond what the application servers should serve directly. Large, unchanging files like images should be served from a content delivery network (CDN), which keeps copies close to users. This is covered in **Basics 9 (Caching Core)**.
+
+    The lesson is that bandwidth rarely matters for small text responses, but it quickly dominates once large files are involved.
+
+### Level 5: Memory and the cache working set
+
+Reading from memory is much faster than reading from disk, so read-heavy systems keep their most popular data in a cache. The question for estimation is whether that popular data, the working set, fits in the memory of one machine.
+
+Real traffic is skewed: a small share of the data receives most of the requests. A common rule of thumb is that about 20% of the items receive about 80% of the reads, so caching that 20% handles most of the load.
+
+```text
+Cache size ≈ items read per day × 20% × size of each item
+```
+
+Using the number of reads per day as the starting point is a safe overestimate, because the same popular link is often clicked many times in one day.
+
+```text
+Redirects per day = 800 per second × 100,000 seconds = 80 million
+Cache size        = 80 million × 20% × 500 bytes      = 8 GB
+```
+
+**What this tells us:** 8 GB fits easily in the memory of a single cache server, so we need one cache node (plus a spare for safety), not a large cache cluster. As a rough guide, tens to a few hundred gigabytes can fit on one machine; beyond that, the cache must be split across several machines.
+
+??? info "Go deeper (optional): why the cache hit ratio matters so much"
+    The **hit ratio** is the share of reads the cache answers without going to the database. The load that still reaches the database is:
+
+    ```text
+    Database read QPS = total read QPS × (1 − hit ratio)
+    ```
+
+    At 8,000 peak redirects per second, a 99% hit ratio sends 80 reads per second to the database. If the hit ratio drops to 95%, the database receives 400 reads per second, which is five times more. A change that looks small as a percentage can multiply the database load, which is why teams monitor the hit ratio closely. Caching strategies are covered in **Basics 9 (Caching Core)**.
+
+!!! question "Practice: the note-taking app"
+    Cache size is based on how many reads happen over a whole day, so start from the average read QPS rather than the peak. With 2,000 average reads per second and 2 KB per note, how big should the cache be?
+
+??? success "Answer"
+    Reads per day = 2,000 × 100,000 = 200 million.
+    Cache size = 200 million × 20% × 2 KB = **80 GB**.
+
+    That fits on one large-memory machine, but it is big enough that splitting it across a few smaller cache nodes is also reasonable. Either choice is defensible as long as you state the reason.
+
+### Level 6: How many servers
+
+The final step turns peak traffic into a server count. The number of requests one server can safely handle depends on how much work each request does, and in real life it comes from load testing. In an interview, state it as an assumption.
+
+You also need headroom. If every server runs at 100% during the peak, losing a single server or receiving a slightly bigger spike will overload the rest. A common habit is to plan for servers to run at about 70% of their capacity during the peak.
+
+```text
+Servers = peak QPS / (safe QPS per server × 0.7)
+```
+
+A redirect is very simple work: look up a code and return a response. Assume one server safely handles 1,000 redirects per second. The total peak load is about 8,000 redirects plus 80 creates per second:
+
+```text
+Servers = 8,080 / (1,000 × 0.7) = 8,080 / 700 ≈ 12 servers
+```
+
+**What this tells us:** about a dozen application servers behind a load balancer is enough. Because the servers do not keep any data of their own (they are *stateless*), we can add or remove them freely as traffic changes.
+
+??? info "Go deeper (optional): concurrency and Little's Law"
+    The capacity diagram at the top of this section includes **concurrency**: the number of requests being processed at the same moment. It matters because thread pools and database connection pools have fixed sizes. Little's Law estimates it:
+
+    ```text
+    Requests in flight = requests per second × seconds each request takes
+                       = 8,000 × 0.05 seconds (50 ms per redirect)
+                       = 400 requests in flight across all servers
+    ```
+
+    The important warning is that if each request suddenly takes twice as long, twice as many requests are in flight at once. Pools fill up, new requests start waiting, waiting makes latency even worse, and the system can collapse quickly. This is covered properly in **Basics 16 (Threads, Thread Pools, Parallelization)**.
+
+!!! question "Practice: the note-taking app"
+    Peak traffic is 6,000 reads plus 600 writes per second. Saving and loading notes involves more work than a redirect, so assume one server safely handles 500 requests per second. How many servers do you need?
+
+??? success "Answer"
+    Servers = 6,600 / (500 × 0.7) = 6,600 / 350 ≈ **19 servers**.
+
+---
+
+## 5. Turning numbers into decisions
 
 ![Estimates terminating in architectural decisions](assets/topic-01/estimate_to_decision.png)
 
+Estimates are only valuable when they lead to a design choice. The diagram above lists the most common patterns: when the numbers look like the left-hand side, the right-hand side is the option worth considering. You do not need to know how every option works yet; each one has its own topic later in the curriculum.
+
+When you are unsure whether a number is "big", these rough rules of thumb help you decide:
+
+| Question to ask yourself | Rule of thumb |
+|---|---|
+| Can stateless application servers handle the load? | Almost always, because you can keep adding more identical servers behind a load balancer. |
+| Can one database server handle all the writes? | Writes are usually the first limit you hit. Start paying attention when writes reach the low thousands per second. |
+| Does the frequently read data fit in one machine's memory? | Tens to a few hundred gigabytes fit on one machine. Beyond that, the cache must be split across several machines. |
+| Are the users far away from the servers? | Physical distance can add 100 ms or more that no server optimization can remove. Only moving data closer to users, for example with a CDN, helps. |
+
+!!! warning "Avoid decorative arithmetic"
+    Precise numbers do not impress interviewers; clear reasoning does. Say "roughly" out loud, round aggressively, and spend your time explaining what each number means for the design.
+
 ---
 
-## 3. Requirements & the contract
+## 6. Putting it together: the URL shortener
 
-### Requirement types
+This section collects everything from the ladder into the summary you would write on the whiteboard during the Quantify phase.
 
-| Type | Question | Examples |
+### Assumptions stated out loud
+
+None of these numbers come from the original one-sentence prompt. They are estimates you state clearly so the interviewer can correct them before you build on them.
+
+```text
+20 million new links per month    (write volume)
+100 redirects per link            (read/write ratio, so reads dominate)
+10× peak factor                   (links can go viral on social media)
+500 bytes per link record         (short code, long URL, timestamps)
+5-year retention, 3 replicas      (how long links live, and copies kept for safety)
+```
+
+### Derived numbers and what each one decides
+
+| Estimate | Value | What it decides |
 |---|---|---|
-| Functional | What must the system do? | Create, read, update, notify |
-| Non-functional | How well must it behave? | p99 latency, availability, durability |
-| Constraint | What boundary must be respected? | Residency, legacy integration, deadline |
-| Out of scope | What are we deliberately excluding? | Admin UI, analytics queries |
+| Peak redirects | About 8,000 per second | Reads dominate, so a cache should sit in front of the database. |
+| Peak creates | About 80 per second | Writes are light, so one database server can handle them. |
+| Total storage | About 3–5 TB with replicas and overhead | The data fits on one database server with replicas, so sharding is not needed. |
+| Peak bandwidth | About 4 MB per second | The network is not a bottleneck, so no special work is needed here. |
+| Cache size | About 8 GB | A single cache node (plus a spare) holds the working set. |
+| Application servers | About 12 | A small, stateless fleet behind a load balancer is enough. |
 
-### Quality attributes
-
-| Attribute | Meaning | Interview prompt | How it is measured |
-|---|---|---|---|
-| Latency | Time per operation | Which percentile and operation? | p50 / p99 per endpoint, over a window |
-| Throughput | Work per second | Average or peak? Read or write? | Requests or bytes per second at peak |
-| Availability | Ability to serve requests | What failure must be tolerated? | Successful requests / total requests |
-| Durability | Protection from acknowledged-data loss | Can an accepted write be lost? | Annual probability of losing an object (e.g. 11 nines) |
-| Consistency | Versions readers may observe | Is stale data acceptable here? | Maximum staleness window, e.g. "≤ 5 s" |
-| Security | Protection across trust boundaries | Who can perform each operation? | Authz coverage, audit trail, blast radius of a leaked credential |
-| Cost | Resource and operational spend | What dominates at 10× scale? | $/month, $/request, $/GB stored |
-
-### High-leverage clarification questions
-
-A question is only useful if the answer changes something. Each one below states what it decides:
-
-| Question | Decides |
-|---|---|
-| Who are the users, and what are the top 2–3 use cases? | What the critical path is |
-| What is explicitly out of scope? | Where you are allowed to stop |
-| Current, peak, and projected traffic? | Peak factor, headroom, whether to shard at all |
-| Which paths need consistency vs availability vs latency? | Per-operation storage and replication choices |
-| Retention, security, privacy, residency constraints? | Storage growth, encryption, region placement |
-| Greenfield, or must it coexist with an existing system? | Migration path, dual writes, contract compatibility |
-| Built to survive 10× traffic, or a v1 to revisit? | How much complexity is justified *today* |
-| Business success metric, deadlines, budget, team size? | Build vs buy, and how much operational load the team can carry |
+The headline to say out loud is: **"About 8,000 redirects per second against about 80 creates per second, and the data fits on one database."** Those two facts justify the whole architecture below.
 
 ### The minimal contract
 
-The Contract phase is 11% of the clock and is where many candidates wave their hands. Keep it small: the fewest endpoints, entities, and access patterns that cover the use cases. Using the URL shortener from §8:
+Keep the API as small as possible while still covering the use cases. Two endpoints are enough:
 
 ```text
-POST /links      {url, alias?, ttl?}   ->  201 {code, short_url}
-GET  /{code}                           ->  302 Location: <url>   (404 if unknown/expired)
+POST /links      {url}    ->  201 Created  {code, short_url}
+GET  /{code}              ->  302 Found    Location: <original url>   (404 if the code is unknown)
 ```
+
+The data model needs only one entity:
 
 ```text
-Link: code (PK) | long_url | owner_id | created_at | expires_at
-
-Access patterns, ranked by volume:
-  1. point lookup by code   (redirect  - 8,000/s peak, p99 < 100 ms)
-  2. insert by code         (create    - 80/s peak, must be durable)
-  3. scan expired           (cleanup   - batch, off the critical path)
+Link: code (primary key) | long_url | created_at | expires_at
 ```
 
-!!! tip "Derive the schema from the access patterns, never the reverse"
-    Three access patterns, one point lookup dominating by 100×. That is what *justifies* a key-value store with a cache in front, rather than you asserting it. If you draw tables first, you end up defending joins nobody asked for.
+Almost every request looks up a single link by its code, so the code is the natural primary key. Choosing the key from the most common access pattern, rather than designing tables first, is a habit covered in **Basics 11 (Practical Data Modeling & Query Design)**.
 
-Also state **idempotency** for every write: can the client safely retry `POST /links`? If not, a timeout followed by a retry creates two links. An idempotency key or a deterministic code avoids that.
-
----
-
-## 4. Capacity estimation toolkit
-
-You do not need memorized benchmark tables. You need a few shortcuts, one method, and the habit of tying every number to a decision.
-
-### Unit sanity
-
-Most estimation mistakes are unit mistakes, not bad assumptions. Three shortcuts cover almost every conversion:
-
-| Shortcut | How to use it |
-|---|---|
-| **1 day ≈ 100,000 seconds** | Per day → per second: divide by 100,000. So 1 million/day ≈ 12/s, and 1 billion/day ≈ 12,000/s |
-| **1 month ≈ 2.6 million seconds** | Per month → per second: divide by 2.6 million (30 days × 86,400 s) |
-| **Each size unit is 1,000× the last** | KB → MB → GB → TB → PB |
-
-Round freely. You want the right order of magnitude, not the exact figure.
-
-### Choosing a peak factor
-
-Systems break at the peak, not the average. Multiply average traffic by a **peak factor** that matches how users arrive:
-
-| How traffic arrives | Peak factor |
-|---|---|
-| Spread across time zones (global consumer apps) | 2–3× |
-| Concentrated in business or local hours | 3–5× |
-| All at once (flash sales, live events, push campaigns) | 10× or more |
-
-This is why the examples here use 3× for steady traffic and 10× for viral links. When *you* trigger the spike, with a push notification or a marketing email, you can also soften it by staggering the sends.
-
-### Sanity-check by order of magnitude
-
-A number only helps if you know what it means for the design. Instead of memorizing benchmarks, ask four questions:
-
-| Question | Rule of thumb |
-|---|---|
-| Can stateless app servers handle the load? | Almost always: add more instances |
-| Can one database primary take the writes? | Writes are usually the first ceiling; start worrying in the low thousands per second |
-| Does the hot data fit in one machine's memory? | Tens to hundreds of GB fit; beyond that, shard the cache |
-| Are users far away? | Distance adds 100+ ms that no server fix removes; only moving data closer (CDN, more regions) helps |
-
-Say "roughly" out loud. The interviewer is grading the reasoning, not the figure.
-
-### Working set and cache hit ratio
-
-Two ideas decide most caching conversations:
-
-- **Working set:** the data accessed often enough to be worth keeping in memory (hot records × record size). It decides whether a cache is one node or a cluster. Access is usually skewed, with a small share of records getting most of the traffic, so you rarely need to cache everything.
-- **Hit ratio:** the share of reads the cache answers. Load on the database = total load × (1 − hit ratio). Dropping from 99% to 95% looks small, but it sends **5× more traffic** to the database.
-
-This is why hit ratio is worth alerting on, and why a cold cache after a restart is a real incident.
-
-### Storage reality check
-
-Raw payload math undercounts. Indexes, metadata, and storage-engine overhead make the real footprint **1.5–3×** the raw payload, before replication. Saying so earns credibility for free.
-
-### Minimum capacity worksheet
-
-| Estimate | Why it matters |
-|---|---|
-| Peak read/write QPS | Compute, storage topology, connection limits |
-| Read/write ratio | Cache and replica usefulness |
-| Payload sizes | Network and serialization cost |
-| Data growth and retention | Storage, partitioning, backup windows |
-| Working set | Whether useful data can fit in memory |
-| Fan-out | Hidden downstream traffic multiplication |
-| Failure headroom | Ability to survive host or zone loss |
-
-!!! warning "Avoid decorative arithmetic"
-    If an estimate cannot affect a decision, skip it. Twelve decimal places of QPS will not rescue an unjustified architecture.
-
----
-
-## 5. Availability, latency & SLOs
-
-### The nines
-
-| Level | Availability | Downtime per year | Typical use |
-|---|---:|---:|---|
-| **Two nines** | 99% | 3.65 days | Batch jobs, internal tooling |
-| **Three nines** | 99.9% | 8.77 hours | Typical internal service |
-| **Three and a half nines** | 99.95% | 4.38 hours | Common cloud-provider SLA |
-| **Four nines** | 99.99% | 52.6 minutes | Typical customer-facing SLO |
-| **Five nines** | 99.999% | 5.26 minutes | Rarely justified; usually aspirational |
-
-Each extra nine costs roughly an order of magnitude more engineering: redundancy, automation, testing, on-call. Ask what the business actually loses per minute of downtime before promising one.
-
-### Availability composes
-
-![Serial dependencies multiply; redundant replicas complement](assets/topic-01/availability_composition.png)
-
-```text
-Serial dependencies MULTIPLY (all must work):
-  0.999 × 0.999 × 0.999 = 0.997   -> ~26 h/year down, not 8.8 h
-  A service with 5 hard dependencies at 99.9% cannot promise 99.9%.
-
-Redundant replicas COMPLEMENT (any one works):
-  1 - (1 - 0.99)^2 = 0.9999       -> two 99% replicas give ~4 nines
-```
-
-The redundancy math assumes **independent failures**. Same AZ, same config push, same bad deploy, same upstream dependency is *shared fate*, and the math collapses back towards one replica.
-
-!!! tip "The Staff-level insight"
-    Your availability is capped by your hard dependency chain. To raise it, **remove hard dependencies or make them soft**: cache, fall back, or move them off the synchronous path. This arithmetic is what justifies the failure table in §7.
-
-### Latency is a distribution, not a number
-
-**p99** means "1 in 100 requests is slower than this." At 8,000 requests/s, that is 80 unhappy users *every second*. The mean is a trap: a p50 of 20 ms and a p99 of 900 ms average to something that looks fine and describes nobody.
-
-![Latency histogram with mean hiding the long tail](assets/topic-01/latency_percentiles.png)
-
-Always state latency targets as **percentile + operation**: "redirect p99 < 100 ms," never "fast."
-
-### Tail amplification under fan-out
-
-When one request waits on N parallel calls, it is as slow as the slowest one:
-
-```text
-Each dependency has p99 = 10 ms. Chance a request avoids EVERY slow path = 0.99^N
-  N = 1    -> 99% fast
-  N = 10   -> 90% fast
-  N = 100  -> 37% fast   the dependency's p99 is now the caller's MEDIAN
-```
-
-![Fraction of fast requests collapsing as fan-out grows](assets/topic-01/tail_amplification.png)
-
-This block reframes "just add another microservice call" permanently. Mitigations: fewer synchronous hops, tighter per-dependency tails (p99.9, the green curve), **hedged requests** (send a backup request after the p95 and take whichever returns first), and moving fan-out off the synchronous path.
-
-### SLI → SLO → error budget
-
-| Term | What it is | Example |
-|---|---|---|
-| **SLI** (Service Level Indicator) | A measured number that shows how the service behaves from the user's point of view, usually the percentage of requests that were good | % of redirects returning 3xx in under 100 ms |
-| **SLO** (Service Level Objective) | The target you set for an SLI over a time window: the line between "reliable enough" and "needs work" | 99.9% of redirects good, over a rolling 30 days |
-| **Error budget** | The amount of failure the SLO still allows (100% − SLO). Spend it on releases and experiments; when it runs out, reliability work comes first | 0.1% ≈ 43 minutes of bad redirects per month |
-
-The error budget **turns reliability from an argument into arithmetic**. Budget left means ship faster; budget burned means freeze risky launches and fix reliability. Alert on *burn rate* (how fast the budget is being consumed), not on single blips.
-
----
-
-## 6. Decision and trade-off tables
-
-![Decision process from requirement to evolution](assets/topic-01/decision_framework.png)
-
-!!! abstract "The decision template: memorize this"
-    Given **requirement X** and **estimate Y**, choose **A** over **B** because it improves **C**. It costs **D**. Validate it using **E**, and evolve when **F** occurs.
-
-Two worked instances:
-
-> Given **8,000 peak redirects/s** and a **100 ms p99**, choose **cache-aside** over reading the store directly because it cuts origin load **~100×**. It costs **staleness bounded by TTL and stampede risk on a cold start**. Validate with **hit ratio and origin QPS**. Evolve to an **edge/CDN tier** when one hot key exceeds a single cache shard.
-
-> Given **~2.5 TB over five years** and **80 writes/s**, choose **one replicated database** over **sharding** because it keeps **transactions, uniqueness checks, and operations simple**. It costs **a vertical-scaling ceiling**. Validate with **disk growth and primary CPU**. Evolve when **write QPS or data size approaches single-primary limits** (§4 sanity checks).
-
-### Common evolution choices
-
-| Decision | Simple starting point | Scale-oriented option | When to evolve |
-|---|---|---|---|
-| Compute | Run on one larger server (vertical scaling). It is the simplest to build, deploy, and debug. | Run many identical, stateless servers behind a load balancer (horizontal scaling), so any one of them can fail or be replaced. | When one server's CPU or memory is maxed out, or when the availability target requires surviving the loss of a server. |
-| Data | Use one relational database. It gives one source of truth, strong consistency, and easy joins. | Add read replicas, split the data across shards, or move a workload to a store built for its access pattern. | When writes, data volume, or a specific query pattern outgrow what one database can serve efficiently. |
-| Reads | Read from the database on every request. Data is always fresh, and there are no extra components. | Serve repeated reads from a cache, a CDN, or read replicas, so the primary database is protected. | When read latency misses its target, or read traffic starts slowing down writes on the primary. |
-| Work | Do all the work inside the request before responding. It is easy to follow and debug. | Put slow or optional work on a queue, and let background workers process it later. | When work is slow, is not needed for the response, or triggers many downstream calls. |
-| Search | Search with `LIKE '%term%'` queries on the main database. It works for small data with no extra systems. | Maintain a dedicated search index (Elasticsearch/OpenSearch), kept up to date from database change events. | When search queries slow down the main database, or users need relevance ranking and typo tolerance. |
-| Analytics | Run reports directly against the production database. | Copy data, by stream or batch, into a separate analytics warehouse built for large queries. | When reports compete with customer traffic, or need history the production database does not keep. |
-| Traffic control | Accept every request with no limits, trusting clients to behave. | Apply per-client rate limits, and shed low-priority traffic first when overloaded. | When one client can starve the others, or peaks exceed the capacity you provisioned. |
-| Geography | Run in a single region. It has the lowest cost and complexity. | Run in several regions: active-passive for disaster recovery, or active-active to serve users from the nearest region. | When recovery-time goals cannot be met from one region, data-residency laws require it, or distant users see unacceptable latency. |
-
-### Consistency and availability: choose per operation
-
-![Quadrant placing real operations by consistency and availability need](assets/topic-01/consistency_availability.png)
-
-One product contains every quadrant. A shop's inventory decrement must refuse rather than oversell. Its cart should merge and reconcile. Its view counter can be approximate and batched. **Never pick one consistency model for a whole system.**
-
-| Tension | Choose the first when | Choose the second when | What each side costs |
-|---|---|---|---|
-| Consistency vs availability | Choose consistency when stale or wrong data causes real harm, such as an account balance or inventory that could be oversold. Refusing a request is better than giving a wrong answer. | Choose availability when answering every user matters more than perfect freshness, such as a social feed or recommendations. A slightly old answer is acceptable. | Consistency needs coordination between replicas, which adds latency and can reject requests during failures. Availability means readers must tolerate data that is briefly out of date. |
-| Reliability vs cost | Invest in reliability when downtime has financial, safety, or trust impact, such as checkout or payments. | Optimize for cost when the system is non-critical, low-traffic, or easy to retry, such as an internal report or a batch job. | Reliability means paying for redundant servers, extra regions, and on-call. Saving money means accepting longer outages and slower recovery. |
-| Security vs performance | Prioritize security when handling sensitive data or actions, such as personal data, credentials, or money movement. | Prioritize performance on public, low-risk paths where latency matters, such as a public product page. | Extra checks, encryption, and audit logging add latency and complexity. Skipping them leaves a risk you must be comfortable accepting. |
-| Simplicity vs flexibility | Keep the design simple when requirements are stable and well understood. | Build in flexibility when several use cases genuinely need different behavior today, not someday. | Flexible designs add abstractions that someone must maintain. Simple designs may need rework if requirements later diverge. |
-
-### Say what it costs, in money
-
-Cost is a quality attribute, and a rough dollar figure is a strong Principal signal. Useful ratios: **RAM costs roughly 100× more per GB than disk**; **egress to the internet usually dwarfs storage cost**; **cross-AZ traffic is not free**; and **people are the most expensive component**, so every new system you introduce needs someone to run it.
-
----
-
-## 7. Failure scenarios & resilience
-
-![Decision tree for reacting to a dependency failure](assets/topic-01/failure_response.png)
-
-| Failure | Safe response | Guardrail to put in place | Blast radius (who is affected) |
-|---|---|---|---|
-| A non-critical dependency fails, such as recommendations or personalization. | Defer the work, queue it, or drop it according to policy. The main response must still succeed without it. | Use a bounded queue so the backlog cannot grow forever, and make the drop rate visible on a dashboard. | The feature is degraded for everyone, but the core product keeps working. |
-| A critical dependency is slow, such as the database behind checkout. | Fail fast once the request's time budget is used up, or return a safe default that the business approved in advance. | Set one end-to-end deadline and pass it along the whole call chain, so no service waits longer than the user will. | Every request that goes through that path. |
-| The cache fails, or restarts empty (cold). | Fall back to reading from the origin database, but limit how many requests can reach it at once. | Cap concurrent requests to the origin, and coalesce identical requests so one fetch serves them all. | Everyone, if the origin is unprotected: the flood of cache misses can overload it and take down the whole service. |
-| The durable store fails, or cannot confirm a write. | Reject the write and tell the client, rather than pretending it succeeded. | Never acknowledge a write until it is safely stored. | All writes fail, though reads may still be served from the cache. |
-| Queue consumers fall behind (lag). | Add more consumers, or drop the least important events first. | Alert on consumer lag, and keep enough message retention for consumers to catch up before data expires. | Only asynchronous features are delayed; the request path is unaffected. |
-| A hot key or noisy tenant overloads a shard. | Isolate that key or tenant, coalesce duplicate requests for it, or rate-limit it. | Set limits per key and per tenant, so no single one can consume a whole shard. | One shard, which means every other user who shares that shard. |
-| An availability zone fails. | Shift traffic to the zones that are still healthy. | Provision spare capacity in advance (N+1) so the remaining zones can absorb the load, and test failover regularly. | The users served by that zone, provided the other zones have room to take them. |
-
-Blast-radius thinking (does this hurt one user, one tenant, one shard, one zone, or everyone?) is a distinctly Staff+ habit. Cell-based architectures exist purely to shrink it.
-
-### Timeouts: one deadline, propagated
-
-![A 500 ms deadline shrinking as it passes down the call chain](assets/topic-01/timeout_budget.png)
-
-Set one end-to-end deadline at the edge and pass the *remaining* time down (gRPC deadlines, or a header). A hop that starts a fresh 500 ms timeout keeps working on a request whose caller gave up long ago: all cost, no benefit.
-
-### Retries: the mechanism behind most cascading outages
-
-![Three retrying layers turning one request into 27 database calls](assets/topic-01/retry_amplification.png)
-
-Retries at every layer **multiply**: 3 attempts × 3 layers = 27× load, arriving exactly when the dependency is weakest. Rules:
-
-- **Retry at one layer**, usually the one closest to the user that owns the deadline.
-- **Exponential backoff + jitter**, so retries do not arrive in synchronized waves.
-- **Retry budget**: cap retries at ~10% of traffic, so retries cannot become the traffic.
-- **Only retry idempotent operations**, or make them idempotent first (§3).
-
-### Circuit breakers and bulkheads
-
-- **Circuit breaker:** after N failures, stop calling the dependency for a cool-down, then send a probe. It converts slow failure (threads stuck waiting) into fast failure (immediate fallback), and gives the dependency room to recover.
-- **Bulkhead:** separate pools per dependency or tenant, so one slow dependency exhausts *its* pool, not the whole process. Named after ship compartments: one flooded, the ship floats.
-- **Load shedding:** when saturated, reject low-priority work early and cheaply instead of letting everything slow down together.
-
-!!! warning "Failures are not independent"
-    Redundancy only helps against *uncorrelated* failures. Most big outages are correlated: a bad config push to every region, a certificate expiring everywhere at once, a shared dependency. Mitigate with staged rollouts, cells, and config treated as code.
-
-For each dependency, state: timeout and retry owner; idempotency and duplicate behavior; queue, pool, and concurrency bounds; fallback validity and maximum staleness; detection, recovery, and reconciliation steps.
-
----
-
-## 8. Worked example: URL shortener
-
-**The prompt you actually get:** "Design a URL shortener." That is the entire brief, one deliberately vague sentence. The first few minutes belong to questions, not boxes and arrows.
-
-### Questions to ask before designing anything
-
-Each one either pins down a requirement or rules something out of scope:
-
-1. Who creates links, and who follows them: internal tool or public service? Decides whether we need auth, rate limiting, and abuse protection.
-2. How many links per month, and how many clicks per link? This read/write ratio drives most of the architecture.
-3. System-generated codes only, or custom aliases like `/spring-sale`? Aliases add uniqueness checks, conflicts, and squatting.
-4. Do links expire: fixed TTL, user-specified date, or never? Decides whether we need a cleanup path and whether storage grows forever.
-5. How fast must a redirect be, and what breaks if redirects are down? A slow redirect looks the same as a broken link, so this sets latency and availability targets.
-6. Must a new link work instantly, or is a brief 404 acceptable? This is the **read-after-write** question: can the writer immediately read back what they just wrote? It decides whether reads may come from lagging replicas.
-7. Are click analytics needed, and must they be real time? Decides whether analytics sits on the redirect path or behind a queue.
-8. Any safety or compliance needs: malicious-URL scanning, residency, takedowns? Cheap to plan for, expensive to retrofit.
-
-### Scope
-
-Create a short link, redirect a short code to the original URL, and expire links once their lifetime passes. Analytics dashboards and customer-owned domains are out of scope, though click events are still collected asynchronously, so reporting can be added later without touching the redirect path.
-
-### Targets
-
-Redirects are the critical path: 99.99% available, p99 under 100 ms. Link creation is low volume but must be durable: once the API returns a short code, that code can never be lost. New links need read-after-write behavior, because the creator is usually the first person to click. Standard fixes: read from the primary for a few seconds after a create, write the new link into the cache on create, or route the creator's reads sticky to the primary.
-
-### Assumptions
-
-None of these numbers come from the prompt. They are estimates you state out loud so the interviewer can correct them before you build on top of them. The shape that matters is write-once, read-many.
-
-```text
-20 million new links/month        (write volume)
-100 redirects per link creation   (read/write ratio - reads dominate)
-10× peak factor                   (viral, event-driven clicks - see §4)
-700 bytes stored per link         (long URL, short code, owner, timestamps)
-5-year retention, 3 replicas      (how long links live, copies kept for durability)
-```
-
-### Derived scale
-
-```text
-Average creates/s ≈ 20M / 2.6M ≈ 8        (≈2.6M seconds in a 30-day month)
-Peak creates/s    ≈ 80                     (8 × 10× peak factor)
-Peak redirects/s  ≈ 8 × 100 × 10 ≈ 8,000   (creates × redirect ratio × peak factor)
-Total links       ≈ 20M × 12 × 5 ≈ 1.2B
-Replicated storage ≈ 1.2B × 700 B × 3 ≈ 2.5 TB   (~4-7 TB with index overhead)
-Origin QPS at 99% hit ratio ≈ 80           (§4 hit-ratio formula)
-```
-
-The headline number is **8,000 peak redirects per second against roughly 80 peak creates per second**, a two-orders-of-magnitude gap. That ratio justifies a cache in front of redirects instead of optimizing the write path; say it explicitly. The storage figure matters differently: even with index overhead, this fits one well-provisioned database, so **sharding would be complexity without a requirement behind it.**
-
-### Generating the short code
-
-This is the single most-asked deep dive for this problem.
-
-| Strategy | How | Pros | Cons |
-|---|---|---|---|
-| Counter + base62 | Global sequence ID, encoded in `[0-9a-zA-Z]` | Shortest codes, no collisions | Codes are enumerable; needs a distributed ID source (pre-allocate ranges per host) |
-| Random + check | Generate 7 random base62 chars, insert-if-absent | Unpredictable, no coordination | Uniqueness check on every write; retries grow as the space fills |
-| Hash + truncate | First 7 chars of base62(hash(url)) | Same URL gives same code (free dedupe) | Collisions must be handled; dedupe leaks whether a URL was shortened before |
-
-```text
-Sizing: 62^7 ≈ 3.5 trillion codes. We need ~1.2B over five years.
-        -> 7 characters is ~3,000× the space we need; random collisions stay rare.
-```
-
-A sensible default for a public service: **counter ranges per host, lightly scrambled** (so codes are not trivially enumerable), with custom aliases going through an insert-if-absent path.
+### The design
 
 ![URL shortener architecture](assets/topic-01/url_shortener_architecture.png)
 
-| Choice | Optimizes for | Costs / risks |
-|---|---|---|
-| Stateless API | Horizontal scaling and easy replacement | State moves to shared dependencies, which must scale instead |
-| Cache-aside redirects | Low latency and ~100× less load on the store | Staleness, hot keys on viral links, cold-cache stampede |
-| Durable link store | A create is never lost once confirmed | Higher write latency than an in-memory option |
-| Async click analytics | Redirects stay fast even if analytics is degraded | Analytics lag, duplicate or out-of-order events |
-| Single region initially | Simplicity and lower cost | A regional outage takes the service down; distant users pay latency |
-| 302 over 301 redirect | Every click reaches us (analytics, expiry, takedown work) | More redirect traffic than a browser-cached 301 |
+Each component in the diagram exists because of a specific number or requirement from the earlier sections:
 
-### Failure walk-through
+| Component | Why it is in the design |
+|---|---|
+| **Load balancer** | It spreads requests across the twelve or so application servers and stops sending traffic to any server that becomes unhealthy. |
+| **Link API (stateless)** | The servers keep no data of their own, so any server can handle any request and servers can be added or replaced freely. |
+| **Cache** | Redirects outnumber creates 100 to 1, and the 8 GB working set fits in one cache node, so the cache answers most redirects quickly and protects the database. |
+| **Link store** | The database is the durable source of truth. A new link is only confirmed to the user after it has been safely saved here, so a short link is never lost. |
+| **Event queue, workers, and analytics store** | Recording each click is useful but not urgent. Putting click events on a queue lets the redirect finish immediately while background workers process the events later, so the redirect stays fast even if analytics is slow. Queues are covered in **Basics 13 (Asynchronous Processing Basics)**. |
 
-![URL shortener degraded mode with the link store down](assets/topic-01/url_shortener_degraded.png)
+Notice what is *not* in the design: there is no sharding, no second region, and no microservices. None of the numbers require them, and adding them would only make the system harder to build and run.
 
-| Failure | User-visible behavior | Detection | Recovery |
-|---|---|---|---|
-| Link store down | Warm redirects work; cold redirects fail fast; creates return 503 | Store health checks, create error rate | Store failover; cache keeps most traffic alive meanwhile |
-| Cache down or cold | Redirects slower; origin protected by a concurrency limit | Hit ratio drop, origin QPS spike | Warm the cache gradually; coalesce concurrent misses |
-| Viral hot key | One cache shard saturates while total QPS looks normal | Per-key / per-shard QPS | Coalescing, local in-process cache, or push that code to the CDN |
-| Analytics queue backed up | Nothing: redirects unaffected by design | Consumer lag alert | Scale consumers; retention covers the backlog |
+??? info "Go deeper (optional): how long does the short code need to be?"
+    Short codes usually use the 62 characters `0-9`, `a-z`, and `A-Z` (called *base62*). A 7-character code allows 62⁷, or about 3.5 trillion, different codes. We need about 1.2 billion over five years, so 7 characters gives roughly 3,000 times more codes than we need.
 
-The one non-negotiable: **never hand back a short code that was not durably saved.** Refusing to create a link is annoying; a link that 404s after someone printed it on a billboard is a very bad day.
+    How to generate those codes without two servers producing the same one is a classic deep-dive question. The options and their trade-offs are covered in **Basics 15 (Distributed ID Generation)**.
 
 ---
 
-## 9. Anti-patterns that cost points
+## 7. Common beginner mistakes
 
-- Jumping to microservices before stating a single requirement.
-- Sharding 2 TB of data. (It fits on one machine. You know this now.)
-- "We'll use Kafka" with no consumer, ordering, or replay story.
-- Designing for 100× traffic that nobody asked for.
-- Adding a cache without stating the invalidation rule or the cold-start behavior.
-- Quoting average latency.
-- Retries at every layer.
+- **Drawing boxes before stating requirements.** Without requirements, there is no way to tell whether a design is good, so the interviewer cannot give you credit for it.
+- **Splitting data across many databases when it fits on one.** The URL shortener needs only a few terabytes, and sharding it would add complexity that no requirement asks for.
+- **Designing for a hundred times more traffic than anyone mentioned.** Design for the stated scale, and then explain what you would change if traffic grew.
+- **Computing numbers that never influence a decision.** Every estimate should end with a sentence that starts with "so the design should…".
+- **Quoting average latency instead of a percentile.** An average can look healthy while one request in a hundred is painfully slow, so always state latency as a percentile such as p99.
+- **Adding a cache, queue, or new technology without saying why.** Every component should be justified by a number or a requirement, as in the design table above.
 
 ---
 
-## 10. Final revision checklist
+## 8. Test yourself
+
+These three problems increase in difficulty. Try each one on paper before opening the answer.
+
+!!! question "Problem 1 (warm-up): a weather API"
+    A public weather API receives 300 million requests per day. Traffic is spread across time zones, so assume a 3× peak factor. What are the average and peak QPS?
+
+??? success "Answer"
+    Average QPS = 300,000,000 / 100,000 = **3,000 requests per second**.
+    Peak QPS = 3,000 × 3 = **9,000 requests per second**.
+
+!!! question "Problem 2 (storage): a text-sharing service"
+    A service similar to Pastebin receives 1 million new text pastes per day. Each paste averages 10 KB, pastes are kept for 2 years, and the database keeps 3 replicas. How much storage is needed, and what does the number suggest?
+
+??? success "Answer"
+    Data per day = 1,000,000 × 10 KB = 10 GB.
+    Over 2 years: 10 GB × 730 days ≈ 7.3 TB raw, and with 3 replicas that is **about 22 TB**. Adding index overhead could push it towards 30–60 TB.
+
+    That is more than one database server should comfortably hold. A sensible decision is to keep the small metadata (paste ID, owner, creation time) in the database and store the large text bodies in cheaper storage built for large files. Storage types are covered in **Advanced 13 (Storage Types)**.
+
+!!! question "Problem 3 (full estimate): a chat app"
+    A chat app has 50 million daily active users. Each user sends 40 messages per day, each message is about 200 bytes, and each message is read on average by 2 people. Messages are kept for 1 year with 3 replicas, and the peak factor is 3×. Estimate the peak write QPS, peak read QPS, storage, and peak read bandwidth. Then say which number matters most for the design.
+
+??? success "Answer"
+    ```text
+    Messages per day   = 50 million × 40          = 2 billion
+    Average write QPS  = 2 billion / 100,000      = 20,000 per second
+    Peak write QPS     = 20,000 × 3               = 60,000 per second
+    Peak read QPS      = 60,000 × 2               = 120,000 per second
+    Storage per day    = 2 billion × 200 bytes    = 400 GB
+    Storage per year   = 400 GB × 365             ≈ 146 TB raw, about 440 TB with 3 replicas
+    Peak read bandwidth = 120,000 × 200 bytes     = 24 MB per second
+    ```
+
+    **The number that matters most is the 60,000 writes per second.** One database server starts to struggle in the low thousands of writes per second, so this design must spread writes across many database servers, for example by splitting the data by conversation. The storage size points the same way. The bandwidth, by contrast, is small and needs no special attention.
+
+    Compare this with the URL shortener: that system was dominated by reads and solved with a cache, while this one is dominated by writes and needs the data split across machines. The same estimation method led to two very different designs, which is exactly why estimation comes before design.
+
+---
+
+## 9. Checklist and what comes next
 
 ```text
-[ ] CLARIFY users, use cases, constraints, and out-of-scope items
-[ ] QUANTIFY peak QPS, ratio, payloads, storage, working set, headroom
-[ ] DEFINE minimal APIs/events, entities, and ranked access patterns
-[ ] DRAW read, write, async, and trust-boundary paths
-[ ] COMPOSE availability across hard dependencies; state latency as percentiles
-[ ] FIND the likely bottleneck and deep-dive it
-[ ] EXPLAIN deadlines, retry owner, bounds, degradation, and blast radius
-[ ] DEFEND each choice: optimizes, costs, validates, evolves
-[ ] CLOSE with requirements met, biggest risk, and 10× evolution
+[ ] CLARIFY the users, the top two or three use cases, and what is out of scope
+[ ] STATE your assumptions out loud and ask the interviewer to confirm them
+[ ] ESTIMATE peak read and write QPS, storage, bandwidth, cache size, and servers
+[ ] CONNECT every estimate to a design decision
+[ ] DEFINE the smallest API and data model that cover the use cases
+[ ] DRAW one diagram and justify every component with a number or requirement
+[ ] SUMMARIZE the design and say what you would change at ten times the traffic
 ```
 
-!!! success "The Staff-level finish"
-    Summarize the architecture, identify its first likely bottleneck, explain degraded behavior, and name the metric or trigger that would justify the next layer of complexity.
+This page skipped several topics on purpose. Here is where each one is covered once you have the right foundations:
+
+| Topic you may have heard about | Where it is covered |
+|---|---|
+| Combining the availability of several components, and removing single points of failure | Basics 14: Availability & Deployment Fundamentals |
+| Cache strategies, eviction, CDNs, and hit ratios | Basics 9: Caching Core |
+| Splitting data across machines, and database replicas | Basics 12: Data Partitioning, Sharding & Replication |
+| Queues and background processing | Basics 13: Asynchronous Processing Basics |
+| Generating unique short codes and IDs | Basics 15: Distributed ID Generation |
+| Concurrency, thread pools, and Little's Law | Basics 16: Threads, Thread Pools, Parallelization |
+| Retries, timeouts, circuit breakers, and bulkheads | Advanced 7, 10, and 11 |
+| Tail latency and overload protection | Advanced 10: Backpressure, Admission Control & Overload Protection |
+| Consistency versus availability (CAP) | Advanced 12: Data Consistency & Clock Synchronization |
+| SLIs, SLOs, and error budgets | Advanced 14: Observability, Monitoring & Alerting |
+| Hot keys and cache stampedes | Advanced 8: Distributed Caching & High-Concurrency Failures |
