@@ -4,6 +4,51 @@ A structured curriculum for learning system design and low-level design (LLD),
 split into two tiers. Work through **Basics** first, then **Advanced**. Check items
 off as you master them.
 
+## Read these notes in the browser
+
+The notes are built for **MkDocs Material**: callouts, collapsible answers, search,
+and dark mode only render there. You need `uv` and Walmart VPN / Eagle WiFi;
+there is nothing else to install.
+
+1. **Start the server** and leave the terminal open:
+
+    ```bash
+    cd ~/Documents/software-engineering-atlas   # repo root
+    uvx --index-url https://pypi.ci.artifacts.walmart.com/artifactory/api/pypi/external-pypi/simple \
+        --allow-insecure-host pypi.ci.artifacts.walmart.com \
+        --with "mkdocs<2" --with mkdocs-material \
+        mkdocs serve -f mkdocs-system-design.yml -a 127.0.0.1:8000
+    ```
+
+    Wait for `Serving on http://127.0.0.1:8000/`. The first run can take a minute or
+    two while packages download. The red "MkDocs 2.0" warning is safe to ignore,
+    because `mkdocs<2` pins around it.
+
+2. **Open a note** from a second terminal tab, or paste the URL into a browser:
+
+    ```bash
+    open http://127.0.0.1:8000/basics/01_Interview_Framework_And_Capacity_Estimation/
+    ```
+
+    Use the **menu button** (three lines, top left) to switch pages and the
+    **moon/sun** icon for dark mode.
+
+3. **Edit and read.** Saving any `.md` under `system-design/` reloads the browser.
+
+4. **Stop** with `Ctrl+C` in the server terminal.
+
+<details markdown>
+<summary>Troubleshooting</summary>
+
+| Symptom | Fix |
+|---|---|
+| `Address already in use` | Find the process with `lsof -nP -iTCP:8000 -sTCP:LISTEN` and `kill <PID>`, or serve on `-a 127.0.0.1:8001` |
+| Stuck downloading packages | Check VPN / Eagle WiFi; the internal mirror is slow on first run |
+| `Config file ... does not exist` | Run the command from the repo root |
+| Page looks stale or unstyled | Hard-refresh with `Cmd+Shift+R` |
+
+</details>
+
 ## Basics
 
 Foundational topics for designing scalable, reliable single-region systems and
