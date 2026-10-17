@@ -337,12 +337,12 @@ Two worked instances:
 
 One product contains every quadrant. A shop's inventory decrement must refuse rather than oversell. Its cart should merge and reconcile. Its view counter can be approximate and batched. **Never pick one consistency model for a whole system.**
 
-| Tension | Favor the left when… | Favor the right when… | Cost to discuss |
+| Tension | Choose the first when | Choose the second when | What each side costs |
 |---|---|---|---|
-| Consistency vs availability | Stale or wrong data causes real harm (account balance, oversellable inventory) | Serving users beats perfect freshness (social feed, recommendations) | Coordination overhead vs the staleness window readers must tolerate |
-| Reliability vs cost | Downtime has financial, safety, or trust impact (checkout, payments) | Non-critical, low-traffic, or cheaply retried (internal report, batch job) | Redundancy spend vs longer recovery |
-| Security vs performance | Sensitive data or actions (PII, credentials, money movement) | Public, low-risk, latency-sensitive paths (public product page) | Checks, crypto overhead, and complexity vs residual risk |
-| Simplicity vs flexibility | Requirements are stable and well understood | Multiple use cases genuinely need different behavior today | Abstractions to maintain vs rework if requirements diverge |
+| Consistency vs availability | Choose consistency when stale or wrong data causes real harm, such as an account balance or inventory that could be oversold. Refusing a request is better than giving a wrong answer. | Choose availability when answering every user matters more than perfect freshness, such as a social feed or recommendations. A slightly old answer is acceptable. | Consistency needs coordination between replicas, which adds latency and can reject requests during failures. Availability means readers must tolerate data that is briefly out of date. |
+| Reliability vs cost | Invest in reliability when downtime has financial, safety, or trust impact, such as checkout or payments. | Optimize for cost when the system is non-critical, low-traffic, or easy to retry, such as an internal report or a batch job. | Reliability means paying for redundant servers, extra regions, and on-call. Saving money means accepting longer outages and slower recovery. |
+| Security vs performance | Prioritize security when handling sensitive data or actions, such as personal data, credentials, or money movement. | Prioritize performance on public, low-risk paths where latency matters, such as a public product page. | Extra checks, encryption, and audit logging add latency and complexity. Skipping them leaves a risk you must be comfortable accepting. |
+| Simplicity vs flexibility | Keep the design simple when requirements are stable and well understood. | Build in flexibility when several use cases genuinely need different behavior today, not someday. | Flexible designs add abstractions that someone must maintain. Simple designs may need rework if requirements later diverge. |
 
 ### Say what it costs, in money
 
