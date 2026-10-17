@@ -1,6 +1,6 @@
 # Interview Framework & Capacity Estimation (v2: gentle start)
 
-## Terms
+## Terms to know before you start
 
 You do not need to memorize these. Come back to this table whenever a term feels unfamiliar.
 
