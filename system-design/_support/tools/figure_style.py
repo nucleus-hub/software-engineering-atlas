@@ -6,7 +6,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
-from matplotlib.patches import FancyArrowPatch, FancyBboxPatch  # noqa: E402
+from matplotlib.patches import Circle, FancyArrowPatch, FancyBboxPatch  # noqa: E402
 
 NAVY = "#0B3D91"
 BLUE = "#1E6FEB"
@@ -99,3 +99,28 @@ def arrow(
         mx, my = (start[0] + end[0]) / 2, (start[1] + end[1]) / 2
         ax.text(mx, my + 3, label, ha="center", va="center", fontsize=8,
                 color=color, bbox=dict(facecolor=WHITE, edgecolor="none", pad=1))
+
+
+def stage_row(
+    ax: plt.Axes,
+    stages: list[tuple[str, str, str]],
+    xs: list[float],
+    *,
+    y: float,
+    width: float,
+    height: float,
+    highlight: tuple[int, ...] = (),
+) -> None:
+    """Draw numbered (badge, title, subtitle) stages left to right, linked by arrows.
+
+    Highlighted indexes get a deeper fill to mark where the real work happens.
+    """
+    for index, ((badge, title, subtitle), x) in enumerate(zip(stages, xs)):
+        box(ax, x, y, width, height, title, subtitle,
+            face=MIST if index in highlight else PALE)
+        centre = (x + width / 2, y + height + 6)
+        ax.add_patch(Circle(centre, 3.3, facecolor=NAVY, edgecolor=NAVY))
+        ax.text(*centre, badge, ha="center", va="center", fontsize=8,
+                fontweight="bold", color=WHITE)
+        if index < len(xs) - 1:
+            arrow(ax, (x + width + 0.5, y + height / 2), (xs[index + 1] - 0.5, y + height / 2))

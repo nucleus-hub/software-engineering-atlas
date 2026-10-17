@@ -43,6 +43,7 @@ from figure_style import (
     box,
     canvas,
     heading,
+    stage_row,
 )
 
 ASSETS = Path(__file__).resolve().parent.parent.parent / "basics" / "assets" / "topic-01"
@@ -69,14 +70,7 @@ def interview_framework() -> plt.Figure:
         ("06", "Defend", "trade-offs"),
     ]
     xs = [4, 20, 36, 52, 68, 84]
-    for index, ((number, title, subtitle), x) in enumerate(zip(steps, xs)):
-        face = MIST if index in (3, 4) else PALE
-        box(ax, x, 39, 12, 24, title, subtitle, face=face)
-        ax.add_patch(Circle((x + 6, 69), 3.3, facecolor=NAVY, edgecolor=NAVY))
-        ax.text(x + 6, 69, number, ha="center", va="center", fontsize=8,
-                fontweight="bold", color=WHITE)
-        if index < len(xs) - 1:
-            arrow(ax, (x + 12.5, 51), (xs[index + 1] - 0.5, 51))
+    stage_row(ax, steps, xs, y=39, width=12, height=24, highlight=(3, 4))
     ax.text(50, 25, "OUTPUT", ha="center", va="center", fontsize=8,
             fontweight="bold", color=GREY)
     # The label is ~43 units wide at this font size; 50 leaves even side padding.
