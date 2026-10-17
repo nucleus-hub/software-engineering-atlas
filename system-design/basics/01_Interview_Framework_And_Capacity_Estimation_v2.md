@@ -1,13 +1,6 @@
 # Interview Framework & Capacity Estimation (v2: gentle start)
 
-> This is the first topic in the curriculum, so it assumes no prior system design knowledge. By the end you will be able to run a system design interview in a clear order, turn a vague prompt into concrete requirements, and estimate traffic, storage, bandwidth, memory, and server counts using simple arithmetic. Every step uses the same example, a URL shortener, so you can watch the numbers build on each other.
-
-!!! note "What this page deliberately leaves out"
-    Topics such as retries, circuit breakers, error budgets, tail latency, and consistency models are important, but they make much more sense once you know what caches, queues, and databases do. They each have their own topic later in the curriculum, and a table at the end of this page shows where to find them.
-
----
-
-## Words you will see on this page
+## Terms
 
 You do not need to memorize these. Come back to this table whenever a term feels unfamiliar.
 
