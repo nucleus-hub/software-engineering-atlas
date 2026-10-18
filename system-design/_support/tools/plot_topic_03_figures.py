@@ -191,74 +191,71 @@ def wrapper_family() -> plt.Figure:
 
 
 def onion(ax: plt.Axes, x: float, outer: str, middle: str, outer_color: str,
-          middle_color: str, outer_face: str, middle_face: str,
-          core: str = "StripeAdapter", core_subtitle: str = "talks to the SDK") -> None:
-    """Three nested wrappers: outer(middle(core))."""
+          middle_color: str, outer_face: str, middle_face: str) -> None:
+    """Three nested wrappers: outer(middle(StripeAdapter))."""
     box(ax, x, 26, 40, 46, "", face=outer_face, edge=outer_color)
     ax.text(x + 2, 69, outer, ha="left", va="top", fontsize=10,
             fontweight="bold", color=NAVY)
     box(ax, x + 4, 30, 32, 32, "", face=middle_face, edge=middle_color)
     ax.text(x + 6, 59, middle, ha="left", va="top", fontsize=10,
             fontweight="bold", color=NAVY)
-    box(ax, x + 8, 34, 24, 14, core, core_subtitle, face=WHITE, edge=BLUE)
+    box(ax, x + 8, 34, 24, 14, "StripeAdapter", "talks to the SDK", face=WHITE, edge=BLUE)
 
 
 def decorator_ordering() -> plt.Figure:
     fig, ax = canvas(14, 6.6)
     heading(ax, "Decorator Order Changes Behavior",
-            "The same three objects, wrapped two ways, produce two different metrics")
+            "The same three objects, wrapped two ways, produce two different audit trails")
     ax.plot([50, 50], [4, 84], color=LINE, linewidth=1.5)
 
-    panel_title(ax, 25, "Metrics( Cache( Postgres ) )", NAVY)
-    onion(ax, 5, "MetricsCartRepository", "CachingCartRepository", NAVY, GREEN, PALE, GREEN_FACE,
-          core="PostgresCartRepository", core_subtitle="the database")
-    ax.text(25, 16, "Metrics sees every call", ha="center", fontsize=10,
+    panel_title(ax, 25, "Audit( Retry( Adapter ) )", NAVY)
+    onion(ax, 5, "AuditingGateway", "RetryingGateway", NAVY, GREEN, PALE, GREEN_FACE)
+    ax.text(25, 16, "Audit sees one call per charge", ha="center", fontsize=10,
             fontweight="bold", color=INK)
-    ax.text(25, 9, "100 cart lookups  →  100 timings (hits and misses)",
+    ax.text(25, 9, "3 attempts  →  1 audit entry (the final outcome)",
             ha="center", fontsize=9, color=INK, style="italic")
 
-    panel_title(ax, 75, "Cache( Metrics( Postgres ) )", NAVY)
-    onion(ax, 55, "CachingCartRepository", "MetricsCartRepository", GREEN, NAVY, GREEN_FACE, PALE,
-          core="PostgresCartRepository", core_subtitle="the database")
-    ax.text(75, 16, "Metrics sees only cache misses", ha="center", fontsize=10,
+    panel_title(ax, 75, "Retry( Audit( Adapter ) )", NAVY)
+    onion(ax, 55, "RetryingGateway", "AuditingGateway", GREEN, NAVY, GREEN_FACE, PALE)
+    ax.text(75, 16, "Audit sees every attempt", ha="center", fontsize=10,
             fontweight="bold", color=INK)
-    ax.text(75, 9, "100 cart lookups, 80 cache hits  →  20 timings",
+    ax.text(75, 9, "3 attempts  →  3 audit entries (one per try)",
             ha="center", fontsize=9, color=INK, style="italic")
     return fig
 
 
-def cart_checkout_patterns() -> plt.Figure:
+def payment_gateway_architecture() -> plt.Figure:
     fig, ax = canvas(15, 7.6)
-    heading(ax, "Cart & Checkout: Each Pattern Absorbs One Expected Change",
-            "The service depends on one interface; everything volatile sits behind it")
+    heading(ax, "Payment Gateway: Each Pattern Absorbs One Expected Change",
+            "Checkout depends on one interface; everything volatile sits behind it")
     creational = dict(face=PALE, edge=BLUE)
     structural = dict(face=AMBER_FACE, edge=AMBER)
 
-    box(ax, 3, 60, 15, 13, "Client", "calls checkout(cartId)", face=WHITE, edge=NAVY)
-    box(ax, 24, 60, 20, 13, "CheckoutService", "facade", **structural)
-    box(ax, 51, 60, 20, 13, "CheckoutRequest", "builder, validated once", **creational)
+    box(ax, 3, 60, 15, 13, "Checkout", "calls pay(order)", face=WHITE, edge=NAVY)
+    box(ax, 24, 60, 20, 13, "PaymentService", "facade", **structural)
+    box(ax, 51, 60, 20, 13, "ChargeRequest", "builder, validated once", **creational)
     arrow(ax, (18.5, 66.5), (23.5, 66.5), color=GREY)
     arrow(ax, (44.5, 66.5), (50.5, 66.5), color=GREY, label="builds")
 
-    box(ax, 24, 34, 20, 13, "RepositoryRegistry", "simple factory, by country", **creational)
+    box(ax, 24, 34, 20, 13, "GatewayRegistry", "simple factory, by country", **creational)
     arrow(ax, (34, 59.5), (34, 47.5), color=GREY)
     ax.text(35.5, 53.5, "resolves", ha="left", va="center", fontsize=8, color=INK)
 
-    box(ax, 51, 34, 14, 13, "RetryingCartRepo", "decorator", **structural)
-    box(ax, 68, 34, 14, 13, "MetricsCartRepo", "decorator", **structural)
-    box(ax, 84, 34, 14, 13, "PostgresCartRepo", "direct, no adapter", face=WHITE, edge=GREY)
+    box(ax, 51, 34, 14, 13, "RetryingGateway", "decorator", **structural)
+    box(ax, 68, 34, 14, 13, "AuditingGateway", "decorator", **structural)
+    box(ax, 85, 34, 12, 13, "StripeAdapter", "adapter", **structural)
     arrow(ax, (44.5, 40.5), (50.5, 40.5), color=GREY, label="returns")
     arrow(ax, (65.5, 40.5), (67.5, 40.5), color=GREY)
-    arrow(ax, (82.5, 40.5), (83.5, 40.5), color=GREY)
-    ax.text(66, 28.5, "Every repository implements CartRepository", ha="center",
+    arrow(ax, (82.5, 40.5), (84.5, 40.5), color=GREY)
+    ax.text(66, 28.5, "Every link implements PaymentGateway", ha="center",
             fontsize=9, fontweight="bold", color=NAVY)
 
-    box(ax, 84, 8, 14, 13, "Postgres", "spoken to over plain JDBC", face=WHITE, edge=GREY)
+    box(ax, 83, 8, 14, 13, "Stripe SDK", "third-party code", face=WHITE, edge=GREY)
     arrow(ax, (91, 33.5), (91, 21.5), color=GREY)
 
-    ax.text(3, 25, "Why is there no Adapter?", fontsize=9.5, fontweight="bold", color=NAVY)
-    ax.text(3, 21, "JDBC is already a standard interface.\nThere is no vendor shape to\n"
-            "translate, so a wrapper here would\nbe pattern worship.", va="top", fontsize=8.6,
+    ax.text(3, 25, "Why is there no Proxy?", fontsize=9.5, fontweight="bold", color=NAVY)
+    ax.text(3, 21, "Nothing here controls access or\nlifecycle. Adding one just to use\n"
+            "the name would be pattern worship.", va="top", fontsize=8.6,
             color=INK, linespacing=1.45)
     ax.text(50, 3, "Blue border: creational pattern     Amber border: structural pattern",
             ha="center", fontsize=8.5, color=INK)
@@ -272,7 +269,7 @@ FIGURES = {
     "builder_vs_telescoping": builder_vs_telescoping,
     "wrapper_family": wrapper_family,
     "decorator_ordering": decorator_ordering,
-    "cart_checkout_patterns": cart_checkout_patterns,
+    "payment_gateway_architecture": payment_gateway_architecture,
 }
 
 

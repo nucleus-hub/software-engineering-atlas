@@ -15,7 +15,6 @@ You do not need to memorize these. Come back to this table whenever a term feels
 | **Replica** | An extra copy of the data kept on another machine, so the data survives if one machine fails. |
 | **Cache** | A small, fast store kept in memory that holds frequently read data, so most reads do not have to reach the slower database. |
 | **Working set** | The portion of the data that is read often enough to be worth keeping in the cache. |
-| **Idempotency key** | A unique value a client sends with a request so that retrying the same request twice does the work only once. Essential for any action that spends money. |
 
 ---
 
@@ -23,7 +22,7 @@ You do not need to memorize these. Come back to this table whenever a term feels
 
 ![Six-stage system design interview framework](assets/topic-01/interview_framework.png)
 
-A system design interview starts with a deliberately vague prompt such as "Design the cart and checkout flow for an online store." Your job is not to produce a perfect architecture; your job is to show a clear, step-by-step way of thinking. The framework above is a funnel: you start broad by understanding what matters, then narrow down by putting numbers on it, defining the interface, drawing the design, and finally explaining the trade-offs you made.
+A system design interview starts with a deliberately vague prompt such as "Design a URL shortener." Your job is not to produce a perfect architecture; your job is to show a clear, step-by-step way of thinking. The framework above is a funnel: you start broad by understanding what matters, then narrow down by putting numbers on it, defining the interface, drawing the design, and finally explaining the trade-offs you made.
 
 ![Proportional 45-minute system design interview timeline](assets/topic-01/interview_timeline.png)
 
@@ -48,14 +47,14 @@ As a beginner, focus on getting the first four phases right. The Stress, Fail, a
 
 Before drawing anything, sort what you learn about the problem into four buckets. Doing this out loud shows the interviewer that you design from needs rather than from favorite technologies.
 
-| Type | The question it answers | Cart & checkout example |
+| Type | The question it answers | URL shortener example |
 |---|---|---|
-| **Functional** | What must the system do for its users? | Shoppers can add, update, and remove items in a cart, see the running total, and check out to turn the cart into a paid order. |
-| **Non-functional** | How well must the system behave while doing it? | Cart reads and writes should feel instant (p99 under 150 ms) and can tolerate rare, harmless inconsistency. Checkout must be strongly consistent and safe to retry: the same checkout request submitted twice must never create two orders or charge the customer twice. |
-| **Constraint** | What boundary must the design respect? | The same services run in four countries (Mexico, Canada, Chile, and South Africa), each with its own currency, sales tax, and payment providers. Charges go through external payment gateways the team does not control. |
-| **Out of scope** | What are we deliberately not building today? | Product catalog/search, inventory availability, shipping and fulfillment, fraud/risk scoring, and post-order processing are owned by other services. Currency conversion and cross-border orders are not needed, because every order is priced and paid in exactly one country's currency. Split-tender payments are out of scope too. |
+| **Functional** | What must the system do for its users? | Users can create a short link for a long URL, and anyone who visits the short link is redirected to the original URL. |
+| **Non-functional** | How well must the system behave while doing it? | Redirects should be fast (p99 under 100 ms) and highly available, because a broken short link looks like a broken website. |
+| **Constraint** | What boundary must the design respect? | The service must be built by a small team, so it should avoid operationally heavy components unless they are clearly needed. |
+| **Out of scope** | What are we deliberately not building today? | Analytics dashboards, custom domains, and user accounts are out of scope for this interview. |
 
-Non-functional requirements are only useful when they are specific. "Checkout should be reliable" cannot guide a decision, but "a checkout request retried after a timeout must never create a second order" can, because you can test whether a design meets it.
+Non-functional requirements are only useful when they are specific. "Redirects should be fast" cannot guide a decision, but "redirects should finish within 100 ms for 99% of requests" can, because you can check whether a design meets it.
 
 ??? info "Go deeper (optional): what the 'nines' of availability mean"
     Availability is often described by counting the nines in the percentage. Each extra nine cuts the allowed downtime by ten, and typically costs far more engineering effort to achieve, so only promise what the business actually needs.
@@ -73,16 +72,15 @@ Non-functional requirements are only useful when they are specific. "Checkout sh
 
 ## 3. Clarifying questions that actually change the design
 
-A clarifying question is only worth asking if the answer would change something in your design. For this page, assume the interviewer says: "this is the cart, checkout, order, and payment platform for Walmart International, serving Mexico, Canada, Chile, and South Africa." Each question below states what its answer decides, along with the answer we will assume.
+A clarifying question is only worth asking if the answer would change something in your design. Each question below states what its answer decides, along with the answer we will assume for the URL shortener.
 
-| Question | What the answer decides | Assumed answer for cart & checkout |
+| Question | What the answer decides | Assumed answer for the URL shortener |
 |---|---|---|
-| Who are the users, and what are the top two or three things they do? | It decides which request path is the most important one to make fast and reliable, and which one is the most important to make *correct*. | Shoppers add, update, and remove cart items constantly. Checking out is rare by comparison, but it is the one action that moves real money. |
-| What is explicitly out of scope? | It decides where you are allowed to stop designing, so you do not waste time on features nobody asked for. | Product catalog, inventory, shipping, and fraud detection are separate services we only call into. |
-| One country, or several? | It decides whether you size one shared global system or one deployment per country. | Four countries, each running its own copy of the services in its own region, because data-protection rules, currency, tax, and payment providers all differ by country. So we size one deployment, the largest: Mexico, with about 3,000 Walmart Supercenter, Bodega Aurrera, and Sam's Club locations serving about 129 million people. Canada, Chile, and South Africa are smaller copies of the same design. |
-| Roughly how much traffic should we expect? | It decides whether a single server and database are enough, or whether the design must scale out. | For Mexico, about 1.2 billion cart actions per month, but only about 10 million completed checkouts per month. |
-| How long must the data be kept? | It decides how much storage the system needs and whether storage keeps growing forever. | Abandoned carts expire after 30 days. Completed orders and payment records are kept for as long as each country's tax law requires; for Mexico, that is 5 years under the Código Fiscal de la Federación. |
-| How fast and how reliable must the most important action be? | It decides the latency, consistency, and safety targets the design will be measured against. | Cart operations should finish within 150 ms and can tolerate an occasional lost update. Checkout must be strongly consistent, durable, and idempotent: retrying it must never double-charge a customer. |
+| Who are the users, and what are the top two or three things they do? | It decides which request path is the most important one to make fast and reliable. | The public creates links and clicks them. Clicking (redirecting) is by far the most common action. |
+| What is explicitly out of scope? | It decides where you are allowed to stop designing, so you do not waste time on features nobody asked for. | Analytics dashboards and custom domains are out of scope. |
+| Roughly how much traffic should we expect? | It decides whether a single server and database are enough, or whether the design must scale out. | About 20 million new links per month, and each link is clicked about 100 times. |
+| How long must the data be kept? | It decides how much storage the system needs and whether storage keeps growing forever. | Links are kept for five years. |
+| How fast and how reliable must the most important action be? | It decides the latency and availability targets that the design will be measured against. | Redirects should finish within 100 ms for 99% of requests and should almost never fail. |
 
 The interviewer may not give you every number. When they do not, propose a reasonable value, say it out loud, and ask whether it sounds right. Stating an assumption clearly is always better than silently guessing.
 
@@ -99,7 +97,7 @@ The goal is not precision. You want the right order of magnitude (is it 10, 1,00
 !!! tip "The one rule of estimation"
     If a number cannot change a decision, it is not worth computing. Every estimate below ends with a short "what this tells us" statement for exactly this reason.
 
-The sections below form a ladder. Each level introduces one new idea, applies it to the cart and checkout flow at Walmart Mexico's scale, and then gives you a practice problem. The practice problems all use the same second example, Walmart Mexico's store and distribution-center inventory network, so you can carry your answers forward from one level to the next.
+The sections below form a ladder. Each level introduces one new idea, applies it to the URL shortener, and then gives you a practice problem. The practice problems all use the same second example, a note-taking app, so you can carry your answers forward from one level to the next.
 
 ### Level 0: Unit shortcuts
 
@@ -115,8 +113,8 @@ Most estimation mistakes are unit mistakes rather than bad assumptions. These sh
 For example, 1 million events per day is 1,000,000 / 100,000 = **10 per second**, and 1 billion events per day is **10,000 per second**.
 
 !!! question "Practice"
-    1. Walmart Mexico's app logs 50 million search events per day. About how many events per second is that?
-    2. Walmart Mexico's price-lookup service handles 2 billion requests per month. About how many requests per second is that?
+    1. An app logs 50 million events per day. About how many events per second is that?
+    2. A service handles 2 billion requests per month. About how many requests per second is that?
 
 ??? success "Answer"
     1. 50,000,000 / 100,000 = **500 events per second**.
@@ -130,20 +128,20 @@ Traffic is rarely given to you as QPS. You derive it by multiplying the number o
 Average QPS = actions per period / seconds in that period
 ```
 
-For Walmart's Mexico cart and checkout flow, 9 million daily active shoppers perform 1.2 billion cart actions per month (adding, updating, or removing an item):
+For the URL shortener, users create 20 million links per month:
 
 ```text
-Average cart-write QPS = 1,200,000,000 / 2,500,000 ≈ 480 cart actions per second
+Average create QPS = 20,000,000 / 2,500,000 ≈ 8 creates per second
 ```
 
-**What this tells us:** 480 writes per second is meaningful but ordinary load for a well-built cart store. The interesting number is not here — it is in how rarely a cart action turns into a checkout, which is where correctness, not throughput, becomes the hard problem.
+**What this tells us:** eight writes per second is a very light load. Any ordinary database can handle it, so the write path is not where this design will struggle.
 
-!!! question "Practice: Walmart Mexico's store inventory network"
-    Walmart Mexico's inventory network spans about 3,000 Walmart Supercenter, Bodega Aurrera, and Sam's Club locations, and the network records 15,000 stock-change events per day per location (sales, restocks, returns, damage write-offs). What is the average write QPS?
+!!! question "Practice: the note-taking app"
+    A note-taking app has 5 million daily active users, and each user saves 4 notes per day. What is the average write QPS?
 
 ??? success "Answer"
-    3,000 locations × 15,000 events = 45,000,000 events per day.
-    45,000,000 / 100,000 = **450 writes per second** on average.
+    5,000,000 users × 4 notes = 20,000,000 notes per day.
+    20,000,000 / 100,000 = **200 writes per second** on average.
 
 ### Level 2: Read/write ratio and peak traffic
 
@@ -164,25 +162,22 @@ Choose the peak factor based on how users arrive:
 | Usage is concentrated in business hours or a single region's waking hours. | 3–5× |
 | Users arrive all at once, as with flash sales, live events, or links going viral on social media. | 10× or more |
 
-Mexico gives us two real peaks worth naming, and they are not the same size. Every two weeks, Mexican payroll cycles around **quincena** (paydays on the 15th and the last day of the month), which reliably pushes traffic to roughly 2–3× the average for a day or two. Once a year, **El Buen Fin**, Mexico's national shopping event held every November over the long weekend around Revolution Day, can push traffic past 10× the average. The lesson is to design for the bigger of the two realistic peaks, not just the one that happens more often, so we use a 10× peak factor here. Each cart action is also preceded by a shopper checking their cart about 8 times (open cart, change a quantity, re-check the total), and only a small fraction of all that activity ever reaches checkout — about 10 million completed checkouts per month, against 1.2 billion cart actions:
+For the URL shortener, each link is clicked about 100 times, and short links are shared on social media where they can go viral, so we use a 10× peak factor:
 
 ```text
-Average cart-read QPS = 480 × 8                  = 3,840 per second
-Average checkout QPS  = 10,000,000 / 2,500,000   = 4 per second
-Peak cart-write QPS   = 480 × 10                 = 4,800 per second
-Peak cart-read QPS    = 3,840 × 10               = 38,400 per second
-Peak checkout QPS     = 4 × 10                   = 40 per second
+Average redirect QPS = 8 × 100      = 800 per second
+Peak redirect QPS    = 800 × 10     = 8,000 per second
+Peak create QPS      = 8 × 10       = 80 per second
 ```
 
-**What this tells us:** cart reads dominate by volume, same as any read-heavy system, so a cache belongs in front of the cart store. But look at the checkout number: 40 requests per second at peak is small next to 38,400 cart reads. This is a lesson the old URL-shortener example could never teach, because its two paths (create and redirect) differed only in volume: **low QPS does not mean low stakes.** Checkout is the one path in this whole system where a bug costs real money, so it earns a design budget completely out of proportion to its traffic.
+**What this tells us:** redirects outnumber creates by about 100 to 1. This is a read-heavy system, so the design should focus on making reads fast and cheap, which usually points towards a cache in front of the database.
 
-!!! question "Practice: Walmart Mexico's store inventory network"
-    Each stock change is preceded by an availability check about 6 times (product pages, cart adds, reorder jobs), and inventory traffic spikes during El Buen Fin and Hot Sale too, so use an 8× peak factor. What are the peak read and write QPS?
+!!! question "Practice: the note-taking app"
+    Each saved note is read about 10 times, and the app is used mostly during local working hours, so assume a 3× peak factor. What are the peak read QPS and the peak write QPS?
 
 ??? success "Answer"
-    Average reads = 450 × 6 = 2,700 per second.
-    **Peak reads = 2,700 × 8 = 21,600 per second.**
-    **Peak writes = 450 × 8 = 3,600 per second.**
+    Average reads = 200 × 10 = 2,000 per second, so **peak reads = 6,000 per second**.
+    **Peak writes = 200 × 3 = 600 per second.**
 
 ### Level 3: Storage over time
 
@@ -197,37 +192,25 @@ Traffic tells you how busy the system is right now. Storage tells you how much d
 
 The overhead factor matters because databases store more than your raw data. Indexes, metadata, and the storage engine's own bookkeeping usually make the real footprint 1.5 to 3 times the raw size, before replication.
 
-Carts and orders need very different retention policies, and that difference is itself a design decision. A cart record holds the cart ID, user ID, line items (product ID, quantity, price snapshot), and timestamps — about 800 bytes. Carts are not kept forever: an abandoned cart expires after 30 days of inactivity, so the store only ever needs to hold carts touched recently, not a history of every cart since launch.
+For the URL shortener, one link record holds the short code, the long URL, the creation time, and the expiry time. Rounding generously, that is about 500 bytes.
 
 ```text
-Live carts (30-day window) ≈ 45 million
-Raw storage      = 45 million × 800 bytes   = 36 GB
-With 3 replicas  = 36 GB × 3                = 108 GB
-With overhead    = 108 GB × 1.5 to 3        ≈ 160 to 325 GB
+Number of links  = 20 million per month × 12 months × 5 years = 1.2 billion
+Raw storage      = 1.2 billion × 500 bytes                     = 600 GB
+With 3 replicas  = 600 GB × 3                                  = 1.8 TB
+With overhead    = 1.8 TB × 1.5 to 3                           ≈ 3 to 5 TB
 ```
 
-**What this tells us:** because carts expire, this store never grows past a bounded size — even at Walmart Mexico's scale it fits comfortably in memory across a small cluster, which is a strong hint that the cart store should live in a distributed cache rather than a traditional disk-backed database.
+**What this tells us:** a few terabytes fits comfortably on one well-provisioned database server with replicas. Splitting the data across many database servers (sharding) would add a lot of complexity without any requirement that needs it.
 
-A completed order is a different story. Once a shopper pays, the order (owned by the Order service) and its payment record (owned by the Payment service) become financial documents that Mexican tax law requires keeping for 5 years, not 30 days. Together, an order with its line items and its payment record is about 1.5 KB.
-
-```text
-Orders per year    = 10 million per month × 12            = 120 million
-Orders over 5 years                                          = 600 million
-Raw storage        = 600 million × 1.5 KB                   = 0.9 TB
-With 3 replicas    = 0.9 TB × 3                              ≈ 2.7 TB
-With overhead      = 2.7 TB × 1.5 to 3                       ≈ 4 to 8 TB
-```
-
-**What this tells us:** at this scale, the order and payment records cross the line from "fits comfortably on one well-provisioned database" into "needs to be partitioned." Several terabytes of transactional data, growing every month, is the point where most teams start splitting the ledger by date range (older orders move to cheaper storage) or by customer ID (spreading writes across machines) — both covered in **Basics 12 (Data Partitioning, Sharding & Replication)**. Notice that this is a genuinely different conclusion from the cart store just above: the *same* estimation method says the cart stays on one bounded cluster forever, while the order ledger does not, because retention without an expiry keeps growing and request volume alone never would have told you that.
-
-!!! question "Practice: Walmart Mexico's store inventory network"
-    An inventory row tracks one SKU in one location (SKU ID, location ID, quantity on hand, last updated) and is about 100 bytes. Not every SKU sits in every location — across the whole network there are about 300 million SKU-location combinations actively tracked. Unlike a cart or an order, a sale updates this row in place; it does not add a new row. How much storage is needed, and what does that suggest about how to estimate storage here?
+!!! question "Practice: the note-taking app"
+    Each note is about 2 KB, notes are kept for 3 years, and the database keeps 3 replicas. Ignoring index overhead, how much storage does the app need? What does that suggest for the design?
 
 ??? success "Answer"
-    Raw storage = 300,000,000 × 100 bytes = 30 GB.
-    With 3 replicas: 90 GB, and with overhead: **about 135 to 270 GB.**
+    Notes per day = 20 million, so data per day = 20,000,000 × 2 KB = 40 GB.
+    Over 3 years: 40 GB × 365 × 3 ≈ 44 TB of raw data, and with 3 replicas that is **about 130 TB**.
 
-    The lesson: storage for a current-state table is driven by the number of distinct keys you track, not by how many events touch it or how long you keep history — very different from the cart and order stores, which grow with retention.
+    That is far more than one database server should hold. The design will need to split the data across several machines, or move old, rarely read notes to cheaper storage. Both options are covered in **Basics 12 (Partitioning, Sharding & Replication)**.
 
 ### Level 4: Bandwidth
 
@@ -237,49 +220,60 @@ Bandwidth is the amount of data moving over the network every second. It tells y
 Bandwidth = peak QPS × size of each response (or request)
 ```
 
-A cart response is small, about 1 KB once you include the item list and totals:
+A redirect response is tiny, because it only contains a status code and the destination URL in a header. Assume about 500 bytes:
 
 ```text
-Peak cart-read bandwidth = 38,400 × 1 KB = 38.4 MB per second (about 307 megabits per second)
+Peak redirect bandwidth = 8,000 × 500 bytes = 4 MB per second (about 32 megabits per second)
 ```
 
-**What this tells us:** 307 megabits per second is well within what a modern server's network card handles, but it is now large enough that it should clearly be spread across several cart-service instances and, ideally, across Walmart Mexico's regional presence (Mexico City, Guadalajara, Monterrey) rather than funneled through one box — as long as the cart response only carries product IDs and prices. The moment someone inlines full product images or long descriptions into the cart payload, this number explodes by a factor of a thousand, which is exactly why product details belong in a separate, independently cacheable catalog service rather than embedded in the cart record. That boundary is covered in **Basics 5 (Architecture Styles & Service Decomposition)**.
+**What this tells us:** 32 megabits per second is a small fraction of what a single server's network card can handle, so bandwidth is not a concern for this design and we can move on.
 
-!!! question "Practice: Walmart Mexico's store inventory network"
-    Using the peak read QPS from Level 2 and 100 bytes per inventory row, what is the peak read bandwidth?
+!!! question "Practice: the note-taking app"
+    1. Using the peak read QPS from Level 2 and 2 KB per note, what is the peak read bandwidth?
+    2. Now imagine every read also downloads a 2 MB image attachment. What happens to the bandwidth, and what would you change?
 
 ??? success "Answer"
-    21,600 × 100 bytes = **2.16 MB per second** (about 17.3 megabits per second), which is trivial for any server to handle.
+    1. 6,000 × 2 KB = **12 MB per second**, which is easy for any server to handle.
+    2. 6,000 × 2 MB = **12 GB per second**, which is a thousand times more and far beyond what the application servers should serve directly. Large, unchanging files like images should be served from a content delivery network (CDN), which keeps copies close to users. This is covered in **Basics 9 (Caching Core)**.
+
+    The lesson is that bandwidth rarely matters for small text responses, but it quickly dominates once large files are involved.
 
 ### Level 5: Memory and the cache working set
 
 Reading from memory is much faster than reading from disk, so read-heavy systems keep their most popular data in a cache. The question for estimation is whether that popular data, the working set, fits in the memory of one machine.
 
-The usual rule of thumb is that about 20% of the items receive about 80% of the reads — true for something like a viral link, where a small set of items absorbs most of the traffic. A shopping cart does not behave that way: a shopper almost only ever reads their own cart, so the working set here is closer to "one entry per currently active shopper" than "the 20% most popular items."
+Real traffic is skewed: a small share of the data receives most of the requests. A common rule of thumb is that about 20% of the items receive about 80% of the reads, so caching that 20% handles most of the load.
 
 ```text
-Concurrently active carts at peak ≈ 4 million
-Cache size = 4 million × 1 KB      ≈ 4 GB
+Cache size ≈ items read per day × 20% × size of each item
 ```
 
-**What this tells us:** 4 GB fits trivially on a couple of cache nodes with room to spare, even at Walmart Mexico's scale. The interesting design decision is not the size — it is that this cache is the *primary* store for active carts, not just a read-through accelerator sitting in front of a database, because cart data is cheap to lose (the shopper just re-adds the item) but expensive to make slow.
+Using the number of reads per day as the starting point is a safe overestimate, because the same popular link is often clicked many times in one day.
+
+```text
+Redirects per day = 800 per second × 100,000 seconds = 80 million
+Cache size        = 80 million × 20% × 500 bytes      = 8 GB
+```
+
+**What this tells us:** 8 GB fits easily in the memory of a single cache server, so we need one cache node (plus a spare for safety), not a large cache cluster. As a rough guide, tens to a few hundred gigabytes can fit on one machine; beyond that, the cache must be split across several machines.
 
 ??? info "Go deeper (optional): why the cache hit ratio matters so much"
-    The **hit ratio** is the share of reads the cache answers without going to the backing store. The load that still reaches the backing store is:
+    The **hit ratio** is the share of reads the cache answers without going to the database. The load that still reaches the database is:
 
     ```text
-    Backing-store read QPS = total read QPS × (1 − hit ratio)
+    Database read QPS = total read QPS × (1 − hit ratio)
     ```
 
-    At 38,400 peak cart reads per second, a 99% hit ratio sends 384 reads per second to the backing store. If the hit ratio drops to 95%, the backing store receives 1,920 reads per second — five times more. A change that looks small as a percentage can multiply backing-store load, which is why teams monitor the hit ratio closely. Caching strategies are covered in **Basics 9 (Caching Core)**.
+    At 8,000 peak redirects per second, a 99% hit ratio sends 80 reads per second to the database. If the hit ratio drops to 95%, the database receives 400 reads per second, which is five times more. A change that looks small as a percentage can multiply the database load, which is why teams monitor the hit ratio closely. Caching strategies are covered in **Basics 9 (Caching Core)**.
 
-!!! question "Practice: Walmart Mexico's store inventory network"
-    Reads per day = 2,700 average reads per second × 100,000 seconds = 270 million. Using the same 20%-of-items rule and 100 bytes per row, how big should the cache be — and what extra risk does this working set carry that the cart cache does not?
+!!! question "Practice: the note-taking app"
+    Cache size is based on how many reads happen over a whole day, so start from the average read QPS rather than the peak. With 2,000 average reads per second and 2 KB per note, how big should the cache be?
 
 ??? success "Answer"
-    Cache size = 270,000,000 × 20% × 100 bytes = **5.4 GB**, which fits easily on one or two small cache nodes.
+    Reads per day = 2,000 × 100,000 = 200 million.
+    Cache size = 200 million × 20% × 2 KB = **80 GB**.
 
-    Unlike the cart, inventory traffic really is skewed by popularity — one SKU going viral in a flash sale can draw far more than the 80/20 average predicts. That exposes this cache to the **hot-key problem**, covered in **Advanced 8 (Distributed Caching & High-Concurrency Failures)**, in a way the per-shopper cart cache simply is not.
+    That fits on one large-memory machine, but it is big enough that splitting it across a few smaller cache nodes is also reasonable. Either choice is defensible as long as you state the reason.
 
 ### Level 6: How many servers
 
@@ -291,36 +285,30 @@ You also need headroom. If every server runs at 100% during the peak, losing a s
 Servers = peak QPS / (safe QPS per server × 0.7)
 ```
 
-Cart operations are simple key-value reads and writes against the cache described above. Assume one cart-service instance safely handles 1,500 operations per second. Combined peak cart traffic is 4,800 writes plus 38,400 reads per second:
+A redirect is very simple work: look up a code and return a response. Assume one server safely handles 1,000 redirects per second. The total peak load is about 8,000 redirects plus 80 creates per second:
 
 ```text
-Cart servers = 43,200 / (1,500 × 0.7) = 43,200 / 1,050 ≈ 42 servers
+Servers = 8,080 / (1,000 × 0.7) = 8,080 / 700 ≈ 12 servers
 ```
 
-Checkout is a different animal: each request reads the cart from the cart service, recalculates prices and IVA, waits on a synchronous call to the Payment service (which itself waits on the external gateway), and then publishes the submitted order to a queue. That is heavier work, so assume one checkout-service instance safely handles 40 requests per second. Peak checkout traffic is only 40 per second:
-
-```text
-Checkout servers = 40 / (40 × 0.7) = 40 / 28 ≈ 2 servers, by the math
-```
-
-**What this tells us:** 42 cart servers is a real, Walmart-sized fleet, but checkout only needs about 2 by the math. You would still never run just 2: running at least 3 instances across separate failure domains is a decision driven by *availability*, not throughput — if a single checkout server dies mid-deploy during El Buen Fin, nobody can pay for anything. **Basics 14 (Availability & Deployment Fundamentals)** covers exactly this gap between "enough capacity" and "enough redundancy."
+**What this tells us:** about a dozen application servers behind a load balancer is enough. Because the servers do not keep any data of their own (they are *stateless*), we can add or remove them freely as traffic changes.
 
 ??? info "Go deeper (optional): concurrency and Little's Law"
     The capacity diagram at the top of this section includes **concurrency**: the number of requests being processed at the same moment. It matters because thread pools and database connection pools have fixed sizes. Little's Law estimates it:
 
     ```text
     Requests in flight = requests per second × seconds each request takes
-                       = 40 × 0.3 seconds (300 ms, most of it waiting on the Payment service)
-                       ≈ 12 checkout requests in flight across all servers
+                       = 8,000 × 0.05 seconds (50 ms per redirect)
+                       = 400 requests in flight across all servers
     ```
 
-    The warning is the same as ever, just scarier at this scale: if the external gateway slows from 300 ms to 3 seconds under its own El Buen Fin load, the Payment service slows with it, and in-flight checkout requests jump from about 12 to about 120. The absolute numbers are still small compared to the cart fleet, but a slow payment path can exhaust a checkout thread pool fast and start queuing up customers' money — exactly the scenario circuit breakers and timeout budgets exist for. This is covered properly in **Basics 16 (Threads, Thread Pools, Parallelization)** and **Advanced 7 and 11**.
+    The important warning is that if each request suddenly takes twice as long, twice as many requests are in flight at once. Pools fill up, new requests start waiting, waiting makes latency even worse, and the system can collapse quickly. This is covered properly in **Basics 16 (Threads, Thread Pools, Parallelization)**.
 
-!!! question "Practice: Walmart Mexico's store inventory network"
-    Peak traffic is 3,600 writes plus 21,600 reads per second. Each check-and-update touches a row lock, so assume one server safely handles 800 requests per second. How many servers do you need?
+!!! question "Practice: the note-taking app"
+    Peak traffic is 6,000 reads plus 600 writes per second. Saving and loading notes involves more work than a redirect, so assume one server safely handles 500 requests per second. How many servers do you need?
 
 ??? success "Answer"
-    Servers = (3,600 + 21,600) / (800 × 0.7) = 25,200 / 560 ≈ **45 servers**.
+    Servers = 6,600 / (500 × 0.7) = 6,600 / 350 ≈ **19 servers**.
 
 ---
 
@@ -344,7 +332,7 @@ When you are unsure whether a number is "big", these rough rules of thumb help y
 
 ---
 
-## 6. Putting it together: the cart, checkout, and payment flow
+## 6. Putting it together: the URL shortener
 
 This section collects everything from the ladder into the summary you would write on the whiteboard during the Quantify phase.
 
@@ -353,135 +341,114 @@ This section collects everything from the ladder into the summary you would writ
 None of these numbers come from the original one-sentence prompt. They are estimates you state clearly so the interviewer can correct them before you build on them.
 
 ```text
-Walmart International platform: Mexico, Canada, Chile, South Africa (one deployment per country)
-Sized here: Mexico, the largest (~3,000 stores and clubs, ~129 million people)
-9 million daily active shoppers
-1.2 billion cart actions per month           (write volume: add, update, remove)
-8 cart reads per cart action                 (read/write ratio, so reads dominate)
-10 million completed checkouts per month     (the rare, high-stakes path)
-10× peak factor                              (El Buen Fin and Navidad; quincena is a smaller, 2–3× recurring peak)
-800 bytes per cart record, 30-day TTL
-~1.5 KB per order + payment record, 5-year retention (Mexican tax law), 3 replicas
-Mexico prices in MXN, IVA (16%) included
+20 million new links per month    (write volume)
+100 redirects per link            (read/write ratio, so reads dominate)
+10× peak factor                   (links can go viral on social media)
+500 bytes per link record         (short code, long URL, timestamps)
+5-year retention, 3 replicas      (how long links live, and copies kept for safety)
 ```
 
 ### Derived numbers and what each one decides
 
 | Estimate | Value | What it decides |
 |---|---|---|
-| Peak cart reads | About 38,400 per second | Reads dominate, so an in-memory cache fronts — and largely *is* — the cart store. |
-| Peak cart writes | About 4,800 per second | Needs a real fleet of cart-service instances, but still one logical cache tier; no sharding needed for the cart itself. |
-| Peak checkout | About 40 per second | Small volume, but the one path that must never silently fail or double-charge. |
-| Submitted-order messages | About 40 per second at peak, about 330,000 per day | Trivial for any message broker. The requirement is durability, not throughput. |
-| Cart storage | About 160–325 GB (bounded by the 30-day TTL) | Fits entirely in a distributed cache cluster. |
-| Order + payment storage | About 4–8 TB (5-year retention) | The Order and Payment services' stores need partitioning by date or customer ID (Basics 12). |
-| Cart servers | About 42 | A real, horizontally-scaled fleet behind a load balancer. |
-| Checkout servers | 2–3+ (availability-driven, not load-driven) | A small fleet is enough for load, but redundancy matters more than capacity here. |
+| Peak redirects | About 8,000 per second | Reads dominate, so a cache should sit in front of the database. |
+| Peak creates | About 80 per second | Writes are light, so one database server can handle them. |
+| Total storage | About 3–5 TB with replicas and overhead | The data fits on one database server with replicas, so sharding is not needed. |
+| Peak bandwidth | About 4 MB per second | The network is not a bottleneck, so no special work is needed here. |
+| Cache size | About 8 GB | A single cache node (plus a spare) holds the working set. |
+| Application servers | About 12 | A small, stateless fleet behind a load balancer is enough. |
 
-The headline to say out loud is: **"About 38,400 cart reads per second against about 40 checkouts per second — this is a system with one firehose and one needle, and at Walmart's scale the needle's own data store is now big enough to need partitioning, even though its traffic never will."**
+The headline to say out loud is: **"About 8,000 redirects per second against about 80 creates per second, and the data fits on one database."** Those two facts justify the whole architecture below.
 
 ### The minimal contract
 
-Keep the API as small as possible while still covering the use cases:
+Keep the API as small as possible while still covering the use cases. Two endpoints are enough:
 
 ```text
-POST   /cart/items          {product_id, qty}               -> 200 OK {cart}
-PATCH  /cart/items/{itemId} {qty}                            -> 200 OK {cart}
-DELETE /cart/items/{itemId}                                  -> 200 OK {cart}
-GET    /cart                                                 -> 200 OK {cart}
-POST   /checkout  {cart_id, payment_method, idempotency_key} -> 202 Accepted {order_id, status: SUBMITTED}
-GET    /orders/{order_id}                                    -> 200 OK {order, payment_status}
+POST /links      {url}    ->  201 Created  {code, short_url}
+GET  /{code}              ->  302 Found    Location: <original url>   (404 if the code is unknown)
 ```
 
-Checkout returns `202 Accepted` rather than `201 Created` on purpose: once payment is authorized, the order is *submitted* to a queue, and the Order service creates it moments later. The client already has the `order_id`, so it can show a confirmation straight away and poll `GET /orders/{order_id}` for the final status.
-
-The data model needs three related entities, each owned by exactly one service:
+The data model needs only one entity:
 
 ```text
-Cart:    cart_id (PK)    | user_id | items[] (product_id, qty, price_snapshot) | updated_at | expires_at   -- Cart service
-Order:   order_id (PK)   | user_id | items[] | subtotal | discount | tax | total | currency | status | created_at -- Order service
-Payment: payment_id (PK) | order_id | amount | currency | status | gateway_ref | idempotency_key | created_at -- Payment service
+Link: code (primary key) | long_url | created_at | expires_at
 ```
 
-The `currency` and `tax` columns are generic on purpose: the same services run in all four countries, so Mexico stores MXN with IVA while South Africa stores ZAR with VAT, in the same schema.
-
-Unlike a single-entity URL shortener, these entities have real relationships to manage: one order has many items, and one order has (usually) one payment, but may have more after a retry. Modeling those relationships well is covered in **Basics 11 (Practical Data Modeling & Query Design)**.
+Almost every request looks up a single link by its code, so the code is the natural primary key. Choosing the key from the most common access pattern, rather than designing tables first, is a habit covered in **Basics 11 (Practical Data Modeling & Query Design)**.
 
 ### The design
 
-![Cart, checkout, and payment architecture](assets/topic-01/cart_checkout_architecture.png)
+![URL shortener architecture](assets/topic-01/url_shortener_architecture.png)
 
 Each component in the diagram exists because of a specific number or requirement from the earlier sections:
 
 | Component | Why it is in the design |
 |---|---|
-| **Load balancer** | Spreads requests across the cart-service and checkout-service fleets, and stops sending traffic to any instance that becomes unhealthy. |
-| **Cart service (stateless) + distributed cache** | Cart reads outnumber writes 8 to 1, and the entire 30-day working set fits in a small cache cluster, so the cache *is* the primary store for active carts, not just an accelerator in front of one. The cart service is the only owner of cart data, so checkout asks it for the cart instead of reading the cache directly. |
-| **Checkout service (stateless)** | Orchestrates one checkout: read the cart from the cart service, price it, ask the Payment service to authorize, then publish the submitted order. It owns no long-lived data. It runs as its own fleet because it scales for availability, not throughput, and it has a very different blast radius from the cart. |
-| **Payment service** | The only service that talks to the external payment gateway, and the owner of every payment record. Retries, timeout budgets, idempotency keys, and gateway quirks all live in this one place, instead of being copied into every service that needs to take money. |
-| **Payment gateway (external)** | The third-party provider that actually moves the money. It is outside our control, so the design assumes it can be slow or unavailable. |
-| **Submitted-order queue** | A durable topic. Checkout publishes the order only after payment is authorized, then returns to the customer straight away. New subscribers can be added later without touching checkout. Queues are covered in **Basics 13 (Asynchronous Processing Basics)**. |
-| **Order service** | One subscriber to the queue. It picks up each submitted order, stores it in the partitioned order store (Basics 12), and starts post-order processing, which is out of scope for this design. |
+| **Load balancer** | It spreads requests across the twelve or so application servers and stops sending traffic to any server that becomes unhealthy. |
+| **Link API (stateless)** | The servers keep no data of their own, so any server can handle any request and servers can be added or replaced freely. |
+| **Cache** | Redirects outnumber creates 100 to 1, and the 8 GB working set fits in one cache node, so the cache answers most redirects quickly and protects the database. |
+| **Link store** | The database is the durable source of truth. A new link is only confirmed to the user after it has been safely saved here, so a short link is never lost. |
+| **Event queue, workers, and analytics store** | Recording each click is useful but not urgent. Putting click events on a queue lets the redirect finish immediately while background workers process the events later, so the redirect stays fast even if analytics is slow. Queues are covered in **Basics 13 (Asynchronous Processing Basics)**. |
 
-Notice what is still simple in this design: each country's deployment lives in a single region with no cross-region failover, and there is no saga orchestrator. Running across regions is covered in **Advanced 15 (Single Region vs Multi-Region Deployment)**. Notice, too, the one crack the design leaves open on purpose. If payment is authorized but publishing to the queue fails, the customer has paid for an order nobody will process. Closing that gap reliably, usually with a *transactional outbox* that records the order and the outgoing message together, is picked up in **Basics 13** and **Advanced 4 (Distributed Transactions & Consensus)**, along with inventory reservation and multi-service fulfillment.
+Notice what is *not* in the design: there is no sharding, no second region, and no microservices. None of the numbers require them, and adding them would only make the system harder to build and run.
 
-??? info "Go deeper (optional): why checkout needs an idempotency key"
-    A mobile network blip is enough to make a client retry a checkout request it never actually received a response for. Without protection, that retry can submit a second order and charge the card twice. The fix is an idempotency key, generated once by the client and sent with the request: checkout passes the same key on to the Payment service, which checks whether it has already processed that key and, if so, returns the original result instead of charging again. The Order service uses the `order_id` the same way, so a message delivered twice by the queue still creates only one order.
+??? info "Go deeper (optional): how long does the short code need to be?"
+    Short codes usually use the 62 characters `0-9`, `a-z`, and `A-Z` (called *base62*). A 7-character code allows 62⁷, or about 3.5 trillion, different codes. We need about 1.2 billion over five years, so 7 characters gives roughly 3,000 times more codes than we need.
 
-    Designing this properly, including how long to remember keys and what happens when two requests race each other, is covered in **Advanced 7 (Idempotency & Retries)**.
+    How to generate those codes without two servers producing the same one is a classic deep-dive question. The options and their trade-offs are covered in **Basics 15 (Distributed ID Generation)**.
 
 ---
 
 ## 7. Common beginner mistakes
 
 - **Drawing boxes before stating requirements.** Without requirements, there is no way to tell whether a design is good, so the interviewer cannot give you credit for it.
-- **Treating cart and checkout as one problem with one consistency model.** The cart can lose an update and nobody notices; checkout cannot.
-- **Sizing checkout as if raw throughput were the hard part.** Forty requests per second is not a scaling problem; double-charging a customer is a correctness problem, and no amount of extra servers fixes that.
-- **Applying one sharding decision to the whole system.** At Walmart Mexico's scale the cart store should still stay on one bounded, TTL-driven cache cluster, while the order ledger genuinely needs partitioning — the same estimation method correctly gives two different answers for two different stores.
+- **Splitting data across many databases when it fits on one.** The URL shortener needs only a few terabytes, and sharding it would add complexity that no requirement asks for.
+- **Designing for a hundred times more traffic than anyone mentioned.** Design for the stated scale, and then explain what you would change if traffic grew.
 - **Computing numbers that never influence a decision.** Every estimate should end with a sentence that starts with "so the design should…".
 - **Quoting average latency instead of a percentile.** An average can look healthy while one request in a hundred is painfully slow, so always state latency as a percentile such as p99.
-- **Adding retries to the payment call without an idempotency key.** That turns a harmless network blip into a duplicate charge.
-- **Letting every service call the external payment gateway directly.** One Payment service that owns the gateway keeps retries, idempotency, and vendor quirks in one place.
+- **Adding a cache, queue, or new technology without saying why.** Every component should be justified by a number or a requirement, as in the design table above.
 
 ---
 
 ## 8. Test yourself
 
-These three problems increase in difficulty, and all three are other Walmart Mexico systems. Try each one on paper before opening the answer.
+These three problems increase in difficulty. Try each one on paper before opening the answer.
 
-!!! question "Problem 1 (warm-up): a price and availability API"
-    Walmart Mexico's price and availability API serves the app, the website, and in-store price checkers across about 3,000 locations, and receives 300 million requests per day. Most of Mexico's population shares one time zone, so traffic is concentrated in waking hours: assume a 4× peak factor. What are the average and peak QPS?
+!!! question "Problem 1 (warm-up): a weather API"
+    A public weather API receives 300 million requests per day. Traffic is spread across time zones, so assume a 3× peak factor. What are the average and peak QPS?
 
 ??? success "Answer"
     Average QPS = 300,000,000 / 100,000 = **3,000 requests per second**.
-    Peak QPS = 3,000 × 4 = **12,000 requests per second**.
+    Peak QPS = 3,000 × 3 = **9,000 requests per second**.
 
-!!! question "Problem 2 (storage): electronic invoices (CFDI)"
-    Mexican law requires a CFDI, an electronic invoice stamped by the tax authority (SAT), whenever a customer asks for a *factura*. Assume Walmart Mexico issues 1 million CFDIs per day across stores and online, each stored XML and PDF pair averages 10 KB, invoices are kept for the legally required 5 years, and storage keeps 3 replicas. How much storage is needed, and what does the number suggest?
+!!! question "Problem 2 (storage): a text-sharing service"
+    A service similar to Pastebin receives 1 million new text pastes per day. Each paste averages 10 KB, pastes are kept for 2 years, and the database keeps 3 replicas. How much storage is needed, and what does the number suggest?
 
 ??? success "Answer"
     Data per day = 1,000,000 × 10 KB = 10 GB.
-    Over 5 years: 10 GB × 1,825 days ≈ 18 TB raw, and with 3 replicas that is **about 55 TB**, before any index overhead.
+    Over 2 years: 10 GB × 730 days ≈ 7.3 TB raw, and with 3 replicas that is **about 22 TB**. Adding index overhead could push it towards 30–60 TB.
 
-    That is far more than one database server should hold. A sensible decision is to keep the small, searchable metadata (the CFDI's UUID, the customer's RFC tax ID, date, and total) in the database and store the XML and PDF files in cheaper storage built for large files. Storage types are covered in **Advanced 13 (Storage Types)**.
+    That is more than one database server should comfortably hold. A sensible decision is to keep the small metadata (paste ID, owner, creation time) in the database and store the large text bodies in cheaper storage built for large files. Storage types are covered in **Advanced 13 (Storage Types)**.
 
-!!! question "Problem 3 (full estimate): app clickstream analytics"
-    Walmart Mexico's app and website have 9 million daily active shoppers. Each shopper generates 150 clickstream events per day (views, searches, taps), each event is about 500 bytes, and each event is read by 2 downstream consumers (analytics and personalization). Events are kept for 1 year with 3 replicas, and an ordinary day's peak factor is 3×. Estimate the peak write QPS, peak read QPS, storage, and peak read bandwidth. Then say which number matters most for the design.
+!!! question "Problem 3 (full estimate): a chat app"
+    A chat app has 50 million daily active users. Each user sends 40 messages per day, each message is about 200 bytes, and each message is read on average by 2 people. Messages are kept for 1 year with 3 replicas, and the peak factor is 3×. Estimate the peak write QPS, peak read QPS, storage, and peak read bandwidth. Then say which number matters most for the design.
 
 ??? success "Answer"
     ```text
-    Events per day      = 9 million × 150          = 1.35 billion
-    Average write QPS   = 1.35 billion / 100,000   = 13,500 per second
-    Peak write QPS      = 13,500 × 3               = 40,500 per second
-    Peak read QPS       = 40,500 × 2               = 81,000 per second
-    Storage per day     = 1.35 billion × 500 bytes = 675 GB
-    Storage per year    = 675 GB × 365             ≈ 246 TB raw, about 740 TB with 3 replicas
-    Peak read bandwidth = 81,000 × 500 bytes       ≈ 40 MB per second
+    Messages per day   = 50 million × 40          = 2 billion
+    Average write QPS  = 2 billion / 100,000      = 20,000 per second
+    Peak write QPS     = 20,000 × 3               = 60,000 per second
+    Peak read QPS      = 60,000 × 2               = 120,000 per second
+    Storage per day    = 2 billion × 200 bytes    = 400 GB
+    Storage per year   = 400 GB × 365             ≈ 146 TB raw, about 440 TB with 3 replicas
+    Peak read bandwidth = 120,000 × 200 bytes     = 24 MB per second
     ```
 
-    **The number that matters most is the 40,500 writes per second**, and on El Buen Fin, at 10×, it passes 130,000. One database server starts to struggle in the low thousands of writes per second, so this design must spread writes across many machines, for example with a log partitioned by shopper ID. The storage size points the same way. The bandwidth, by contrast, is moderate and needs no special attention.
+    **The number that matters most is the 60,000 writes per second.** One database server starts to struggle in the low thousands of writes per second, so this design must spread writes across many database servers, for example by splitting the data by conversation. The storage size points the same way. The bandwidth, by contrast, is small and needs no special attention.
 
-    Compare this with the cart and checkout flow: that system split cleanly into a huge, cheap read path and a tiny, precious write path, while this one is dominated by writes everywhere and needs the data split across machines. The same estimation method led to two very different designs for the same company, which is exactly why estimation comes before design.
+    Compare this with the URL shortener: that system was dominated by reads and solved with a cache, while this one is dominated by writes and needs the data split across machines. The same estimation method led to two very different designs, which is exactly why estimation comes before design.
 
 ---
 
@@ -505,11 +472,10 @@ This page skipped several topics on purpose. Here is where each one is covered o
 | Cache strategies, eviction, CDNs, and hit ratios | Basics 9: Caching Core |
 | Splitting data across machines, and database replicas | Basics 12: Data Partitioning, Sharding & Replication |
 | Queues and background processing | Basics 13: Asynchronous Processing Basics |
-| Generating unique order IDs and idempotency keys | Basics 15: Distributed ID Generation |
+| Generating unique short codes and IDs | Basics 15: Distributed ID Generation |
 | Concurrency, thread pools, and Little's Law | Basics 16: Threads, Thread Pools, Parallelization |
 | Retries, timeouts, circuit breakers, and bulkheads | Advanced 7, 10, and 11 |
 | Tail latency and overload protection | Advanced 10: Backpressure, Admission Control & Overload Protection |
 | Consistency versus availability (CAP) | Advanced 12: Data Consistency & Clock Synchronization |
 | SLIs, SLOs, and error budgets | Advanced 14: Observability, Monitoring & Alerting |
 | Hot keys and cache stampedes | Advanced 8: Distributed Caching & High-Concurrency Failures |
-| Running the same platform in several countries: regions, tenant isolation, and data residency | Advanced 15, 19, and 20 |

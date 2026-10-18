@@ -10,21 +10,22 @@ You do not need to memorize these. Come back to this table whenever a term feels
 | **Interface** | A list of methods that a class promises to provide, without saying how. Code that uses an interface works with any class that implements it. |
 | **Implementation** | A class that provides the actual code behind an interface. One interface can have many implementations. |
 | **Caller (or client)** | The code that uses an object by calling its methods. |
-| **Invariant** | A rule about an object's data that must always be true, such as "a cart's total always equals the sum of its line items minus its discounts". |
+| **Invariant** | A rule about an object's data that must always be true, such as "a notification always has a non-empty message". |
 | **Contract** | Everything a caller may rely on when using an object: its methods, what they accept, what they return, and how they fail. |
 | **Dependency** | Something a class needs in order to do its job. If class A calls class B, then A depends on B. |
 | **Wiring** | The code that creates objects and connects them to their dependencies, usually at application startup. |
 | **Coupling** | How much one class knows about another. High coupling means a change in one class forces changes in others. |
 | **Cohesion** | How closely the code inside one class belongs together. High cohesion means everything in the class serves one purpose. |
 | **Refactoring** | Changing the structure of code without changing what it does, usually to make the next change easier. |
-| **Test double (fake)** | A simple stand-in object used in tests instead of a real dependency, such as an in-memory cart store that keeps carts in a map instead of a real database. |
+| **Test double (fake)** | A simple stand-in object used in tests instead of a real dependency, such as a fake email sender that records messages instead of sending them. |
 
 ??? info "Java syntax used on this page (open if you learned Java before version 17)"
     - **`final class`** means the class cannot be extended by inheritance.
     - **`record`** is a short way to declare a class whose job is to hold data. `record Point(int x, int y) {}` automatically creates private final fields, a constructor, and the accessor methods `x()` and `y()`.
     - **`switch` with `->`** is the newer switch syntax. Each case runs only its own branch, so there is no `break` and no accidental fall-through.
-    - **`List.of(...)`** and **`Map.of(...)`** create small collections that cannot be modified afterwards. **`List.copyOf(list)`** makes an unmodifiable copy of an existing list.
-    - **`Optional<T>`** holds either one value or nothing. A method that returns `Optional.empty()` is saying "nothing was found", and the caller is forced to handle that case instead of receiving `null`.
+    - **`Map.of(key1, value1, key2, value2)`** creates a small map that cannot be modified afterwards.
+    - **`() -> sender.send(notification)`** is a lambda: a small piece of code passed around as a value, to be run later.
+    - **`Supplier<T>`** is the standard interface for a lambda that takes no input and returns a value of type `T`.
 
 ---
 
@@ -32,42 +33,39 @@ You do not need to memorize these. Come back to this table whenever a term feels
 
 Every principle on this page is easier to understand when you watch it fix a real problem. So instead of using a different example for each idea, the whole page improves one piece of code step by step.
 
-In **Basics 1**, you sized a cart-and-checkout flow and drew its main boxes: a cart service, a cache, a checkout service, a durable order store, and a payment gateway. This page zooms into the code inside the checkout box. Since launch, the product team has also added three discount features: percentage-off codes, free-shipping promotions, and buy-one-get-one deals. Here is a first version of the checkout code that works, but that is painful to change:
+An online shop needs to tell users when something happens to their order, for example when it ships. Users can be notified by email, SMS, or push notification. Here is a first version that works, but that is painful to change:
 
 ```java
-class CheckoutManager {
-    public String cartId;                      // the cart API fills these in, and anyone can set them to anything
-    public double total;
-    public String discountType;                // "NONE", "PERCENTAGE", "FREE_SHIPPING", or "BOGO"
+class NotificationManager {
+    public String recipient;                  // anyone can set these to anything
+    public String channel;                    // "EMAIL", "SMS", or "PUSH"
+    public String body;
 
-    String checkout(String cartId, String discountCode, String cardToken) {
-        String cached = redis.get("cart:" + cartId);                                            // cache plumbing
-        Row row = (cached != null) ? Row.fromJson(cached)
-                : new PostgresClient(DB_URL).query("SELECT * FROM carts WHERE id = ?", cartId);   // SQL plumbing
-        if (cached == null) redis.set("cart:" + cartId, row.toJson());
-
-        double total = row.subtotal();
-        switch (row.discountType()) {                                                           // discount rules
-            case "PERCENTAGE"    -> total = total * (1 - row.discountValue());
-            case "FREE_SHIPPING" -> total = total - row.shippingCost();
-            case "BOGO"          -> total = total - row.cheapestItemPrice();
+    void send() {
+        if (userHasOptedOut(recipient, channel)) return;           // preference rules
+        switch (channel) {                                         // channel rules
+            case "EMAIL" -> {
+                smtp.connect("smtp.example.com", 587);             // email protocol details
+                smtp.authenticate(SMTP_USER, SMTP_PASSWORD);
+                smtp.send(recipient, "Your order update", body);
+                smtp.disconnect();
+            }
+            case "SMS"  -> new TwilioClient(API_KEY).sendText(recipient, body);
+            case "PUSH" -> firebase.push(recipient, body);
         }
-        String receipt = new StripeClient(STRIPE_KEY).charge(cardToken, total);                 // payment plumbing
-        emailer.send(row.customerEmail(), "Your receipt", receipt);                             // notification plumbing
-        return receipt;
     }
 }
 ```
 
 This class has five separate problems, and each level below fixes one of them:
 
-| Problem in `CheckoutManager` | Fixed in |
+| Problem in `NotificationManager` | Fixed in |
 |---|---|
-| Any caller can set `total` or `discountType` directly, including a negative total or a made-up discount. | Level 1: Encapsulation |
-| The checkout logic is buried under cache, SQL, and payment plumbing, and a missing cart is never handled. | Level 2: Abstraction |
-| Every new discount type means editing the `switch`, and every other `switch` on discount type. | Level 3: Polymorphism |
-| A cart can only have one discount, so "10% off **and** free shipping" cannot exist. | Level 4: Composition over inheritance |
-| The class knows about Redis, Postgres, Stripe, and email all at once. | Level 5: Coupling and cohesion |
+| Any caller can create a notification with an empty message or an invalid channel. | Level 1: Encapsulation |
+| The class is full of email protocol steps that have nothing to do with notifying a user. | Level 2: Abstraction |
+| Adding a new channel means editing the `switch`, and every other `switch` on the channel. | Level 3: Polymorphism |
+| Adding retries tempts you into a tangle of subclasses. | Level 4: Composition over inheritance |
+| The class knows about SMTP, Twilio, Firebase, and user preferences all at once. | Level 5: Coupling and cohesion |
 
 ---
 
@@ -81,33 +79,23 @@ The four pillars build on each other. Encapsulation protects data, abstraction h
 
 **Encapsulation** means an object keeps its data private and only exposes methods that keep that data valid. The rules about the data (its invariants) are enforced in exactly one place: inside the object that owns the data.
 
-In `CheckoutManager`, the fields are public, so nothing stops a caller from setting `total = -50` or `discountType = "FREE_EVERYTHING"`, a value nothing on this page ever defined. Every caller would have to remember to validate the data, and sooner or later one of them would forget.
+In `NotificationManager`, the fields are public, so nothing stops a caller from writing `manager.body = "";` and sending an empty message. Every caller would have to remember to validate the data, and sooner or later one of them would forget.
 
-The fix is to make each object responsible for its own validity. It checks its data once, in the constructor, and never allows that data to change afterwards:
+The fix is to make the notification responsible for its own validity. It checks its data once, in the constructor, and never allows that data to change afterwards:
 
 ```java
-record Money(long cents, String currency) {
-    Money {                                            // runs before the field is set
-        if (cents < 0) throw new IllegalArgumentException("a price cannot be negative");
-        if (currency == null || currency.length() != 3)
-            throw new IllegalArgumentException("currency must be a 3-letter code, such as MXN");
-    }
-    Money plus(Money other) {                          // pesos plus rand is a bug, not a sum
-        if (!currency.equals(other.currency))
-            throw new IllegalArgumentException("cannot add " + other.currency + " to " + currency);
-        return new Money(cents + other.cents, currency);
-    }
-}
+enum Channel { EMAIL, SMS, PUSH }                      // replaces the error-prone "EMAIL" strings
 
-record CartItem(String productId, int quantity, Money unitPrice) {
-    CartItem {
-        if (quantity <= 0) throw new IllegalArgumentException("quantity must be at least 1");
-        if (productId == null || unitPrice == null) throw new IllegalArgumentException("productId and unitPrice are required");
+record Notification(String recipient, Channel channel, String body) {
+    Notification {                                     // runs before the fields are set
+        if (recipient == null || recipient.isBlank()) throw new IllegalArgumentException("recipient is required");
+        if (channel == null) throw new IllegalArgumentException("channel is required");
+        if (body == null || body.isBlank()) throw new IllegalArgumentException("body must not be empty");
     }
 }
 ```
 
-Now an invalid price or quantity simply cannot exist. Any method that receives a `Money` or a `CartItem` can trust it without checking it again. Wrapping an amount in its own `Money` type follows the same idea: a method that receives a `Money` never needs to re-check for negative amounts or missing currencies, and nobody can accidentally pass a raw `double` where a validated price was expected — which matters a great deal once that number is about to be charged to a real credit card. And because the same code runs in Mexico, Canada, Chile, and South Africa, `plus` refusing to mix currencies turns a silent pricing bug into a loud one.
+Now an invalid notification simply cannot exist. Any method that receives a `Notification` can trust it without checking it again. Replacing the `String channel` with an `enum` follows the same idea, because a typo such as `"EMIAL"` now fails at compile time instead of in production.
 
 !!! warning "A common trap"
     Making every field private and then adding a public setter for each one is not encapsulation. Callers can still put the object into any state they like, so the rules still live in the callers. Only add methods that keep the object valid.
@@ -116,41 +104,40 @@ Now an invalid price or quantity simply cannot exist. Any method that receives a
     What is wrong with this class, and how would you fix it?
 
     ```java
-    class Invoice {
-        public List<LineItem> lines = new ArrayList<>();
+    class Cart {
+        public List<Item> items = new ArrayList<>();
         public double total;
     }
     // A caller elsewhere:
-    invoice.lines.add(line);
-    invoice.total += line.amount();
+    cart.items.add(item);
+    cart.total += item.price();
     ```
 
 ??? success "Answer"
-    The rule "the total always equals the sum of the line amounts" lives in the callers. If any caller adds a line and forgets to update the total, the invoice becomes wrong, and nothing detects it. The fix is to make the fields private and give the invoice an `addLine(LineItem line)` method that updates both together, or, even simpler, to compute `total()` from the lines whenever it is asked for.
+    The rule "the total always equals the sum of the item prices" lives in the callers. If any caller adds an item and forgets to update the total, the cart becomes wrong, and nothing detects it. The fix is to make the fields private and give the cart an `addItem(Item item)` method that updates both together, or, even simpler, to compute `total()` from the items whenever it is asked for.
 
 ### Level 2: Abstraction, hiding the how
 
 **Abstraction** means callers depend on *what* an object does, not *how* it does it. The caller states its intent, and the details stay hidden behind a simple interface.
 
-In `CheckoutManager`, the checkout method checks Redis, falls back to a SQL query, and then fills the cache, all before it can do its actual job. The code that decides how much to charge a shopper should not need to know how carts are stored. We hide storage behind an interface:
+In `NotificationManager`, the email branch contains four SMTP steps that must run in exactly the right order. The class that decides *whom to notify* should not need to know how the email protocol works. We hide those details behind an interface:
 
 ```java
-interface CartRepository {
-    Optional<Cart> findById(CartId id);
-    void save(Cart cart);
+enum SendResult { DELIVERED, RETRYABLE_FAILURE, PERMANENT_FAILURE }
+
+interface Sender {
+    SendResult send(Notification notification);
 }
 
-final class PostgresCartRepository implements CartRepository {
-    public Optional<Cart> findById(CartId id) {
-        // the SQL query, and the mapping from table rows to Cart objects, live here and only here
+final class EmailSender implements Sender {
+    public SendResult send(Notification notification) {
+        // connect, authenticate, send, and disconnect all live here, and only here
+        return SendResult.DELIVERED;
     }
-    public void save(Cart cart) { ... }
 }
 ```
 
-Notice that `findById` returns an `Optional` rather than a cart that might be `null`. A good abstraction hides details the caller does not need, but it must not hide information the caller needs in order to make a decision. A missing cart is normal, because a session can expire or a cart ID can be mistyped, and the caller must decide to show a "your cart could not be found" page. So "nothing was found" is part of the contract. The messy version simply forgot about this case.
-
-What about the cache? It has disappeared from the business logic as well. **Basics 3** shows how to put it back behind this same interface without editing `PostgresCartRepository` at all.
+Notice that `send` returns a `SendResult` instead of returning nothing. A good abstraction hides details the caller does not need, but it must not hide information the caller needs in order to make a decision. The caller needs to know whether the send worked, and whether trying again could help, so that information is part of the contract.
 
 !!! question "Practice"
     A caller exports a report by opening a file, writing a header row, writing every data row, flushing the stream, and closing the file. What would a better abstraction look like?
@@ -162,27 +149,16 @@ What about the cache? It has disappeared from the business logic as well. **Basi
 
 **Polymorphism** means the same method call can behave differently depending on which object receives it. It lets you replace `if` and `switch` statements that check an object's type with a single call through an interface.
 
-In `CheckoutManager`, every new discount means editing the `switch`. Worse, in real code the same `switch` on discount type tends to appear in several places, such as checkout, the cart preview page, and the admin tool that explains a refund, and every one of them must be found and updated.
+In `NotificationManager`, every new channel means editing the `switch`. Worse, in real code the same `switch` on channel tends to appear in several places, such as sending, formatting, and cost calculation, and every one of them must be found and updated.
 
-Instead, each discount type becomes its own class behind one interface:
+Now that every channel has its own `Sender` implementation, the `switch` from section 1 can disappear completely. One call works for every channel, including channels added later:
 
 ```java
-interface DiscountRule {
-    Money apply(Money subtotal);
-}
-
-final class PercentageOffRule implements DiscountRule {
-    private final double fraction;                 // e.g. 0.10 for 10% off
-    PercentageOffRule(double fraction) { this.fraction = fraction; }
-
-    public Money apply(Money subtotal) {
-        return subtotal.minus(subtotal.times(fraction));
-    }
-}
-// FreeShippingRule and BogoRule follow exactly the same shape.
+Map<Channel, Sender> senders = Map.of(Channel.EMAIL, emailSender, Channel.SMS, smsSender, Channel.PUSH, pushSender);
+senders.get(notification.channel()).send(notification);
 ```
 
-The `switch` disappears, and one call, `rule.apply(subtotal)`, works for every rule, including rules added later. When marketing asks for a "spend MX$1,000, get MX$150 off" rule, that becomes a new class, and none of the existing, already-tested rules are edited.
+Adding WhatsApp is now a new `WhatsAppSender` class plus one extra entry in the map. None of the existing, already-tested code has to be edited.
 
 !!! tip "A switch is not always wrong"
     Polymorphism is the right tool when new types keep arriving and each type has its own behavior. A plain `switch` is perfectly fine for a small, fixed set of values that rarely changes, such as the days of the week. Choose based on what is likely to change.
@@ -221,7 +197,7 @@ The `switch` disappears, and one call, `rule.apply(subtotal)`, works for every r
 
 ### Level 4: Composition over inheritance
 
-**Inheritance** creates an *is-a* relationship: a subclass reuses its parent's code and promises to behave like its parent everywhere. **Composition** creates a *has-a* relationship: an object holds other objects and hands work over to them.
+**Inheritance** creates an *is-a* relationship: a subclass reuses its parent's code and promises to behave like its parent everywhere. **Composition** creates a *has-a* relationship: an object holds another object and hands work over to it.
 
 The classic illustration is a bird that can fly, and a penguin that cannot:
 
@@ -229,28 +205,20 @@ The classic illustration is a bird that can fly, and a penguin that cannot:
 
 If `Penguin extends Bird` and overrides `fly()` to throw an exception, any code that calls `bird.fly()` on a list of birds crashes on the penguin. With composition, a bird *has* a flight behavior, and a penguin is simply a bird given `NoFlight`. No method is overridden, and nothing breaks.
 
-The cart runs into a similar problem as soon as a customer asks to combine a percentage-off code *and* a free-shipping promotion. The old `discountType` field can hold only one value. Inheritance tempts us towards `PercentageCart extends Cart` and `FreeShippingCart extends Cart`, and then `PercentageFreeShippingCart`, `PercentageFreeShippingBogoCart`, and so on. Three discounts already allow seven combinations, and every new discount type doubles the count. Composition avoids that explosion: a cart *has* a list of rules, and the final price applies every rule in turn.
+The notification service runs into the same problem when we add retries. Suppose temporary failures, such as timeouts, should be retried a few times. Inheritance tempts us towards `RetryingEmailSender extends EmailSender`, then `RetryingSmsSender`, then `RetryingPushSender`. If logging is added later in the same way, the number of classes doubles again. Composition avoids that explosion: we write one `RetryPolicy` class, and the service *has* one:
 
 ```java
-record Cart(CartId id, List<CartItem> items, List<DiscountRule> rules) {
-    Cart {
-        // ...the same checks as in Level 1...
-        rules = List.copyOf(rules);                    // a private copy that callers cannot modify later
-    }
+final class RetryPolicy {
+    private final int maxAttempts;
+    RetryPolicy(int maxAttempts) { this.maxAttempts = maxAttempts; }
 
-    Money total() {
-        Money subtotal = items.stream().map(CartItem::lineTotal).reduce(Money.zero(), Money::plus);
-        Money discounted = subtotal;
-        for (DiscountRule rule : rules) discounted = rule.apply(discounted);   // every rule gets a turn
-        return discounted;
+    SendResult run(Supplier<SendResult> attempt) {
+        // Call attempt.get() again while the result is RETRYABLE_FAILURE, up to maxAttempts times.
     }
 }
-
-// A cart with a 10% off code and free shipping is simply a cart with two rules:
-new Cart(cartId, items, List.of(new PercentageOffRule(0.10), new FreeShippingRule(shippingCost)));
 ```
 
-A new discount is one new rule class, and it combines with every existing rule for free. `List.copyOf` is encapsulation at work again: without it, a caller could quietly add or remove rules after the cart was priced.
+One `RetryPolicy` now works with every sender, including senders that do not exist yet, and changing the retry rules means editing exactly one class.
 
 Inheritance is still the right tool when the relationship is a true *is-a*, the hierarchy is shallow (one or two levels), and every subclass keeps every promise its parent makes. A quick test: if you are about to override a method just to throw an exception or do nothing, the relationship was never *is-a*, so use composition instead.
 
@@ -285,19 +253,19 @@ Coupling and cohesion are the two measurements behind almost every design princi
 - **Cohesion** asks whether the code inside one class belongs together. A class has high cohesion when everything in it serves one purpose and changes for the same reason.
 - **Coupling** asks how much one class knows about another. Two classes are tightly coupled when a change in one forces a change in the other.
 
-The goal is the green quadrant: high cohesion and low coupling, so that every change stays local. The original `CheckoutManager` sits in the red quadrant. It mixes Redis, Postgres, discount rules, Stripe, and email in one class (low cohesion), and it creates those dependencies directly, so it is welded to all of them (high coupling). After Levels 1 to 4, each class has one job, and classes talk to each other only through small interfaces such as `CartRepository` and `DiscountRule`.
+The goal is the green quadrant: high cohesion and low coupling, so that every change stays local. The original `NotificationManager` sits in the red quadrant. It mixes SMTP, Twilio, Firebase, and preference rules in one class (low cohesion), and it creates those dependencies directly, so it is welded to all of them (high coupling). After Levels 1 to 4, each class has one job, and classes talk to each other only through small interfaces such as `Sender`.
 
 A practical habit that reduces coupling is **"tell, don't ask"**: instead of pulling data out of an object to make a decision elsewhere, ask the object that owns the data to make the decision.
 
 ```java
-// Ask: the caller digs into the order's internals and makes the decision itself
-if (order.getCustomer().getAddress().getCountry().equals("IN")) { applyDomesticShipping(order); }
+// Ask: the caller must know how users store their settings, three levels deep
+if (user.getSettings().getNotificationSettings().isSmsEnabled()) { ... }
 
-// Tell: the order owns its shipping details, and the caller only states what it wants to know
-if (order.isDomesticShipment()) { applyDomesticShipping(order); }
+// Tell: the user owns the rule, and the caller only states what it wants to know
+if (user.allows(Channel.SMS)) { ... }
 ```
 
-A long chain of getters is coupling you can see. If the way addresses are stored ever changes, every caller with a chain like that breaks. This guideline is also known as the *Law of Demeter*: talk to the objects you hold directly, not to the objects inside them.
+A long chain of getters is coupling you can see. If the way settings are stored ever changes, every caller with a chain like that breaks. This guideline is also known as the *Law of Demeter*: talk to the objects you hold directly, not to the objects inside them.
 
 ??? info "Go deeper (optional): the kinds of coupling, from worst to best"
     | Kind of coupling | What it looks like |
@@ -305,7 +273,7 @@ A long chain of getters is coupling you can see. If the way addresses are stored
     | Content coupling | One class reaches directly into another class's private fields or internal workings. |
     | Global coupling | Classes share mutable global state, which hides dependencies and makes test results depend on the order the tests run in. |
     | Control coupling | A caller passes a flag that tells the method *what to do*, so the caller must understand how the method works inside. |
-    | Stamp coupling | A method receives a whole object, such as a `Cart`, when it only needs one value from it, such as its total. |
+    | Stamp coupling | A method receives a whole object, such as an `Order`, when it only needs one value from it, such as the order ID. |
     | Data coupling | A method receives exactly the values it needs and nothing more. This is the goal. |
 
 !!! question "Practice"
@@ -316,7 +284,7 @@ A long chain of getters is coupling you can see. If the way addresses are stored
     ```
 
 ??? success "Answer"
-    Move the question to the object that owns the data, for example `if (order.isDomesticShipment())`. The order (or the customer it holds) decides how to answer, and the caller no longer depends on how customers, addresses, and countries are structured.
+    Move the question to the object that owns the data, for example `if (order.isDomestic())`. The order (or the customer it holds) decides how to answer, and the caller no longer depends on how customers, addresses, and countries are structured.
 
 ---
 
@@ -324,21 +292,19 @@ A long chain of getters is coupling you can see. If the way addresses are stored
 
 ![Five SOLID principles framed as questions about change](assets/topic-02/solid_principles.png)
 
-SOLID is a set of five guidelines for keeping change local. Each letter is best remembered as a question you ask about your code, and each one has a typical symptom, or *smell*, that tells you it is being broken. The sections below apply each letter to the cart and checkout flow.
+SOLID is a set of five guidelines for keeping change local. Each letter is best remembered as a question you ask about your code, and each one has a typical symptom, or *smell*, that tells you it is being broken. The sections below apply each letter to the notification service.
 
 ### S: Single Responsibility
 
 **A class should have only one reason to change.** The useful way to apply this is to ask *who* would ask for the class to change.
 
-The original `CheckoutManager` is changed by five different groups: the product team adds discount rules, the trust and safety team tightens fraud checks, the payments team changes which payment provider is used, the infrastructure team changes how carts are stored and cached, and the fulfillment team changes what happens after an order is placed. Their edits collide in one file. The fix gives each group its own classes, and keeps one small class that coordinates them:
+The original `NotificationManager` is changed by three different groups: the marketing team edits message wording, the product team edits opt-out rules, and the operations team switches SMS providers. Their edits collide in one file. The fix gives each group its own class, and keeps one small class that coordinates them:
 
 ```java
-final class PercentageOffRule implements DiscountRule { ... }                    // product team
-final class FraudChecker { boolean isSuspicious(Cart cart, Card card) { ... } }   // trust and safety team
-final class StripePaymentProcessor implements PaymentProcessor { ... }           // payments team
-final class PostgresCartRepository implements CartRepository { ... }             // infrastructure team
-final class OrderEventPublisher { void publish(Order order) { ... } }            // fulfillment team
-final class CheckoutService { /* coordinates the others, shown in section 6 */ }
+final class PreferencePolicy  { Set<Channel> allowedChannels(User user) { ... } }      // product team
+final class TemplateRenderer  { Notification render(User user, Channel channel, OrderEvent event) { ... } } // marketing
+final class SmsSender implements Sender { ... }                                        // operations
+final class NotificationService { /* coordinates the others, shown in section 6 */ }
 ```
 
 **Trap:** single responsibility does not mean "one method per class". Methods that protect the same rule belong together. Splitting them across many files scatters one rule, which is the opposite of the goal.
@@ -347,87 +313,74 @@ final class CheckoutService { /* coordinates the others, shown in section 6 */ }
 
 **A class should be open for extension but closed for modification.** In plain words, a new case should arrive as a new class, without editing code that is already tested.
 
-Levels 3 and 4 already achieved this for discounts. When marketing asks for a "spend MX$1,000, get MX$150 off" rule, we write a `SpendThresholdRule` class. `Cart`, the other rules, and the service that prices a cart are not edited.
+Level 3 already achieved this for channels. Adding WhatsApp means writing a `WhatsAppSender` class and adding one entry where the senders are wired together. The `NotificationService` itself is not edited.
 
-**Trap:** only build extension points for changes you have real evidence for. The product team keeps asking for new discount types, so a rule extension point is justified. Adding extension points for changes nobody has asked for, such as pluggable currencies, is guessing, and that breaks YAGNI (Level 7).
+**Trap:** only build extension points for changes you have real evidence for. The product team has asked for new channels, so a channel extension point is justified. Adding extension points for changes nobody has asked for is guessing, and that breaks YAGNI (Level 7).
 
 ### L: Liskov Substitution
 
 **Any implementation must be usable wherever its interface is expected, without surprising the caller.** Matching the method signatures is the easy part. What matters is that every implementation *behaves* the way the contract promises.
 
-Every order needs an order ID, so the service depends on an interface whose contract makes one promise:
+The `Sender` contract promises that `send` returns `RETRYABLE_FAILURE` for temporary problems, such as a timeout, and `PERMANENT_FAILURE` for problems that will never succeed, such as an invalid phone number. Imagine an `SmsSender` that returns `PERMANENT_FAILURE` on a timeout, or throws the provider's exception instead of returning a result. The code still compiles, but the retry logic now gives up on messages it should have retried. That implementation cannot be safely substituted for a `Sender`.
 
-```java
-interface OrderIdGenerator {
-    OrderId next();          // contract: never returns an ID that has already been used
-}
-```
-
-`SequentialOrderIdGenerator`, which turns an ever-increasing counter into an order ID, keeps that promise. Now imagine a `RandomOrderIdGenerator` that picks random digits and never checks whether the ID is already taken. It compiles and passes a quick test. But because of the *birthday paradox*, a repeated ID becomes likely far sooner than intuition suggests once order volume climbs. When it happens, `save` overwrites someone else's order, and their receipt and payment record get mixed up with another customer's. That generator cannot be safely substituted for an `OrderIdGenerator`. A correct random generator checks whether the ID exists and tries again, which keeps the promise.
-
-The other common symptom is a method that an implementation cannot support. Suppose a team adds `ReadOnlyCartRepository`, which reads from a read-only replica and throws `UnsupportedOperationException` from `save`. Any caller that trusts the `CartRepository` interface would crash. The fix is to model capabilities honestly: give read-only callers a separate `CartReader` interface that contains only `findById`.
+The other common symptom is a method that an implementation cannot support. If `Sender` also had a `recall(messageId)` method for "unsending" a message, `EmailSender` would have to throw `UnsupportedOperationException`, because an email cannot be unsent. Any caller that trusts the interface would crash. The fix is to model capabilities honestly: keep `recall` in a separate `Recallable` interface that only channels which support it implement.
 
 The classic interview example is `Square extends Rectangle`. Code that sets a rectangle's width and then its height expects both values to stick, but a square must keep its sides equal, so it silently changes the other side and surprises the caller.
 
 ??? info "Go deeper (optional): the four formal substitution rules"
     | Rule | Meaning | Violation example |
     |---|---|---|
-    | Preconditions | An implementation cannot demand more from callers than the interface does. | The interface accepts any cart with at least one item, but one implementation rejects carts over 20 items. |
-    | Postconditions | An implementation cannot promise less than the interface does. | The interface promises an ID that was never used before, but one generator sometimes returns a duplicate. |
+    | Preconditions | An implementation cannot demand more from callers than the interface does. | The interface accepts any message, but one implementation rejects messages over 160 characters. |
+    | Postconditions | An implementation cannot promise less than the interface does. | The interface guarantees a result, but one implementation returns `null`. |
     | Invariants | An implementation must keep every rule the interface keeps true. | A `Square` breaks the rectangle rule that width and height can change independently. |
-    | Exceptions | An implementation cannot add new ways to fail. | The interface never throws from `save` for a valid order, but a read-only implementation throws `UnsupportedOperationException`. |
+    | Exceptions | An implementation cannot add new ways to fail. | The interface never throws on `send`, but one implementation throws `UnsupportedOperationException`. |
 
 ### I: Interface Segregation
 
 **No caller should be forced to depend on methods it does not use.** Interfaces should be shaped around what each kind of caller actually needs.
 
-Suppose `CartRepository` grew over time to include everything anyone asked for:
+Suppose `Sender` grew over time to include everything anyone asked for:
 
 ```java
-// Too big: checkout only calls findById and save, but every implementation must provide everything
-interface CartRepository {
-    Optional<Cart> findById(CartId id);
-    void save(Cart cart);
-    List<Order> topOrders(int limit);                              // only the dashboards need this
-    Map<String, Money> revenueByCountry();                         // only the dashboards need this
+// Too big: the service only calls send, but every implementation must provide everything
+interface Sender {
+    SendResult send(Notification notification);
+    void recall(String messageId);                     // only some channels support this
+    DeliveryStats monthlyStats();                      // only the analytics team needs this
 }
 
 // Better: small interfaces, one per kind of caller
-interface CartRepository { Optional<Cart> findById(CartId id); void save(Cart cart); }
-interface OrderStats     { List<Order> topOrders(int limit); Map<String, Money> revenueByCountry(); }
+interface Sender      { SendResult send(Notification notification); }
+interface Recallable  { void recall(String messageId); }
+interface StatsSource { DeliveryStats monthlyStats(); }
 ```
 
-Basics 1 already put the durable order store behind its own boundary, separate from the cache, and the interfaces now follow the same split. The checkout path depends only on `CartRepository`, so it is not affected when the analytics team changes its dashboards, and the in-memory fake used in tests no longer has to pretend to compute revenue by country.
+One class may still implement several of these interfaces. The point is that the `NotificationService` depends only on `send`, so it is not affected when the analytics team changes its statistics methods.
 
 **Trap:** split interfaces by what callers need, not mechanically by method. A codebase where every interface has exactly one method is just as hard to work with as one giant interface.
 
 ### D: Dependency Inversion
 
-**Business logic should depend on interfaces it owns, not on concrete infrastructure.** Infrastructure, such as databases and third-party services, then plugs in behind those interfaces.
+**Business logic should depend on interfaces it owns, not on concrete infrastructure.** Infrastructure, such as databases and third-party providers, then plugs in behind those interfaces.
 
-The original `CheckoutManager` creates `new StripeClient(STRIPE_KEY)` itself. That welds the business logic to Stripe, makes it impossible to test without hitting a real payment provider, and means adding a second provider for a new region requires editing the business logic. The fix is to depend on a `PaymentProcessor` interface and receive the implementation from outside, through the constructor:
+The original `NotificationManager` creates `new TwilioClient(API_KEY)` itself. That welds the business logic to Twilio, makes it impossible to test without sending real text messages, and means switching providers requires editing the business logic. The fix is to depend on the `Sender` interface and receive the implementations from outside, through the constructor:
 
 ```java
-interface PaymentProcessor {
-    PaymentResult charge(Card card, Money amount);     // contract: throws PaymentDeclinedException, never returns a fake success
-}
+final class NotificationService {
+    private final Map<Channel, Sender> senders;
 
-final class CheckoutService {
-    private final PaymentProcessor payments;
-
-    CheckoutService(PaymentProcessor payments) {        // handed in, never created here
-        this.payments = payments;
+    NotificationService(Map<Channel, Sender> senders) {     // handed in, never created here
+        this.senders = senders;
     }
 }
-// In production, the wiring passes a StripePaymentProcessor. In tests, it passes a FakePaymentProcessor
-// that never calls a real network, so tests stay fast and never accidentally charge a real card.
+// In production, the wiring passes real senders. In tests, it passes a FakeSender.
 ```
 
-The diagram shows the change. Before, the business logic points at Postgres. After, both the real repository and an in-memory test fake point up at an interface that belongs to the business logic. The same shape applies here: before, `CheckoutService` points at Stripe; after, both `StripePaymentProcessor` and `FakePaymentProcessor` point up at a `PaymentProcessor` interface that the checkout logic owns.
+The diagram below shows the same move in its most common form, with a database instead of a notification provider. Before the change, the business logic points at MySQL. After it, both the real MySQL repository and an in-memory test fake point up at an interface that belongs to the business logic.
 
-![Dependency inversion: before, the checkout service depends on Stripe; after, both processors depend on a policy-owned interface](assets/topic-02/dependency_inversion.png)
+![Dependency inversion: before, policy depends on MySQL; after, both adapters depend on a policy-owned interface](assets/topic-02/dependency_inversion.png)
 
-**Trap:** the interface must be shaped by what the business logic needs, such as `charge(card, amount)`, not copied from one vendor's SDK, such as `createPaymentIntentWithIdempotencyKey(...)`. An interface that mirrors one vendor adds a layer without removing the dependency. Also note that *dependency injection* (passing dependencies in through the constructor) is just the technique used to wire this design; the principle is about which way the dependency points.
+**Trap:** the interface must be shaped by what the business logic needs, such as `send(notification)`, not copied from the provider's API, such as `sendText(apiKey, from, to, body)`. An interface that mirrors one vendor adds a layer without removing the dependency. Also note that *dependency injection* (passing dependencies in through the constructor) is just the technique used to wire this design; the principle is about which way the dependency points.
 
 !!! question "Practice: which SOLID letter does each snippet break?"
     1. `class InvoiceService { Money calculate(...); void saveToDatabase(...); void emailPdf(...); }`
@@ -437,11 +390,11 @@ The diagram shows the change. Before, the business logic points at Postgres. Aft
     5. `class ReportService { private final PostgresClient db = new PostgresClient("prod-db-host"); }`
 
 ??? success "Answer"
-    1. **Single Responsibility.** Calculating a price, saving to a database, and emailing a PDF are three different reasons to change, owned by three different concerns.
-    2. **Open/Closed.** A new tier means editing the branch. Replace it with a `DiscountPolicy` interface and one implementation per tier.
-    3. **Liskov Substitution.** A `ReadOnlyFile` cannot honor the `File` contract, which allows writing. It should not extend `File` at all.
-    4. **Interface Segregation.** `BasicPrinter` is forced to implement methods it cannot support. Split `Printer` into `Print`, `Scan`, and `Fax` interfaces.
-    5. **Dependency Inversion.** The service creates its own database client instead of depending on an interface it owns.
+    1. **S (Single Responsibility).** Calculation, storage, and email change for different reasons and are requested by different people, so they belong in different classes.
+    2. **O (Open/Closed).** Every new tier edits tested code. Each tier could instead be its own discount rule class.
+    3. **L (Liskov Substitution).** Code that writes to a `File` crashes when it receives a `ReadOnlyFile`, so the subtype cannot be safely substituted.
+    4. **I (Interface Segregation),** and also L. The basic printer is forced to provide methods it cannot support. Splitting the interface into `Printer`, `Scanner`, and `Fax` fixes both problems.
+    5. **D (Dependency Inversion).** The service creates its own database client, so it cannot be tested without a real database, and switching databases means editing the service.
 
 ---
 
@@ -455,71 +408,62 @@ SOLID tells you *where* responsibilities should go. These three guidelines tell 
 
 **Every piece of knowledge should have one owner.** If the same business rule is written in several places, the copies eventually drift apart.
 
-Suppose the tax rate for a region is computed separately in three places: checkout, the invoice PDF generator, and the admin refund tool. If a tax rate changes and one copy is missed, a customer's refund is computed with the wrong rate while their original charge used the right one, and nothing fails loudly. A single `TaxCalculator` class that owns the rate table and the calculation gives that knowledge one home.
+Suppose each sender builds the message text itself, so the wording "Your order #123 has shipped" exists in three classes. When marketing changes the wording, someone updates two of the three, and SMS users get the old text. Moving the wording into the single `TemplateRenderer` gives that knowledge one home.
 
-**Trap:** DRY is about duplicated *knowledge*, not duplicated *text*. Two methods that look identical but belong to different owners, such as checkout validation and fraud-review validation, should stay separate. If you merge them, the first requirement that applies to only one of them adds a boolean flag, and then another. As Sandi Metz put it, "duplication is far cheaper than the wrong abstraction". A useful tie-breaker is the **rule of three**: tolerate a second copy, and extract a shared abstraction when a third copy appears.
+**Trap:** DRY is about duplicated *knowledge*, not duplicated *text*. Two methods that look identical but belong to different owners, such as signup validation and identity verification, should stay separate. If you merge them, the first requirement that applies to only one of them adds a boolean flag, and then another. As Sandi Metz put it, "duplication is far cheaper than the wrong abstraction". A useful tie-breaker is the **rule of three**: tolerate a second copy, and extract a shared abstraction when a third copy appears.
 
 ### KISS: Keep It Simple
 
-**Every layer of complexity must buy a capability you actually need.** With three discount rules, it can be tempting to build a plugin framework that discovers rule classes automatically and sorts them by priority. The plain list of rules from Level 4 already does the job, and anyone can read it in seconds.
+**Every layer of complexity must buy a capability you actually need.** With only three channels, it can be tempting to build a plugin framework that discovers senders automatically and sorts them by priority. The one-line map from Level 3 already does the job, and anyone can read it in seconds.
 
-**Trap:** KISS removes complexity that the design added by accident. It does not mean ignoring complexity that is genuinely part of the problem, such as rounding rules for tax or currency conversion. Flattening real rules into something that looks simple but handles edge cases wrongly is a bug.
+**Trap:** KISS removes complexity that the design added by accident. It does not mean ignoring complexity that is genuinely part of the problem, such as tax rules or retry behavior. Flattening real rules into something that looks simple but handles edge cases wrongly is a bug.
 
 ### YAGNI: You Aren't Gonna Need It
 
-**Do not build for a future that nobody has asked for.** The `CartRepository` interface is worth having today: it costs one small file, and it lets us test with an in-memory store. Building currency conversion or split-tender payments "just in case" is not worth it. Basics 1 explicitly put those out of scope: even though the platform serves four countries, every order is priced and paid in exactly one currency, so `Money` carrying a currency code is enough. Code written against guessed requirements is usually wrong by the time the real need arrives. Keep the extension points that are cheap and proven, but do not build the extensions early.
+**Do not build for a future that nobody has asked for.** The `Sender` interface is worth having today: it costs one small file, and it lets us test the service with a fake. Writing `TelegramSender` and `SignalSender` stubs "just in case" is not worth it, because you would be coding against guessed requirements that will probably be wrong when the real need arrives. Keep the extension point, but do not build the extensions early.
 
 !!! question "Practice"
-    The checkout flow and the fraud-review flow each contain an identical 10-line method that validates a shipping address. A teammate wants to merge them into one shared method. What should you consider?
+    The signup flow and the identity-verification flow each contain an identical 10-line method that validates a user's name and date of birth. A teammate wants to merge them into one shared method. What should you consider?
 
 ??? success "Answer"
-    Ask whether the two methods share the same *knowledge* or only look the same today. The two flows are owned by different teams and follow different rules: fraud review is usually driven by risk policy, while checkout is driven by product and shipping-carrier requirements. They are likely to diverge, so keeping them separate is often the better choice. If the rule really is shared, for example a single company-wide definition of a well-formed postal address, then extract that one rule into its own class and let both flows use it.
+    Ask whether the two methods share the same *knowledge* or only look the same today. The two flows are owned by different teams and follow different rules: identity verification is usually driven by legal requirements, while signup is driven by product decisions. They are likely to diverge, so keeping them separate is often the better choice. If the rule really is shared, for example a single company-wide definition of a valid date of birth, then extract that one rule into its own class and let both flows use it.
 
 ---
 
-## 6. Putting it together: the cart and checkout classes
+## 6. Putting it together: the notification service
 
-After all seven levels, the messy `CheckoutManager` has become a set of small classes, each with one clear job:
+After all seven levels, the messy `NotificationManager` has become a set of small classes, each with one clear job:
 
-![Cart and checkout class diagram with policy above and replaceable implementations below a boundary](assets/topic-02/checkout_service_architecture.png)
+![Notification service class diagram with policy above and channel adapters below a boundary](assets/topic-02/notification_architecture.png)
 
-The dashed line in the diagram separates stable business logic (above) from details that change more often (below). The classes above the line never mention Postgres, Redis, or a particular payment provider, so the store and the payment processor can both be replaced without editing them.
+The dashed line in the diagram separates stable business logic (above) from details that change often (below). The classes above the line never mention SMTP, Twilio, or Firebase, so providers can be replaced, and channels added, without editing them.
 
 | Class | What it is responsible for | Who asks for it to change |
 |---|---|---|
-| `Money` | It holds one valid, non-negative amount with a currency. | Rarely anyone, unless currency rules change. |
-| `Cart` | It holds one valid cart with its discount rules, and computes the final total. | Rarely anyone, because new discounts arrive as new rules. |
-| `DiscountRule` and its rules (`PercentageOffRule`, `FreeShippingRule`, `BogoRule`) | Each rule adjusts a price by one well-defined amount. | The product team, when discounts are added or changed. |
-| `OrderIdGenerator` and `SequentialOrderIdGenerator` | It produces an order ID that has never been used before. | The engineering team, when the ID scheme changes. |
-| `CartRepository` and `PostgresCartRepository` | It stores carts and finds them by ID. | The infrastructure team, when storage changes. |
-| `FraudChecker` | It flags carts that look like stolen-card fraud before they are charged. | The trust and safety team. |
-| `PaymentProcessor` and `StripePaymentProcessor` | It charges a card and reports whether the charge succeeded. | The payments team, when a provider changes or a new one is added. |
-| `OrderEventPublisher` | It publishes an "order placed" event to the queue from Basics 1. | The fulfillment team. |
-| `CheckoutService` | It coordinates the others for the one main flow: turning a priced cart into a paid order. | Anyone who changes that overall workflow. |
+| `Notification` | It holds one valid message and refuses to exist with invalid data. | Rarely anyone, unless the message fields change. |
+| `Sender` (interface) | It defines the contract for delivering one notification and reporting the outcome. | Almost nobody, because it is the stable contract everything else depends on. |
+| `EmailSender`, `SmsSender`, `PushSender` | Each one talks to exactly one provider's API. | The operations team, when a provider or its API changes. |
+| `PreferencePolicy` | It decides which channels a user currently allows. | The product team, when opt-out or quiet-hours rules change. |
+| `TemplateRenderer` | It turns an order event into the message text for each channel. | The marketing team, when message wording changes. |
+| `RetryPolicy` | It decides whether to try a failed send again, and how many times. | The engineering team, when reliability settings are tuned. |
+| `NotificationService` | It coordinates the others: choose channels, render the message, send it, and retry if needed. | Anyone who changes the overall workflow. |
 
-The coordinating class is now short, and it contains no storage, payment-provider, or discount-rule details of its own:
+The coordinating class is now short, and it contains no channel, provider, or retry details of its own:
 
 ```java
-final class CheckoutService {
-    private final CartRepository carts;
-    private final FraudChecker fraud;
-    private final PaymentProcessor payments;
-    private final OrderIdGenerator orderIds;
-    private final OrderEventPublisher events;
-    // The constructor receives all five dependencies, exactly as in the Dependency Inversion section.
+final class NotificationService {
+    private final Map<Channel, Sender> senders;
+    private final PreferencePolicy preferences;
+    private final TemplateRenderer renderer;
+    private final RetryPolicy retryPolicy;
+    // The constructor receives all four dependencies, exactly as in the Dependency Inversion section.
 
-    CheckoutResult checkout(CartId cartId, Card card) {
-        Optional<Cart> found = carts.findById(cartId);
-        if (found.isEmpty()) return CheckoutResult.cartNotFound();
-
-        Cart cart = found.get();
-        if (fraud.isSuspicious(cart, card)) return CheckoutResult.declined();
-
-        Money total = cart.total();
-        PaymentResult payment = payments.charge(card, total);          // throws on failure, per the PaymentProcessor contract
-        Order order = new Order(orderIds.next(), cart, total, payment);
-        events.publish(order);                                         // async: email, inventory, and loyalty happen later
-        return CheckoutResult.success(order);
+    void notifyUser(User user, OrderEvent event) {
+        for (Channel channel : preferences.allowedChannels(user)) {
+            Notification notification = renderer.render(user, channel, event);
+            Sender sender = senders.get(channel);
+            retryPolicy.run(() -> sender.send(notification));
+        }
     }
 }
 ```
@@ -528,35 +472,36 @@ The real test of a design is how it handles change. Here is what each likely cha
 
 | Change request | What you edit | What you add | What stays untouched |
 |---|---|---|---|
-| Add a "buy one, get one" promotion. | You edit only the API code that creates carts with the new rule. | You add a `BogoRule` class. | `Cart`, `CheckoutService`, and every other rule stay untouched. |
-| Put a cache in front of the cart store. | You edit only the wiring. | You add a caching repository class, as shown in Basics 3. | `CheckoutService` and `PostgresCartRepository` stay untouched. |
-| Switch from sequential order IDs to ULIDs. | You edit only the wiring. | You add a `UlidOrderIdGenerator`. | Every other class stays untouched. |
-| Add a new fraud signal, such as flagging mismatched billing and shipping countries. | You edit `FraudChecker`. | You add tests for the new case. | Every other class stays untouched. |
-| Let a customer change their shipping address after checkout. | You edit `CheckoutService` and `Order`, because the workflow itself changes. | You add an "update shipping address" flow to the API. | The discount rules, the payment processor, and the repository contract stay untouched. |
+| Add WhatsApp as a channel. | You edit only the wiring, by adding one map entry. | You add a `WhatsAppSender` class. | The service, the policies, and every other sender stay untouched. |
+| Add quiet hours from 22:00 to 07:00. | You edit `PreferencePolicy`. | You add tests for the new rule. | The service and all the senders stay untouched. |
+| Switch to a different SMS provider. | You edit only the wiring that chooses the SMS sender. | You add a new SMS sender class for the new provider. | Every other class stays untouched. |
+| Retry up to five times instead of three. | You edit the `RetryPolicy` configuration. | You do not need to add anything. | Every other class stays untouched. |
+| Send one daily summary instead of instant messages. | You edit `NotificationService`, because the workflow itself changes. | You add a scheduler class that triggers the daily summary. | The senders and their contract stay untouched. |
 
-The last row is important. Editing a placed order changes a *workflow*, and the coordinating class is supposed to change for workflow reasons. No design absorbs every possible change, and saying so honestly is a stronger answer than claiming the design is open to anything.
+The last row is important. A daily summary changes the *workflow*, and the coordinating class is supposed to change for workflow reasons. No design absorbs every possible change, and saying so honestly is a stronger answer than claiming the design is open to anything.
 
 ??? info "Go deeper (optional): proving substitution with contract tests"
-    Level 6 said every implementation must keep its interface's promises. A *contract test* turns those promises into something the build checks. You write the tests once, against the interface, and every implementation's test class inherits them:
+    Level 6 said every `Sender` must classify failures the same way. A *contract test* turns that promise into something the build checks. You write the tests once, against the interface, and every implementation's test class inherits them:
 
     ```java
-    abstract class CartRepositoryContractTest {
-        protected abstract CartRepository repository();       // each implementation's test supplies one
+    abstract class SenderContractTest {
+        protected abstract Sender sender();            // each implementation's test supplies one
+        protected abstract void simulateTimeout();
+        protected abstract void simulateInvalidRecipient();
 
-        @Test void unknownIdIsEmpty() {
-            assertTrue(repository().findById(new CartId("missing")).isEmpty());
+        @Test void timeoutIsRetryable() {
+            simulateTimeout();
+            assertEquals(SendResult.RETRYABLE_FAILURE, sender().send(sampleNotification()));
         }
-        @Test void savedCartCanBeFound() {
-            CartRepository repository = repository();
-            repository.save(sampleCart());
-            assertEquals(Optional.of(sampleCart()), repository.findById(sampleCart().id()));
+        @Test void invalidRecipientIsPermanent() {
+            simulateInvalidRecipient();
+            assertEquals(SendResult.PERMANENT_FAILURE, sender().send(sampleNotification()));
         }
     }
-    class InMemoryCartRepositoryTest extends CartRepositoryContractTest { ... }
-    class PostgresCartRepositoryTest extends CartRepositoryContractTest { ... }   // runs against a real test database
+    class SmsSenderTest extends SenderContractTest { /* simulates the SMS provider's responses */ }
     ```
 
-    This matters most for fakes. If the in-memory fake behaves differently from Postgres, every test that uses it proves the wrong thing. Running the same suite against both keeps the fake honest. Inheritance is the right tool here, because every concrete test class truly *is* a repository contract test.
+    Every new sender automatically has to pass the whole suite, so substitution is verified rather than assumed. Inheritance is the right tool here, because every concrete test class truly *is* a sender contract test.
 
 ---
 
@@ -678,10 +623,9 @@ A low-level design (LLD) interview asks you to design the classes for a small sy
 
 | Topic you may have heard about | Where it is covered |
 |---|---|
-| Factory, Builder, Singleton, Adapter, Decorator, and other structural patterns, applied to these same cart and checkout classes | Basics 3: Creational & Structural Design Patterns |
-| Strategy (the pattern behind `DiscountRule` and `OrderIdGenerator`), Observer, Template Method, and other behavioral patterns | Advanced 1: Behavioral Design Patterns |
+| Factory, Builder, Singleton, Adapter, Decorator, and other structural patterns | Basics 3: Creational & Structural Design Patterns |
+| Strategy, Observer, Template Method, and other behavioral patterns | Advanced 1: Behavioral Design Patterns |
 | Full machine-coding case studies, such as a parking lot or a ticket booking system | Advanced 2: Real-World Machine Coding Case Studies |
 | Service boundaries, modular monoliths, and microservices | Basics 5: Architecture Styles & Service Decomposition |
-| Cache strategies, expiry, and eviction | Basics 9: Caching Core |
-| Queues that process order-placed events in the background | Basics 13: Asynchronous Processing Basics |
-| Generating unique order IDs across many servers at once | Basics 15: Distributed ID Generation |
+| Queues that deliver notifications in the background | Basics 13: Asynchronous Processing Basics |
+| Safe retries and avoiding duplicate messages | Advanced 7: Idempotency & Retries |

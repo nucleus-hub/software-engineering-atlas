@@ -4,7 +4,6 @@ docs_dir: system-design
 site_dir: site/system-design
 exclude_docs: |
   _support/tools/
-  _support/authoring/
 
 theme:
   name: material
