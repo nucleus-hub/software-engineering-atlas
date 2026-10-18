@@ -168,9 +168,11 @@ Adding air delivery means one new `AirDelivery` subclass. The `deliver()` steps 
 
 ### Abstract Factory: create a matching set of objects
 
-**What it is:** one factory creates *several related objects* that must always be used together, so they can never be mixed up.
+**What it is:** a *factory* is an object whose only job is to create other objects. An Abstract Factory creates a whole **set of objects that belong together**, with one factory per set. You pick one factory, and everything you get from it matches.
 
-An app with light and dark themes needs buttons and checkboxes that match. A dark button next to a light checkbox would be a bug:
+Think of a furniture store. Choose the "Modern" collection, and the chair, sofa, and table you get all match; you never end up with a modern chair beside a vintage sofa. In code, each collection is a factory.
+
+An app with light and dark themes works the same way. Its buttons and checkboxes must match, because a dark button next to a light checkbox would be a bug:
 
 ```java
 interface ThemeFactory {
@@ -184,7 +186,16 @@ final class DarkTheme implements ThemeFactory {
 // LightTheme does the same with LightButton and LightCheckbox.
 ```
 
-The screen receives one `ThemeFactory` and asks it for every widget, so everything on the screen matches automatically.
+The screen is given one factory and asks it for every widget. It never names a theme itself, so it cannot mix them:
+
+```java
+void drawSettingsScreen(ThemeFactory theme) {
+    Button save = theme.createButton();           // dark if the theme is dark...
+    Checkbox alerts = theme.createCheckbox();     // ...and so is this, always
+}
+
+drawSettingsScreen(new DarkTheme());              // switch every widget by changing one line
+```
 
 **Watch out:** adding a new kind of widget, such as a `Slider`, means editing *every* theme factory. Use it only when mixing would really be a bug.
 
