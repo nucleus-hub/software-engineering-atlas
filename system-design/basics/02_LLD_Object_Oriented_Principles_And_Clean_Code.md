@@ -239,20 +239,6 @@ If `Penguin extends Bird` and overrides `fly()` to throw an exception, any code 
 !!! tip "When inheritance is fine"
     Use inheritance when all three are true: the subclass really *is* a kind of its parent, it keeps every promise the parent makes, and the hierarchy is shallow (one or two levels). If you are about to override a method just to throw an exception or do nothing, use composition instead.
 
-??? info "Go deeper (optional): the fragile base class problem"
-    Inheritance ties a subclass to its parent's *implementation*, not just its interface. This example, from the book *Effective Java*, tries to count how many items are added to a set:
-
-    ```java
-    class InstrumentedHashSet<E> extends HashSet<E> {
-        int addCount = 0;
-        @Override public boolean add(E e) { addCount++; return super.add(e); }
-        @Override public boolean addAll(Collection<? extends E> c) { addCount += c.size(); return super.addAll(c); }
-    }
-    // addAll(List.of("a", "b", "c")) leaves addCount at 6, not 3
-    ```
-
-    Internally, `HashSet.addAll` calls `add` once per item, so every item is counted twice. Nothing in the documentation promises or forbids this, so the subclass broke because of a hidden detail inside its parent. Wrapping a `Set` and forwarding calls to it (composition) avoids the problem, because the wrapper no longer depends on how `HashSet` works inside. That wrapping technique is the *Decorator* pattern, covered in **Basics 3 (Creational & Structural Design Patterns)**.
-
 !!! question "Practice"
     Some older Java code declares `class Stack<E> extends ArrayList<E>`. Why is that a poor design?
 
