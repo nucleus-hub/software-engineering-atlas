@@ -94,6 +94,7 @@ structuring system design interviews.
 - [ ] Connection pooling, keep-alive, and timeout budgets
 - [ ] Request path: client → DNS/CDN → load balancer → service → database
 - [ ] Latency sources and network failure modes
+- [ ] Worked example: one URL-shortener redirect, cold vs warm, end to end
 
 ### 5. Architecture Styles & Service Decomposition
 - [ ] Layered architecture and modular monoliths vs microservices
@@ -101,6 +102,7 @@ structuring system design interviews.
 - [ ] Service boundaries, ownership, and bounded contexts
 - [ ] Shared database vs database per service
 - [ ] Service discovery and configuration management
+- [ ] Worked example: URL shortener, year two (split only where the numbers disagree)
 
 ### 6. API Correctness, Security & Resource Design
 - [ ] Resource-oriented API design; pagination, filtering, sorting, and partial updates

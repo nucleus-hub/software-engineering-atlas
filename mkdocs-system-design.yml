@@ -40,6 +40,8 @@ nav:
       - Interview Framework & Capacity Estimation: basics/01_Interview_Framework_And_Capacity_Estimation.md
       - Object-Oriented Principles & Clean Code: basics/02_LLD_Object_Oriented_Principles_And_Clean_Code.md
       - Creational & Structural Design Patterns: basics/03_LLD_Creational_And_Structural_Design_Patterns.md
+      - Networking & Request Lifecycle: basics/04_Networking_And_Request_Lifecycle.md
+      - Architecture Styles & Service Decomposition: basics/05_Architecture_Styles_And_Service_Decomposition.md
 
 markdown_extensions:
   - admonition
