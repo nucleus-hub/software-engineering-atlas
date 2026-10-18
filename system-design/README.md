@@ -80,12 +80,23 @@ structuring system design interviews.
 - [x] Worked example: refactoring one messy notification class into a notification service
 
 ### 3. LLD: Creational & Structural Design Patterns
-- [ ] **Mental model:** patterns as named trade-offs, creation vs composition coupling, the composition root
-- [ ] **Creational:** constructors and static factories first, then Factory Method, Abstract Factory, Builder, Prototype, Singleton
-- [ ] **Structural:** Adapter, Decorator, Facade, Proxy (recognize Composite, Bridge, Flyweight)
-- [ ] Telling look-alike patterns apart, and patterns already in the JDK
-- [ ] Choosing a pattern, and how patterns fail in practice
-- [ ] Worked example: payment gateway
+- [x] **Mental model:** start from the expected change, every pattern has a cost, creational vs structural families, and the composition root
+- [x] **Creational patterns** (constructors and static factories first):
+  - Factory Method (vs a simple factory)
+  - Abstract Factory
+  - Builder
+  - Prototype (shallow vs deep copies)
+  - Singleton (vs one injected instance)
+- [x] **Structural patterns:**
+  - Adapter
+  - Decorator
+  - Facade
+  - Proxy
+  - Recognizing Composite, Bridge, and Flyweight
+- [x] Telling look-alike patterns apart by intent, not code shape
+- [x] Justifying a pattern in one sentence: the change it absorbs, its cost, and the test that proves it
+- [x] How patterns fail in practice, and anti-patterns that cost points in interviews
+- [x] Worked example: payment gateway (Facade, Builder, simple factory, Decorators, Adapters, and a change walkthrough)
 
 ### 4. Networking & Request Lifecycle
 - [ ] DNS resolution, caching, and common failure modes
