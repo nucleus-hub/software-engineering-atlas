@@ -158,19 +158,19 @@ def dependency_inversion() -> plt.Figure:
     panel_title(ax, 23, "BEFORE: policy depends on detail", RED)
     panel_title(ax, 73, "AFTER: detail depends on policy's interface", GREEN)
 
-    box(ax, 12, 52, 22, 13, "LinkService", "business rules")
-    box(ax, 12, 20, 22, 13, "PostgresLinkRepo", "infrastructure", face=RED_FACE, edge=RED)
+    box(ax, 12, 52, 22, 13, "CheckoutService", "business rules")
+    box(ax, 12, 20, 22, 13, "PostgresCartRepo", "infrastructure", face=RED_FACE, edge=RED)
     arrow(ax, (23, 51.5), (23, 33.5), color=RED)
     ax.text(24.5, 42.5, "imports + new", ha="left", va="center", fontsize=8, color=RED)
     ax.text(23, 9, "Untestable without Postgres;\nswapping stores edits the policy",
             ha="center", va="center", fontsize=8.5, color=RED, linespacing=1.4)
 
     policy_boundary(ax, 49, 98, 43)
-    box(ax, 50, 52, 20, 13, "LinkService", "business rules")
-    box(ax, 76, 52, 20, 13, "LinkRepository", "interface owned by policy", edge=NAVY)
+    box(ax, 50, 52, 20, 13, "CheckoutService", "business rules")
+    box(ax, 76, 52, 20, 13, "CartRepository", "interface owned by policy", edge=NAVY)
     arrow(ax, (70.5, 58.5), (75.5, 58.5), color=NAVY)
-    box(ax, 50, 18, 20, 13, "InMemoryLinkRepo", "test fake", face=WHITE)
-    box(ax, 76, 18, 20, 13, "PostgresLinkRepo", "production", face=GREEN_FACE, edge=GREEN)
+    box(ax, 50, 18, 20, 13, "InMemoryCartRepo", "test fake", face=WHITE)
+    box(ax, 76, 18, 20, 13, "PostgresCartRepo", "production", face=GREEN_FACE, edge=GREEN)
     arrow(ax, (86, 31.5), (86, 51.5), color=GREEN, dashed=True)
     arrow(ax, (60, 31.5), (80, 51.5), color=BLUE, dashed=True)
     ax.text(73, 7, "Both arrows cross the line upward: details depend on policy",
@@ -255,19 +255,19 @@ def design_smells() -> plt.Figure:
     return fig
 
 
-def link_service_architecture() -> plt.Figure:
+def checkout_service_architecture() -> plt.Figure:
     fig, ax = canvas(15, 7.6)
-    heading(ax, "URL Shortener: Stable Policy, Replaceable Details",
-            "New code schemes and new stores plug in below the line; nothing above it is edited")
-    box(ax, 5, 60, 21, 13, "UrlSafetyChecker", "blocks malicious URLs")
-    box(ax, 39.5, 60, 21, 13, "LinkService", "orchestrates only", face=MIST)
-    box(ax, 74, 60, 21, 13, "ClickRecorder", "publishes click events", face=AMBER_FACE, edge=AMBER)
+    heading(ax, "Cart & Checkout: Stable Policy, Replaceable Details",
+            "New ID schemes and new stores plug in below the line; nothing above it is edited")
+    box(ax, 5, 60, 21, 13, "FraudChecker", "flags suspicious cards")
+    box(ax, 39.5, 60, 21, 13, "CheckoutService", "orchestrates only", face=MIST)
+    box(ax, 74, 60, 21, 13, "OrderEventPublisher", "publishes order-placed events", face=AMBER_FACE, edge=AMBER)
     arrow(ax, (39, 66.5), (26.5, 66.5), label="has-a")
     arrow(ax, (61, 66.5), (73.5, 66.5), color=AMBER, label="has-a")
 
-    box(ax, 5, 37, 21, 12, "CodeGenerator", "interface: next() gives a unique code", edge=NAVY)
-    box(ax, 39.5, 37, 21, 12, "ShortLink", "has a list of LinkRules", face=PALE)
-    box(ax, 74, 37, 21, 12, "LinkRepository", "interface: findByCode(), save()", edge=NAVY)
+    box(ax, 5, 37, 21, 12, "OrderIdGenerator", "interface: next() gives a unique ID", edge=NAVY)
+    box(ax, 39.5, 37, 21, 12, "Cart", "has a list of DiscountRules", face=PALE)
+    box(ax, 74, 37, 21, 12, "CartRepository", "interface: findById(), save()", edge=NAVY)
     arrow(ax, (42, 59.5), (18, 49.5), color=NAVY)
     arrow(ax, (50, 59.5), (50, 49.5), color=NAVY)
     arrow(ax, (58, 59.5), (82, 49.5), color=NAVY)
@@ -275,10 +275,10 @@ def link_service_architecture() -> plt.Figure:
 
     policy_boundary(ax, 4, 96, 31)
     implementations = [
-        (5, "CounterCodeGenerator", "base62 counter", (13, 36.5), WHITE, BLUE),
-        (28.5, "RandomCodeGenerator", "added later: one new class", (20, 36.5), GREEN_FACE, GREEN),
-        (52, "PostgresLinkRepository", "production", (80, 36.5), WHITE, BLUE),
-        (75.5, "InMemoryLinkRepository", "tests", (87, 36.5), WHITE, BLUE),
+        (5, "SequentialOrderIdGenerator", "counter-based", (13, 36.5), WHITE, BLUE),
+        (28.5, "UlidOrderIdGenerator", "added later: one new class", (20, 36.5), GREEN_FACE, GREEN),
+        (52, "PostgresCartRepository", "production", (80, 36.5), WHITE, BLUE),
+        (75.5, "InMemoryCartRepository", "tests", (87, 36.5), WHITE, BLUE),
     ]
     for x, title, subtitle, target, face, edge in implementations:
         box(ax, x, 9, 19, 12, title, subtitle, face=face, edge=edge)
@@ -297,7 +297,7 @@ FIGURES = {
     "composition_vs_inheritance": composition_vs_inheritance,
     "clean_code_guardrails": clean_code_guardrails,
     "design_smells": design_smells,
-    "link_service_architecture": link_service_architecture,
+    "checkout_service_architecture": checkout_service_architecture,
 }
 
 

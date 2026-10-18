@@ -10,14 +10,14 @@ You do not need to memorize these. Come back to this table whenever a term feels
 | **Interface** | A list of methods that a class promises to provide, without saying how. Code that uses an interface works with any class that implements it. |
 | **Implementation** | A class that provides the actual code behind an interface. One interface can have many implementations. |
 | **Caller (or client)** | The code that uses an object by calling its methods. |
-| **Invariant** | A rule about an object's data that must always be true, such as "a short code is always exactly 7 characters long". |
+| **Invariant** | A rule about an object's data that must always be true, such as "a cart's total always equals the sum of its line items minus its discounts". |
 | **Contract** | Everything a caller may rely on when using an object: its methods, what they accept, what they return, and how they fail. |
 | **Dependency** | Something a class needs in order to do its job. If class A calls class B, then A depends on B. |
 | **Wiring** | The code that creates objects and connects them to their dependencies, usually at application startup. |
 | **Coupling** | How much one class knows about another. High coupling means a change in one class forces changes in others. |
 | **Cohesion** | How closely the code inside one class belongs together. High cohesion means everything in the class serves one purpose. |
 | **Refactoring** | Changing the structure of code without changing what it does, usually to make the next change easier. |
-| **Test double (fake)** | A simple stand-in object used in tests instead of a real dependency, such as an in-memory link store that keeps links in a map instead of a real database. |
+| **Test double (fake)** | A simple stand-in object used in tests instead of a real dependency, such as an in-memory cart store that keeps carts in a map instead of a real database. |
 
 ??? info "Java syntax used on this page (open if you learned Java before version 17)"
     - **`final class`** means the class cannot be extended by inheritance.
@@ -32,40 +32,42 @@ You do not need to memorize these. Come back to this table whenever a term feels
 
 Every principle on this page is easier to understand when you watch it fix a real problem. So instead of using a different example for each idea, the whole page improves one piece of code step by step.
 
-In **Basics 1**, you sized a URL shortener and drew its main boxes: an API, a cache, a database, and a queue for click events. This page zooms into the code inside the API box. Since launch, the product team has also added three link features: links that expire, links protected by a password, and links that only work in certain countries. Here is a first version of the redirect code that works, but that is painful to change:
+In **Basics 1**, you sized a cart-and-checkout flow and drew its main boxes: a cart service, a cache, a checkout service, a durable order store, and a payment gateway. This page zooms into the code inside the checkout box. Since launch, the product team has also added three discount features: percentage-off codes, free-shipping promotions, and buy-one-get-one deals. Here is a first version of the checkout code that works, but that is painful to change:
 
 ```java
-class LinkManager {
-    public String code;                       // the create path fills these in, and anyone can set them to anything
-    public String longUrl;
-    public String type;                       // "STANDARD", "EXPIRING", "PASSWORD", or "COUNTRY_LOCKED"
+class CheckoutManager {
+    public String cartId;                      // the cart API fills these in, and anyone can set them to anything
+    public double total;
+    public String discountType;                // "NONE", "PERCENTAGE", "FREE_SHIPPING", or "BOGO"
 
-    String redirect(String code, String password, String country) {
-        String cached = redis.get("link:" + code);                                          // cache plumbing
+    String checkout(String cartId, String discountCode, String cardToken) {
+        String cached = redis.get("cart:" + cartId);                                            // cache plumbing
         Row row = (cached != null) ? Row.fromJson(cached)
-                : new PostgresClient(DB_URL).query("SELECT * FROM links WHERE code = ?", code); // SQL plumbing
-        if (cached == null) redis.set("link:" + code, row.toJson());
+                : new PostgresClient(DB_URL).query("SELECT * FROM carts WHERE id = ?", cartId);   // SQL plumbing
+        if (cached == null) redis.set("cart:" + cartId, row.toJson());
 
-        switch (row.type()) {                                                               // link-type rules
-            case "EXPIRING"       -> { if (Instant.now().isAfter(row.expiresAt())) return "410 Gone"; }
-            case "PASSWORD"       -> { if (!matches(password, row.passwordHash())) return "401 Unauthorized"; }
-            case "COUNTRY_LOCKED" -> { if (!row.allowedCountries().contains(country)) return "403 Forbidden"; }
+        double total = row.subtotal();
+        switch (row.discountType()) {                                                           // discount rules
+            case "PERCENTAGE"    -> total = total * (1 - row.discountValue());
+            case "FREE_SHIPPING" -> total = total - row.shippingCost();
+            case "BOGO"          -> total = total - row.cheapestItemPrice();
         }
-        analytics.recordClick(code, country);                                               // click tracking
-        return row.longUrl();
+        String receipt = new StripeClient(STRIPE_KEY).charge(cardToken, total);                 // payment plumbing
+        emailer.send(row.customerEmail(), "Your receipt", receipt);                             // notification plumbing
+        return receipt;
     }
 }
 ```
 
 This class has five separate problems, and each level below fixes one of them:
 
-| Problem in `LinkManager` | Fixed in |
+| Problem in `CheckoutManager` | Fixed in |
 |---|---|
-| Any caller can create a link with an invalid code, or with a dangerous URL such as `javascript:alert(1)`. | Level 1: Encapsulation |
-| The redirect logic is buried under cache and SQL plumbing, and an unknown code is never handled. | Level 2: Abstraction |
-| Every new link feature means editing the `switch`, and every other `switch` on the link type. | Level 3: Polymorphism |
-| A link can only have one type, so a link that both expires and needs a password cannot exist. | Level 4: Composition over inheritance |
-| The class knows about Redis, Postgres, link rules, and click tracking all at once. | Level 5: Coupling and cohesion |
+| Any caller can set `total` or `discountType` directly, including a negative total or a made-up discount. | Level 1: Encapsulation |
+| The checkout logic is buried under cache, SQL, and payment plumbing, and a missing cart is never handled. | Level 2: Abstraction |
+| Every new discount type means editing the `switch`, and every other `switch` on discount type. | Level 3: Polymorphism |
+| A cart can only have one discount, so "10% off **and** free shipping" cannot exist. | Level 4: Composition over inheritance |
+| The class knows about Redis, Postgres, Stripe, and email all at once. | Level 5: Coupling and cohesion |
 
 ---
 
@@ -79,28 +81,28 @@ The four pillars build on each other. Encapsulation protects data, abstraction h
 
 **Encapsulation** means an object keeps its data private and only exposes methods that keep that data valid. The rules about the data (its invariants) are enforced in exactly one place: inside the object that owns the data.
 
-In `LinkManager`, the fields are public, so nothing stops a caller from setting `code = "abc"` (too short) or `longUrl = "javascript:alert(1)"`, a classic trick for running an attacker's script in a visitor's browser. Every caller would have to remember to validate the data, and sooner or later one of them would forget.
+In `CheckoutManager`, the fields are public, so nothing stops a caller from setting `total = -50` or `discountType = "FREE_EVERYTHING"`, a value nothing on this page ever defined. Every caller would have to remember to validate the data, and sooner or later one of them would forget.
 
 The fix is to make each object responsible for its own validity. It checks its data once, in the constructor, and never allows that data to change afterwards:
 
 ```java
-record ShortCode(String value) {
-    ShortCode {                                        // runs before the field is set
-        if (value == null || !value.matches("[0-9a-zA-Z]{7}"))
-            throw new IllegalArgumentException("a short code is exactly 7 base62 characters");
+record Money(long cents, String currency) {
+    Money {                                            // runs before the field is set
+        if (cents < 0) throw new IllegalArgumentException("a price cannot be negative");
+        if (currency == null || currency.length() != 3)
+            throw new IllegalArgumentException("currency must be a 3-letter code, such as MXN");
     }
 }
 
-record ShortLink(ShortCode code, String longUrl, Instant createdAt) {
-    ShortLink {
-        if (code == null || createdAt == null) throw new IllegalArgumentException("code and creation time are required");
-        if (longUrl == null || !(longUrl.startsWith("https://") || longUrl.startsWith("http://")))
-            throw new IllegalArgumentException("only http and https links can be shortened");
+record CartItem(String productId, int quantity, Money unitPrice) {
+    CartItem {
+        if (quantity <= 0) throw new IllegalArgumentException("quantity must be at least 1");
+        if (productId == null || unitPrice == null) throw new IllegalArgumentException("productId and unitPrice are required");
     }
 }
 ```
 
-Now an invalid link simply cannot exist. Any method that receives a `ShortLink` can trust it without checking it again. Wrapping the code in its own `ShortCode` type follows the same idea: a method that receives a `ShortCode` never needs to re-check the 7-character base62 format from Basics 1, and nobody can accidentally pass a long URL where a code was expected.
+Now an invalid price or quantity simply cannot exist. Any method that receives a `Money` or a `CartItem` can trust it without checking it again. Wrapping an amount in its own `Money` type follows the same idea: a method that receives a `Money` never needs to re-check for negative amounts or missing currencies, and nobody can accidentally pass a raw `double` where a validated price was expected — which matters a great deal once that number is about to be charged to a real credit card.
 
 !!! warning "A common trap"
     Making every field private and then adding a public setter for each one is not encapsulation. Callers can still put the object into any state they like, so the rules still live in the callers. Only add methods that keep the object valid.
@@ -109,41 +111,41 @@ Now an invalid link simply cannot exist. Any method that receives a `ShortLink` 
     What is wrong with this class, and how would you fix it?
 
     ```java
-    class Cart {
-        public List<Item> items = new ArrayList<>();
+    class Invoice {
+        public List<LineItem> lines = new ArrayList<>();
         public double total;
     }
     // A caller elsewhere:
-    cart.items.add(item);
-    cart.total += item.price();
+    invoice.lines.add(line);
+    invoice.total += line.amount();
     ```
 
 ??? success "Answer"
-    The rule "the total always equals the sum of the item prices" lives in the callers. If any caller adds an item and forgets to update the total, the cart becomes wrong, and nothing detects it. The fix is to make the fields private and give the cart an `addItem(Item item)` method that updates both together, or, even simpler, to compute `total()` from the items whenever it is asked for.
+    The rule "the total always equals the sum of the line amounts" lives in the callers. If any caller adds a line and forgets to update the total, the invoice becomes wrong, and nothing detects it. The fix is to make the fields private and give the invoice an `addLine(LineItem line)` method that updates both together, or, even simpler, to compute `total()` from the lines whenever it is asked for.
 
 ### Level 2: Abstraction, hiding the how
 
 **Abstraction** means callers depend on *what* an object does, not *how* it does it. The caller states its intent, and the details stay hidden behind a simple interface.
 
-In `LinkManager`, the redirect method checks Redis, falls back to a SQL query, and then fills the cache, all before it can do its actual job. The code that decides whether a visitor may follow a link should not need to know how links are stored. We hide storage behind an interface:
+In `CheckoutManager`, the checkout method checks Redis, falls back to a SQL query, and then fills the cache, all before it can do its actual job. The code that decides how much to charge a shopper should not need to know how carts are stored. We hide storage behind an interface:
 
 ```java
-interface LinkRepository {
-    Optional<ShortLink> findByCode(ShortCode code);
-    void save(ShortLink link);
+interface CartRepository {
+    Optional<Cart> findById(CartId id);
+    void save(Cart cart);
 }
 
-final class PostgresLinkRepository implements LinkRepository {
-    public Optional<ShortLink> findByCode(ShortCode code) {
-        // the SQL query, and the mapping from table rows to ShortLink objects, live here and only here
+final class PostgresCartRepository implements CartRepository {
+    public Optional<Cart> findById(CartId id) {
+        // the SQL query, and the mapping from table rows to Cart objects, live here and only here
     }
-    public void save(ShortLink link) { ... }
+    public void save(Cart cart) { ... }
 }
 ```
 
-Notice that `findByCode` returns an `Optional` rather than a link that might be `null`. A good abstraction hides details the caller does not need, but it must not hide information the caller needs in order to make a decision. Unknown codes are normal, because people mistype links, and the caller must decide to show a "not found" page. So "nothing was found" is part of the contract. The messy version simply forgot about this case.
+Notice that `findById` returns an `Optional` rather than a cart that might be `null`. A good abstraction hides details the caller does not need, but it must not hide information the caller needs in order to make a decision. A missing cart is normal, because a session can expire or a cart ID can be mistyped, and the caller must decide to show a "your cart could not be found" page. So "nothing was found" is part of the contract. The messy version simply forgot about this case.
 
-What about the cache? It has disappeared from the business logic as well. **Basics 3** shows how to put it back behind this same interface without editing `PostgresLinkRepository` at all.
+What about the cache? It has disappeared from the business logic as well. **Basics 3** shows how to put it back behind this same interface without editing `PostgresCartRepository` at all.
 
 !!! question "Practice"
     A caller exports a report by opening a file, writing a header row, writing every data row, flushing the stream, and closing the file. What would a better abstraction look like?
@@ -155,31 +157,27 @@ What about the cache? It has disappeared from the business logic as well. **Basi
 
 **Polymorphism** means the same method call can behave differently depending on which object receives it. It lets you replace `if` and `switch` statements that check an object's type with a single call through an interface.
 
-In `LinkManager`, every new link feature means editing the `switch`. Worse, in real code the same `switch` on link type tends to appear in several places, such as the redirect, the link preview page, and the admin screen that explains why a link is blocked, and every one of them must be found and updated.
+In `CheckoutManager`, every new discount means editing the `switch`. Worse, in real code the same `switch` on discount type tends to appear in several places, such as checkout, the cart preview page, and the admin tool that explains a refund, and every one of them must be found and updated.
 
-Instead, each link type becomes its own class behind one interface:
+Instead, each discount type becomes its own class behind one interface:
 
 ```java
-enum RedirectDecision { ALLOW, GONE, UNAUTHORIZED, FORBIDDEN }
-
-record Visit(Instant time, String password, String country) {}
-
-interface LinkRule {
-    RedirectDecision check(Visit visit);
+interface DiscountRule {
+    Money apply(Money subtotal);
 }
 
-final class ExpiryRule implements LinkRule {
-    private final Instant expiresAt;
-    ExpiryRule(Instant expiresAt) { this.expiresAt = expiresAt; }
+final class PercentageOffRule implements DiscountRule {
+    private final double fraction;                 // e.g. 0.10 for 10% off
+    PercentageOffRule(double fraction) { this.fraction = fraction; }
 
-    public RedirectDecision check(Visit visit) {
-        return visit.time().isBefore(expiresAt) ? RedirectDecision.ALLOW : RedirectDecision.GONE;
+    public Money apply(Money subtotal) {
+        return subtotal.minus(subtotal.times(fraction));
     }
 }
-// PasswordRule and CountryRule follow exactly the same shape.
+// FreeShippingRule and BogoRule follow exactly the same shape.
 ```
 
-The `switch` disappears, and one call, `rule.check(visit)`, works for every rule, including rules added later. When marketing asks for links that only work during a campaign, that becomes a new class, and none of the existing, already-tested rules are edited.
+The `switch` disappears, and one call, `rule.apply(subtotal)`, works for every rule, including rules added later. When marketing asks for a "spend MX$1,000, get MX$150 off" rule, that becomes a new class, and none of the existing, already-tested rules are edited.
 
 !!! tip "A switch is not always wrong"
     Polymorphism is the right tool when new types keep arriving and each type has its own behavior. A plain `switch` is perfectly fine for a small, fixed set of values that rarely changes, such as the days of the week. Choose based on what is likely to change.
@@ -226,29 +224,28 @@ The classic illustration is a bird that can fly, and a penguin that cannot:
 
 If `Penguin extends Bird` and overrides `fly()` to throw an exception, any code that calls `bird.fly()` on a list of birds crashes on the penguin. With composition, a bird *has* a flight behavior, and a penguin is simply a bird given `NoFlight`. No method is overridden, and nothing breaks.
 
-The URL shortener runs into a similar problem as soon as a customer asks for a link that both expires *and* needs a password. The old `type` field can hold only one value. Inheritance tempts us towards `ExpiringLink extends ShortLink` and `PasswordLink extends ShortLink`, and then `ExpiringPasswordLink`, `CountryLockedPasswordLink`, and so on. Three features already allow seven combinations, and every new feature doubles the count. Composition avoids that explosion: a link *has* a list of rules, and it allows a visit only when every rule does.
+The cart runs into a similar problem as soon as a customer asks to combine a percentage-off code *and* a free-shipping promotion. The old `discountType` field can hold only one value. Inheritance tempts us towards `PercentageCart extends Cart` and `FreeShippingCart extends Cart`, and then `PercentageFreeShippingCart`, `PercentageFreeShippingBogoCart`, and so on. Three discounts already allow seven combinations, and every new discount type doubles the count. Composition avoids that explosion: a cart *has* a list of rules, and the final price applies every rule in turn.
 
 ```java
-record ShortLink(ShortCode code, String longUrl, Instant createdAt, List<LinkRule> rules) {
-    ShortLink {
+record Cart(CartId id, List<CartItem> items, List<DiscountRule> rules) {
+    Cart {
         // ...the same checks as in Level 1...
         rules = List.copyOf(rules);                    // a private copy that callers cannot modify later
     }
 
-    RedirectDecision check(Visit visit) {
-        for (LinkRule rule : rules) {
-            RedirectDecision decision = rule.check(visit);
-            if (decision != RedirectDecision.ALLOW) return decision;   // the first rule that says no wins
-        }
-        return RedirectDecision.ALLOW;
+    Money total() {
+        Money subtotal = items.stream().map(CartItem::lineTotal).reduce(Money.zero(), Money::plus);
+        Money discounted = subtotal;
+        for (DiscountRule rule : rules) discounted = rule.apply(discounted);   // every rule gets a turn
+        return discounted;
     }
 }
 
-// An expiring, password-protected link is simply a link with two rules:
-new ShortLink(code, longUrl, now, List.of(new ExpiryRule(nextFriday), new PasswordRule(passwordHash)));
+// A cart with a 10% off code and free shipping is simply a cart with two rules:
+new Cart(cartId, items, List.of(new PercentageOffRule(0.10), new FreeShippingRule(shippingCost)));
 ```
 
-A new feature is one new rule class, and it combines with every existing rule for free. `List.copyOf` is encapsulation at work again: without it, a caller could quietly add or remove rules after the link was created.
+A new discount is one new rule class, and it combines with every existing rule for free. `List.copyOf` is encapsulation at work again: without it, a caller could quietly add or remove rules after the cart was priced.
 
 Inheritance is still the right tool when the relationship is a true *is-a*, the hierarchy is shallow (one or two levels), and every subclass keeps every promise its parent makes. A quick test: if you are about to override a method just to throw an exception or do nothing, the relationship was never *is-a*, so use composition instead.
 
@@ -283,19 +280,19 @@ Coupling and cohesion are the two measurements behind almost every design princi
 - **Cohesion** asks whether the code inside one class belongs together. A class has high cohesion when everything in it serves one purpose and changes for the same reason.
 - **Coupling** asks how much one class knows about another. Two classes are tightly coupled when a change in one forces a change in the other.
 
-The goal is the green quadrant: high cohesion and low coupling, so that every change stays local. The original `LinkManager` sits in the red quadrant. It mixes Redis, Postgres, link rules, and click tracking in one class (low cohesion), and it creates those dependencies directly, so it is welded to all of them (high coupling). After Levels 1 to 4, each class has one job, and classes talk to each other only through small interfaces such as `LinkRepository` and `LinkRule`.
+The goal is the green quadrant: high cohesion and low coupling, so that every change stays local. The original `CheckoutManager` sits in the red quadrant. It mixes Redis, Postgres, discount rules, Stripe, and email in one class (low cohesion), and it creates those dependencies directly, so it is welded to all of them (high coupling). After Levels 1 to 4, each class has one job, and classes talk to each other only through small interfaces such as `CartRepository` and `DiscountRule`.
 
 A practical habit that reduces coupling is **"tell, don't ask"**: instead of pulling data out of an object to make a decision elsewhere, ask the object that owns the data to make the decision.
 
 ```java
-// Ask: the caller digs into the link's internals and makes the decision itself
-if (link.getExpiryRule().getExpiresAt().isBefore(Instant.now())) { return GONE; }
+// Ask: the caller digs into the order's internals and makes the decision itself
+if (order.getCustomer().getAddress().getCountry().equals("IN")) { applyDomesticShipping(order); }
 
-// Tell: the link owns its rules, and the caller only states what it wants to know
-RedirectDecision decision = link.check(visit);
+// Tell: the order owns its shipping details, and the caller only states what it wants to know
+if (order.isDomesticShipment()) { applyDomesticShipping(order); }
 ```
 
-A long chain of getters is coupling you can see. If the way rules are stored ever changes, every caller with a chain like that breaks. This guideline is also known as the *Law of Demeter*: talk to the objects you hold directly, not to the objects inside them.
+A long chain of getters is coupling you can see. If the way addresses are stored ever changes, every caller with a chain like that breaks. This guideline is also known as the *Law of Demeter*: talk to the objects you hold directly, not to the objects inside them.
 
 ??? info "Go deeper (optional): the kinds of coupling, from worst to best"
     | Kind of coupling | What it looks like |
@@ -303,7 +300,7 @@ A long chain of getters is coupling you can see. If the way rules are stored eve
     | Content coupling | One class reaches directly into another class's private fields or internal workings. |
     | Global coupling | Classes share mutable global state, which hides dependencies and makes test results depend on the order the tests run in. |
     | Control coupling | A caller passes a flag that tells the method *what to do*, so the caller must understand how the method works inside. |
-    | Stamp coupling | A method receives a whole object, such as a `ShortLink`, when it only needs one value from it, such as the code. |
+    | Stamp coupling | A method receives a whole object, such as a `Cart`, when it only needs one value from it, such as its total. |
     | Data coupling | A method receives exactly the values it needs and nothing more. This is the goal. |
 
 !!! question "Practice"
@@ -314,7 +311,7 @@ A long chain of getters is coupling you can see. If the way rules are stored eve
     ```
 
 ??? success "Answer"
-    Move the question to the object that owns the data, for example `if (order.isDomestic())`. The order (or the customer it holds) decides how to answer, and the caller no longer depends on how customers, addresses, and countries are structured.
+    Move the question to the object that owns the data, for example `if (order.isDomesticShipment())`. The order (or the customer it holds) decides how to answer, and the caller no longer depends on how customers, addresses, and countries are structured.
 
 ---
 
@@ -322,20 +319,21 @@ A long chain of getters is coupling you can see. If the way rules are stored eve
 
 ![Five SOLID principles framed as questions about change](assets/topic-02/solid_principles.png)
 
-SOLID is a set of five guidelines for keeping change local. Each letter is best remembered as a question you ask about your code, and each one has a typical symptom, or *smell*, that tells you it is being broken. The sections below apply each letter to the URL shortener.
+SOLID is a set of five guidelines for keeping change local. Each letter is best remembered as a question you ask about your code, and each one has a typical symptom, or *smell*, that tells you it is being broken. The sections below apply each letter to the cart and checkout flow.
 
 ### S: Single Responsibility
 
 **A class should have only one reason to change.** The useful way to apply this is to ask *who* would ask for the class to change.
 
-The original `LinkManager` is changed by four different groups: the product team adds link features, the trust and safety team blocks malicious URLs, the infrastructure team changes how links are stored and cached, and the analytics team changes what is recorded for each click. Their edits collide in one file. The fix gives each group its own classes, and keeps one small class that coordinates them:
+The original `CheckoutManager` is changed by five different groups: the product team adds discount rules, the trust and safety team tightens fraud checks, the payments team changes which payment provider is used, the infrastructure team changes how carts are stored and cached, and the fulfillment team changes what happens after an order is placed. Their edits collide in one file. The fix gives each group its own classes, and keeps one small class that coordinates them:
 
 ```java
-final class ExpiryRule implements LinkRule { ... }                               // product team
-final class UrlSafetyChecker { boolean isSafe(String longUrl) { ... } }          // trust and safety team
-final class PostgresLinkRepository implements LinkRepository { ... }             // infrastructure team
-final class ClickRecorder { void record(ShortCode code, Visit visit) { ... } }   // analytics team
-final class LinkService { /* coordinates the others, shown in section 6 */ }
+final class PercentageOffRule implements DiscountRule { ... }                    // product team
+final class FraudChecker { boolean isSuspicious(Cart cart, Card card) { ... } }   // trust and safety team
+final class StripePaymentProcessor implements PaymentProcessor { ... }           // payments team
+final class PostgresCartRepository implements CartRepository { ... }             // infrastructure team
+final class OrderEventPublisher { void publish(Order order) { ... } }            // fulfillment team
+final class CheckoutService { /* coordinates the others, shown in section 6 */ }
 ```
 
 **Trap:** single responsibility does not mean "one method per class". Methods that protect the same rule belong together. Splitting them across many files scatters one rule, which is the opposite of the goal.
@@ -344,57 +342,57 @@ final class LinkService { /* coordinates the others, shown in section 6 */ }
 
 **A class should be open for extension but closed for modification.** In plain words, a new case should arrive as a new class, without editing code that is already tested.
 
-Levels 3 and 4 already achieved this for link features. When marketing asks for links that only work during a campaign, we write a `CampaignWindowRule` class. `ShortLink`, the other rules, and the service that resolves links are not edited.
+Levels 3 and 4 already achieved this for discounts. When marketing asks for a "spend MX$1,000, get MX$150 off" rule, we write a `SpendThresholdRule` class. `Cart`, the other rules, and the service that prices a cart are not edited.
 
-**Trap:** only build extension points for changes you have real evidence for. The product team keeps asking for link features, so a rule extension point is justified. Adding extension points for changes nobody has asked for, such as pluggable short-code formats, is guessing, and that breaks YAGNI (Level 7).
+**Trap:** only build extension points for changes you have real evidence for. The product team keeps asking for new discount types, so a rule extension point is justified. Adding extension points for changes nobody has asked for, such as pluggable currencies, is guessing, and that breaks YAGNI (Level 7).
 
 ### L: Liskov Substitution
 
 **Any implementation must be usable wherever its interface is expected, without surprising the caller.** Matching the method signatures is the easy part. What matters is that every implementation *behaves* the way the contract promises.
 
-Every new link needs a short code, so the service depends on an interface whose contract makes one promise:
+Every order needs an order ID, so the service depends on an interface whose contract makes one promise:
 
 ```java
-interface CodeGenerator {
-    ShortCode next();          // contract: never returns a code that has already been used
+interface OrderIdGenerator {
+    OrderId next();          // contract: never returns an ID that has already been used
 }
 ```
 
-`CounterCodeGenerator`, which turns an ever-increasing counter into base62, keeps that promise. Now imagine a `RandomCodeGenerator` that picks 7 random base62 characters and never checks whether the code is already taken. It compiles and passes a quick test. But because of the *birthday paradox*, a repeated code becomes likely after only about two million links, which is roughly three days of traffic at the 20 million links per month estimated in Basics 1. When it happens, `save` overwrites someone else's link, and their visitors land on the wrong page. That generator cannot be safely substituted for a `CodeGenerator`. A correct random generator checks whether the code exists and tries again, which keeps the promise.
+`SequentialOrderIdGenerator`, which turns an ever-increasing counter into an order ID, keeps that promise. Now imagine a `RandomOrderIdGenerator` that picks random digits and never checks whether the ID is already taken. It compiles and passes a quick test. But because of the *birthday paradox*, a repeated ID becomes likely far sooner than intuition suggests once order volume climbs. When it happens, `save` overwrites someone else's order, and their receipt and payment record get mixed up with another customer's. That generator cannot be safely substituted for an `OrderIdGenerator`. A correct random generator checks whether the ID exists and tries again, which keeps the promise.
 
-The other common symptom is a method that an implementation cannot support. Suppose a team adds `ReadOnlyLinkRepository`, which reads from a read-only copy of the database (a *replica*) and throws `UnsupportedOperationException` from `save`. Any caller that trusts the `LinkRepository` interface would crash. The fix is to model capabilities honestly: give read-only callers a separate `LinkReader` interface that contains only `findByCode`.
+The other common symptom is a method that an implementation cannot support. Suppose a team adds `ReadOnlyCartRepository`, which reads from a read-only replica and throws `UnsupportedOperationException` from `save`. Any caller that trusts the `CartRepository` interface would crash. The fix is to model capabilities honestly: give read-only callers a separate `CartReader` interface that contains only `findById`.
 
 The classic interview example is `Square extends Rectangle`. Code that sets a rectangle's width and then its height expects both values to stick, but a square must keep its sides equal, so it silently changes the other side and surprises the caller.
 
 ??? info "Go deeper (optional): the four formal substitution rules"
     | Rule | Meaning | Violation example |
     |---|---|---|
-    | Preconditions | An implementation cannot demand more from callers than the interface does. | The interface accepts any valid http or https URL, but one implementation rejects URLs longer than 100 characters. |
-    | Postconditions | An implementation cannot promise less than the interface does. | The interface promises a code that was never used before, but one generator sometimes returns a duplicate. |
+    | Preconditions | An implementation cannot demand more from callers than the interface does. | The interface accepts any cart with at least one item, but one implementation rejects carts over 20 items. |
+    | Postconditions | An implementation cannot promise less than the interface does. | The interface promises an ID that was never used before, but one generator sometimes returns a duplicate. |
     | Invariants | An implementation must keep every rule the interface keeps true. | A `Square` breaks the rectangle rule that width and height can change independently. |
-    | Exceptions | An implementation cannot add new ways to fail. | The interface never throws from `save` for a valid link, but a read-only implementation throws `UnsupportedOperationException`. |
+    | Exceptions | An implementation cannot add new ways to fail. | The interface never throws from `save` for a valid order, but a read-only implementation throws `UnsupportedOperationException`. |
 
 ### I: Interface Segregation
 
 **No caller should be forced to depend on methods it does not use.** Interfaces should be shaped around what each kind of caller actually needs.
 
-Suppose `LinkRepository` grew over time to include everything anyone asked for:
+Suppose `CartRepository` grew over time to include everything anyone asked for:
 
 ```java
-// Too big: the redirect path only calls findByCode, but every implementation must provide everything
-interface LinkRepository {
-    Optional<ShortLink> findByCode(ShortCode code);
-    void save(ShortLink link);
-    List<ShortLink> topLinks(int limit);                          // only the dashboards need this
-    Map<String, Long> clicksByCountry(ShortCode code);            // only the dashboards need this
+// Too big: checkout only calls findById and save, but every implementation must provide everything
+interface CartRepository {
+    Optional<Cart> findById(CartId id);
+    void save(Cart cart);
+    List<Order> topOrders(int limit);                              // only the dashboards need this
+    Map<String, Money> revenueByCountry();                         // only the dashboards need this
 }
 
 // Better: small interfaces, one per kind of caller
-interface LinkRepository { Optional<ShortLink> findByCode(ShortCode code); void save(ShortLink link); }
-interface LinkStats      { List<ShortLink> topLinks(int limit); Map<String, Long> clicksByCountry(ShortCode code); }
+interface CartRepository { Optional<Cart> findById(CartId id); void save(Cart cart); }
+interface OrderStats     { List<Order> topOrders(int limit); Map<String, Money> revenueByCountry(); }
 ```
 
-Basics 1 already put click analytics in a separate store from the links themselves, and the interfaces now follow the same split. The redirect path depends only on `findByCode`, so it is not affected when the analytics team changes its reports, and the in-memory fake used in tests no longer has to pretend to produce statistics.
+Basics 1 already put the durable order store behind its own boundary, separate from the cache, and the interfaces now follow the same split. The checkout path depends only on `CartRepository`, so it is not affected when the analytics team changes its dashboards, and the in-memory fake used in tests no longer has to pretend to compute revenue by country.
 
 **Trap:** split interfaces by what callers need, not mechanically by method. A codebase where every interface has exactly one method is just as hard to work with as one giant interface.
 
@@ -402,24 +400,29 @@ Basics 1 already put click analytics in a separate store from the links themselv
 
 **Business logic should depend on interfaces it owns, not on concrete infrastructure.** Infrastructure, such as databases and third-party services, then plugs in behind those interfaces.
 
-The original `LinkManager` creates `new PostgresClient(DB_URL)` itself. That welds the business logic to Postgres, makes it impossible to test without a real database, and means switching databases requires editing the business logic. The fix is to depend on the `LinkRepository` interface and receive the implementation from outside, through the constructor:
+The original `CheckoutManager` creates `new StripeClient(STRIPE_KEY)` itself. That welds the business logic to Stripe, makes it impossible to test without hitting a real payment provider, and means adding a second provider for a new region requires editing the business logic. The fix is to depend on a `PaymentProcessor` interface and receive the implementation from outside, through the constructor:
 
 ```java
-final class LinkService {
-    private final LinkRepository links;
+interface PaymentProcessor {
+    PaymentResult charge(Card card, Money amount);     // contract: throws PaymentDeclinedException, never returns a fake success
+}
 
-    LinkService(LinkRepository links) {        // handed in, never created here
-        this.links = links;
+final class CheckoutService {
+    private final PaymentProcessor payments;
+
+    CheckoutService(PaymentProcessor payments) {        // handed in, never created here
+        this.payments = payments;
     }
 }
-// In production, the wiring passes a PostgresLinkRepository. In tests, it passes an InMemoryLinkRepository.
+// In production, the wiring passes a StripePaymentProcessor. In tests, it passes a FakePaymentProcessor
+// that never calls a real network, so tests stay fast and never accidentally charge a real card.
 ```
 
-The diagram shows the change. Before, the business logic points at Postgres. After, both the real Postgres repository and the in-memory test fake point up at an interface that belongs to the business logic.
+The diagram shows the change. Before, the business logic points at Postgres. After, both the real repository and an in-memory test fake point up at an interface that belongs to the business logic. The same shape applies here: before, `CheckoutService` points at Stripe; after, both `StripePaymentProcessor` and `FakePaymentProcessor` point up at a `PaymentProcessor` interface that the checkout logic owns.
 
-![Dependency inversion: before, the link service depends on Postgres; after, both repositories depend on a policy-owned interface](assets/topic-02/dependency_inversion.png)
+![Dependency inversion: before, the checkout service depends on Stripe; after, both processors depend on a policy-owned interface](assets/topic-02/dependency_inversion.png)
 
-**Trap:** the interface must be shaped by what the business logic needs, such as `findByCode(code)`, not copied from the database driver's API, such as `executeQuery(sql, parameters)`. An interface that mirrors one vendor adds a layer without removing the dependency. Also note that *dependency injection* (passing dependencies in through the constructor) is just the technique used to wire this design; the principle is about which way the dependency points.
+**Trap:** the interface must be shaped by what the business logic needs, such as `charge(card, amount)`, not copied from one vendor's SDK, such as `createPaymentIntentWithIdempotencyKey(...)`. An interface that mirrors one vendor adds a layer without removing the dependency. Also note that *dependency injection* (passing dependencies in through the constructor) is just the technique used to wire this design; the principle is about which way the dependency points.
 
 !!! question "Practice: which SOLID letter does each snippet break?"
     1. `class InvoiceService { Money calculate(...); void saveToDatabase(...); void emailPdf(...); }`
@@ -429,11 +432,11 @@ The diagram shows the change. Before, the business logic points at Postgres. Aft
     5. `class ReportService { private final PostgresClient db = new PostgresClient("prod-db-host"); }`
 
 ??? success "Answer"
-    1. **S (Single Responsibility).** Calculation, storage, and email change for different reasons and are requested by different people, so they belong in different classes.
-    2. **O (Open/Closed).** Every new tier edits tested code. Each tier could instead be its own discount rule class.
-    3. **L (Liskov Substitution).** Code that writes to a `File` crashes when it receives a `ReadOnlyFile`, so the subtype cannot be safely substituted.
-    4. **I (Interface Segregation),** and also L. The basic printer is forced to provide methods it cannot support. Splitting the interface into `Printer`, `Scanner`, and `Fax` fixes both problems.
-    5. **D (Dependency Inversion).** The service creates its own database client, so it cannot be tested without a real database, and switching databases means editing the service.
+    1. **Single Responsibility.** Calculating a price, saving to a database, and emailing a PDF are three different reasons to change, owned by three different concerns.
+    2. **Open/Closed.** A new tier means editing the branch. Replace it with a `DiscountPolicy` interface and one implementation per tier.
+    3. **Liskov Substitution.** A `ReadOnlyFile` cannot honor the `File` contract, which allows writing. It should not extend `File` at all.
+    4. **Interface Segregation.** `BasicPrinter` is forced to implement methods it cannot support. Split `Printer` into `Print`, `Scan`, and `Fax` interfaces.
+    5. **Dependency Inversion.** The service creates its own database client instead of depending on an interface it owns.
 
 ---
 
@@ -447,70 +450,71 @@ SOLID tells you *where* responsibilities should go. These three guidelines tell 
 
 **Every piece of knowledge should have one owner.** If the same business rule is written in several places, the copies eventually drift apart.
 
-Suppose the base62 alphabet, `0-9`, `a-z`, `A-Z` in that order, is typed out in three places: the `ShortCode` format check, the counter generator that turns numbers into codes, and an admin tool that turns codes back into numbers. If someone reorders the characters in one copy, codes no longer decode to the numbers that created them, and nothing fails loudly. A single `Base62` class that owns the alphabet and both directions of conversion gives that knowledge one home.
+Suppose the tax rate for a region is computed separately in three places: checkout, the invoice PDF generator, and the admin refund tool. If a tax rate changes and one copy is missed, a customer's refund is computed with the wrong rate while their original charge used the right one, and nothing fails loudly. A single `TaxCalculator` class that owns the rate table and the calculation gives that knowledge one home.
 
-**Trap:** DRY is about duplicated *knowledge*, not duplicated *text*. Two methods that look identical but belong to different owners, such as signup validation and identity verification, should stay separate. If you merge them, the first requirement that applies to only one of them adds a boolean flag, and then another. As Sandi Metz put it, "duplication is far cheaper than the wrong abstraction". A useful tie-breaker is the **rule of three**: tolerate a second copy, and extract a shared abstraction when a third copy appears.
+**Trap:** DRY is about duplicated *knowledge*, not duplicated *text*. Two methods that look identical but belong to different owners, such as checkout validation and fraud-review validation, should stay separate. If you merge them, the first requirement that applies to only one of them adds a boolean flag, and then another. As Sandi Metz put it, "duplication is far cheaper than the wrong abstraction". A useful tie-breaker is the **rule of three**: tolerate a second copy, and extract a shared abstraction when a third copy appears.
 
 ### KISS: Keep It Simple
 
-**Every layer of complexity must buy a capability you actually need.** With three link rules, it can be tempting to build a plugin framework that discovers rule classes automatically and sorts them by priority. The plain list of rules from Level 4 already does the job, and anyone can read it in seconds.
+**Every layer of complexity must buy a capability you actually need.** With three discount rules, it can be tempting to build a plugin framework that discovers rule classes automatically and sorts them by priority. The plain list of rules from Level 4 already does the job, and anyone can read it in seconds.
 
-**Trap:** KISS removes complexity that the design added by accident. It does not mean ignoring complexity that is genuinely part of the problem, such as time zones in expiry dates or collisions in random codes. Flattening real rules into something that looks simple but handles edge cases wrongly is a bug.
+**Trap:** KISS removes complexity that the design added by accident. It does not mean ignoring complexity that is genuinely part of the problem, such as rounding rules for tax or currency conversion. Flattening real rules into something that looks simple but handles edge cases wrongly is a bug.
 
 ### YAGNI: You Aren't Gonna Need It
 
-**Do not build for a future that nobody has asked for.** The `LinkRepository` interface is worth having today: it costs one small file, and it lets us test with an in-memory store. Building custom-domain support or QR-code generation "just in case" is not worth it. Basics 1 explicitly put custom domains out of scope, and code written against guessed requirements is usually wrong by the time the real need arrives. Keep the extension points that are cheap and proven, but do not build the extensions early.
+**Do not build for a future that nobody has asked for.** The `CartRepository` interface is worth having today: it costs one small file, and it lets us test with an in-memory store. Building multi-currency pricing or split-tender payments "just in case" is not worth it. Basics 1 explicitly put those out of scope, and code written against guessed requirements is usually wrong by the time the real need arrives. Keep the extension points that are cheap and proven, but do not build the extensions early.
 
 !!! question "Practice"
-    The signup flow and the identity-verification flow each contain an identical 10-line method that validates a user's name and date of birth. A teammate wants to merge them into one shared method. What should you consider?
+    The checkout flow and the fraud-review flow each contain an identical 10-line method that validates a shipping address. A teammate wants to merge them into one shared method. What should you consider?
 
 ??? success "Answer"
-    Ask whether the two methods share the same *knowledge* or only look the same today. The two flows are owned by different teams and follow different rules: identity verification is usually driven by legal requirements, while signup is driven by product decisions. They are likely to diverge, so keeping them separate is often the better choice. If the rule really is shared, for example a single company-wide definition of a valid date of birth, then extract that one rule into its own class and let both flows use it.
+    Ask whether the two methods share the same *knowledge* or only look the same today. The two flows are owned by different teams and follow different rules: fraud review is usually driven by risk policy, while checkout is driven by product and shipping-carrier requirements. They are likely to diverge, so keeping them separate is often the better choice. If the rule really is shared, for example a single company-wide definition of a well-formed postal address, then extract that one rule into its own class and let both flows use it.
 
 ---
 
-## 6. Putting it together: the URL shortener's classes
+## 6. Putting it together: the cart and checkout classes
 
-After all seven levels, the messy `LinkManager` has become a set of small classes, each with one clear job:
+After all seven levels, the messy `CheckoutManager` has become a set of small classes, each with one clear job:
 
-![URL shortener class diagram with policy above and replaceable implementations below a boundary](assets/topic-02/link_service_architecture.png)
+![Cart and checkout class diagram with policy above and replaceable implementations below a boundary](assets/topic-02/checkout_service_architecture.png)
 
-The dashed line in the diagram separates stable business logic (above) from details that change more often (below). The classes above the line never mention Postgres, Redis, or a particular code scheme, so the store can be replaced, and a new code scheme added, without editing them.
+The dashed line in the diagram separates stable business logic (above) from details that change more often (below). The classes above the line never mention Postgres, Redis, or a particular payment provider, so the store and the payment processor can both be replaced without editing them.
 
 | Class | What it is responsible for | Who asks for it to change |
 |---|---|---|
-| `ShortCode` | It holds one valid 7-character base62 code. | Rarely anyone, unless the code format changes. |
-| `ShortLink` | It holds one valid link with its rules, and decides whether a visit may follow it. | Rarely anyone, because new link features arrive as new rules. |
-| `LinkRule` and its rules (`ExpiryRule`, `PasswordRule`, `CountryRule`) | Each rule decides one thing about a visit. | The product team, when link features are added or changed. |
-| `CodeGenerator` and `CounterCodeGenerator` | It produces a code that has never been used before. | The engineering team, when the code scheme changes. |
-| `LinkRepository` and `PostgresLinkRepository` | It stores links and finds them by code. | The infrastructure team, when storage changes. |
-| `UrlSafetyChecker` | It rejects URLs that are known to be malicious. | The trust and safety team. |
-| `ClickRecorder` | It publishes a click event to the queue from Basics 1. | The analytics team. |
-| `LinkService` | It coordinates the others for the two main flows: shortening a URL and resolving a code. | Anyone who changes one of those overall workflows. |
+| `Money` | It holds one valid, non-negative amount with a currency. | Rarely anyone, unless currency rules change. |
+| `Cart` | It holds one valid cart with its discount rules, and computes the final total. | Rarely anyone, because new discounts arrive as new rules. |
+| `DiscountRule` and its rules (`PercentageOffRule`, `FreeShippingRule`, `BogoRule`) | Each rule adjusts a price by one well-defined amount. | The product team, when discounts are added or changed. |
+| `OrderIdGenerator` and `SequentialOrderIdGenerator` | It produces an order ID that has never been used before. | The engineering team, when the ID scheme changes. |
+| `CartRepository` and `PostgresCartRepository` | It stores carts and finds them by ID. | The infrastructure team, when storage changes. |
+| `FraudChecker` | It flags carts that look like stolen-card fraud before they are charged. | The trust and safety team. |
+| `PaymentProcessor` and `StripePaymentProcessor` | It charges a card and reports whether the charge succeeded. | The payments team, when a provider changes or a new one is added. |
+| `OrderEventPublisher` | It publishes an "order placed" event to the queue from Basics 1. | The fulfillment team. |
+| `CheckoutService` | It coordinates the others for the one main flow: turning a priced cart into a paid order. | Anyone who changes that overall workflow. |
 
-The coordinating class is now short, and it contains no storage, code-scheme, or link-rule details of its own:
+The coordinating class is now short, and it contains no storage, payment-provider, or discount-rule details of its own:
 
 ```java
-final class LinkService {
-    private final CodeGenerator codes;
-    private final LinkRepository links;
-    private final UrlSafetyChecker safety;
-    private final ClickRecorder clicks;
-    // The constructor receives all four dependencies, exactly as in the Dependency Inversion section.
+final class CheckoutService {
+    private final CartRepository carts;
+    private final FraudChecker fraud;
+    private final PaymentProcessor payments;
+    private final OrderIdGenerator orderIds;
+    private final OrderEventPublisher events;
+    // The constructor receives all five dependencies, exactly as in the Dependency Inversion section.
 
-    ShortCode shorten(String longUrl, List<LinkRule> rules) {
-        if (!safety.isSafe(longUrl)) throw new UnsafeUrlException(longUrl);
-        ShortLink link = new ShortLink(codes.next(), longUrl, Instant.now(), rules);
-        links.save(link);
-        return link.code();
-    }
+    CheckoutResult checkout(CartId cartId, Card card) {
+        Optional<Cart> found = carts.findById(cartId);
+        if (found.isEmpty()) return CheckoutResult.cartNotFound();
 
-    RedirectResult resolve(ShortCode code, Visit visit) {       // the web layer turns this into an HTTP response
-        Optional<ShortLink> found = links.findByCode(code);
-        if (found.isEmpty()) return RedirectResult.notFound();
-        RedirectDecision decision = found.get().check(visit);
-        if (decision == RedirectDecision.ALLOW) clicks.record(code, visit);
-        return RedirectResult.of(decision, found.get().longUrl());
+        Cart cart = found.get();
+        if (fraud.isSuspicious(cart, card)) return CheckoutResult.declined();
+
+        Money total = cart.total();
+        PaymentResult payment = payments.charge(card, total);          // throws on failure, per the PaymentProcessor contract
+        Order order = new Order(orderIds.next(), cart, total, payment);
+        events.publish(order);                                         // async: email, inventory, and loyalty happen later
+        return CheckoutResult.success(order);
     }
 }
 ```
@@ -519,32 +523,32 @@ The real test of a design is how it handles change. Here is what each likely cha
 
 | Change request | What you edit | What you add | What stays untouched |
 |---|---|---|---|
-| Add links that only work during a campaign. | You edit only the API code that creates links with the new rule. | You add a `CampaignWindowRule` class. | `ShortLink`, `LinkService`, and every other rule stay untouched. |
-| Put a cache in front of the database. | You edit only the wiring. | You add a caching repository class, as shown in Basics 3. | `LinkService` and `PostgresLinkRepository` stay untouched. |
-| Switch from counter-based codes to random codes. | You edit only the wiring. | You add a `RandomCodeGenerator` that checks for collisions. | Every other class stays untouched. |
-| Block a newly discovered kind of malicious URL. | You edit `UrlSafetyChecker`. | You add tests for the new case. | Every other class stays untouched. |
-| Let owners change where an existing link points. | You edit `LinkService` and `ShortLink`, because the workflow itself changes. | You add an "update link" flow to the API. | The rules, the code generators, and the repository contract stay untouched. |
+| Add a "buy one, get one" promotion. | You edit only the API code that creates carts with the new rule. | You add a `BogoRule` class. | `Cart`, `CheckoutService`, and every other rule stay untouched. |
+| Put a cache in front of the cart store. | You edit only the wiring. | You add a caching repository class, as shown in Basics 3. | `CheckoutService` and `PostgresCartRepository` stay untouched. |
+| Switch from sequential order IDs to ULIDs. | You edit only the wiring. | You add a `UlidOrderIdGenerator`. | Every other class stays untouched. |
+| Add a new fraud signal, such as flagging mismatched billing and shipping countries. | You edit `FraudChecker`. | You add tests for the new case. | Every other class stays untouched. |
+| Let a customer change their shipping address after checkout. | You edit `CheckoutService` and `Order`, because the workflow itself changes. | You add an "update shipping address" flow to the API. | The discount rules, the payment processor, and the repository contract stay untouched. |
 
-The last row is important. Editing links changes a *workflow*, and the coordinating class is supposed to change for workflow reasons. No design absorbs every possible change, and saying so honestly is a stronger answer than claiming the design is open to anything.
+The last row is important. Editing a placed order changes a *workflow*, and the coordinating class is supposed to change for workflow reasons. No design absorbs every possible change, and saying so honestly is a stronger answer than claiming the design is open to anything.
 
 ??? info "Go deeper (optional): proving substitution with contract tests"
     Level 6 said every implementation must keep its interface's promises. A *contract test* turns those promises into something the build checks. You write the tests once, against the interface, and every implementation's test class inherits them:
 
     ```java
-    abstract class LinkRepositoryContractTest {
-        protected abstract LinkRepository repository();       // each implementation's test supplies one
+    abstract class CartRepositoryContractTest {
+        protected abstract CartRepository repository();       // each implementation's test supplies one
 
-        @Test void unknownCodeIsEmpty() {
-            assertTrue(repository().findByCode(new ShortCode("zzzzzzz")).isEmpty());
+        @Test void unknownIdIsEmpty() {
+            assertTrue(repository().findById(new CartId("missing")).isEmpty());
         }
-        @Test void savedLinkCanBeFound() {
-            LinkRepository repository = repository();
-            repository.save(sampleLink());
-            assertEquals(Optional.of(sampleLink()), repository.findByCode(sampleLink().code()));
+        @Test void savedCartCanBeFound() {
+            CartRepository repository = repository();
+            repository.save(sampleCart());
+            assertEquals(Optional.of(sampleCart()), repository.findById(sampleCart().id()));
         }
     }
-    class InMemoryLinkRepositoryTest extends LinkRepositoryContractTest { ... }
-    class PostgresLinkRepositoryTest extends LinkRepositoryContractTest { ... }   // runs against a real test database
+    class InMemoryCartRepositoryTest extends CartRepositoryContractTest { ... }
+    class PostgresCartRepositoryTest extends CartRepositoryContractTest { ... }   // runs against a real test database
     ```
 
     This matters most for fakes. If the in-memory fake behaves differently from Postgres, every test that uses it proves the wrong thing. Running the same suite against both keeps the fake honest. Inheritance is the right tool here, because every concrete test class truly *is* a repository contract test.
@@ -669,10 +673,10 @@ A low-level design (LLD) interview asks you to design the classes for a small sy
 
 | Topic you may have heard about | Where it is covered |
 |---|---|
-| Factory, Builder, Singleton, Adapter, Decorator, and other structural patterns, applied to these same URL shortener classes | Basics 3: Creational & Structural Design Patterns |
-| Strategy (the pattern behind `LinkRule` and `CodeGenerator`), Observer, Template Method, and other behavioral patterns | Advanced 1: Behavioral Design Patterns |
+| Factory, Builder, Singleton, Adapter, Decorator, and other structural patterns, applied to these same cart and checkout classes | Basics 3: Creational & Structural Design Patterns |
+| Strategy (the pattern behind `DiscountRule` and `OrderIdGenerator`), Observer, Template Method, and other behavioral patterns | Advanced 1: Behavioral Design Patterns |
 | Full machine-coding case studies, such as a parking lot or a ticket booking system | Advanced 2: Real-World Machine Coding Case Studies |
 | Service boundaries, modular monoliths, and microservices | Basics 5: Architecture Styles & Service Decomposition |
 | Cache strategies, expiry, and eviction | Basics 9: Caching Core |
-| Queues that process click events in the background | Basics 13: Asynchronous Processing Basics |
-| Generating unique short codes across many servers at once | Basics 15: Distributed ID Generation |
+| Queues that process order-placed events in the background | Basics 13: Asynchronous Processing Basics |
+| Generating unique order IDs across many servers at once | Basics 15: Distributed ID Generation |

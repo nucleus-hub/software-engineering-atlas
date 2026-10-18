@@ -210,33 +210,33 @@ def decorator_ordering() -> plt.Figure:
     ax.plot([50, 50], [4, 84], color=LINE, linewidth=1.5)
 
     panel_title(ax, 25, "Metrics( Cache( Postgres ) )", NAVY)
-    onion(ax, 5, "MetricsLinkRepository", "CachingLinkRepository", NAVY, GREEN, PALE, GREEN_FACE,
-          core="PostgresLinkRepository", core_subtitle="the database")
+    onion(ax, 5, "MetricsCartRepository", "CachingCartRepository", NAVY, GREEN, PALE, GREEN_FACE,
+          core="PostgresCartRepository", core_subtitle="the database")
     ax.text(25, 16, "Metrics sees every call", ha="center", fontsize=10,
             fontweight="bold", color=INK)
-    ax.text(25, 9, "100 redirects  →  100 timings (hits and misses)",
+    ax.text(25, 9, "100 cart lookups  →  100 timings (hits and misses)",
             ha="center", fontsize=9, color=INK, style="italic")
 
     panel_title(ax, 75, "Cache( Metrics( Postgres ) )", NAVY)
-    onion(ax, 55, "CachingLinkRepository", "MetricsLinkRepository", GREEN, NAVY, GREEN_FACE, PALE,
-          core="PostgresLinkRepository", core_subtitle="the database")
+    onion(ax, 55, "CachingCartRepository", "MetricsCartRepository", GREEN, NAVY, GREEN_FACE, PALE,
+          core="PostgresCartRepository", core_subtitle="the database")
     ax.text(75, 16, "Metrics sees only cache misses", ha="center", fontsize=10,
             fontweight="bold", color=INK)
-    ax.text(75, 9, "100 redirects, 80 cache hits  →  20 timings",
+    ax.text(75, 9, "100 cart lookups, 80 cache hits  →  20 timings",
             ha="center", fontsize=9, color=INK, style="italic")
     return fig
 
 
-def url_shortener_architecture() -> plt.Figure:
+def cart_checkout_patterns() -> plt.Figure:
     fig, ax = canvas(15, 7.6)
-    heading(ax, "URL Shortener: Each Pattern Absorbs One Expected Change",
-            "The API depends on one interface; everything volatile sits behind it")
+    heading(ax, "Cart & Checkout: Each Pattern Absorbs One Expected Change",
+            "The service depends on one interface; everything volatile sits behind it")
     creational = dict(face=PALE, edge=BLUE)
     structural = dict(face=AMBER_FACE, edge=AMBER)
 
-    box(ax, 3, 60, 15, 13, "Client", "calls shorten(url)", face=WHITE, edge=NAVY)
-    box(ax, 24, 60, 20, 13, "LinkService", "facade", **structural)
-    box(ax, 51, 60, 20, 13, "ShortLinkRequest", "builder, validated once", **creational)
+    box(ax, 3, 60, 15, 13, "Client", "calls checkout(cartId)", face=WHITE, edge=NAVY)
+    box(ax, 24, 60, 20, 13, "CheckoutService", "facade", **structural)
+    box(ax, 51, 60, 20, 13, "CheckoutRequest", "builder, validated once", **creational)
     arrow(ax, (18.5, 66.5), (23.5, 66.5), color=GREY)
     arrow(ax, (44.5, 66.5), (50.5, 66.5), color=GREY, label="builds")
 
@@ -244,13 +244,13 @@ def url_shortener_architecture() -> plt.Figure:
     arrow(ax, (34, 59.5), (34, 47.5), color=GREY)
     ax.text(35.5, 53.5, "resolves", ha="left", va="center", fontsize=8, color=INK)
 
-    box(ax, 51, 34, 14, 13, "RetryingRepository", "decorator", **structural)
-    box(ax, 68, 34, 14, 13, "MetricsRepository", "decorator", **structural)
-    box(ax, 84, 34, 14, 13, "PostgresRepository", "direct, no adapter", face=WHITE, edge=GREY)
+    box(ax, 51, 34, 14, 13, "RetryingCartRepo", "decorator", **structural)
+    box(ax, 68, 34, 14, 13, "MetricsCartRepo", "decorator", **structural)
+    box(ax, 84, 34, 14, 13, "PostgresCartRepo", "direct, no adapter", face=WHITE, edge=GREY)
     arrow(ax, (44.5, 40.5), (50.5, 40.5), color=GREY, label="returns")
     arrow(ax, (65.5, 40.5), (67.5, 40.5), color=GREY)
     arrow(ax, (82.5, 40.5), (83.5, 40.5), color=GREY)
-    ax.text(66, 28.5, "Every link implements LinkRepository", ha="center",
+    ax.text(66, 28.5, "Every repository implements CartRepository", ha="center",
             fontsize=9, fontweight="bold", color=NAVY)
 
     box(ax, 84, 8, 14, 13, "Postgres", "spoken to over plain JDBC", face=WHITE, edge=GREY)
@@ -272,7 +272,7 @@ FIGURES = {
     "builder_vs_telescoping": builder_vs_telescoping,
     "wrapper_family": wrapper_family,
     "decorator_ordering": decorator_ordering,
-    "url_shortener_architecture": url_shortener_architecture,
+    "cart_checkout_patterns": cart_checkout_patterns,
 }
 
 

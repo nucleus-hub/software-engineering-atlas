@@ -10,23 +10,23 @@ You do not need to memorize these. Come back to this table whenever a term feels
 | **GoF** | Short for "Gang of Four", the four authors of the 1994 book that named most of the patterns on this page. |
 | **Seam** | A point in the code where one implementation can be swapped for another without touching the code around it. |
 | **Composition root** | The one place in an application, usually near `main()`, where concrete classes are created and wired to the interfaces they implement. |
-| **Vendor SDK** | The client library a third party ships so your code can call their service, such as a database driver or a cloud provider's client. |
-| **Registry** | An object that looks up which concrete implementation to use, usually from a small, fixed set, such as "by region" or "by type". |
+| **Vendor SDK** | The client library a third party ships so your code can call their service, such as a database driver or a payment provider's client. |
+| **Registry** | An object that looks up which concrete implementation to use, usually from a small, fixed set, such as "by region" or "by payment method". |
 | **Wrapper** | An object that holds another object of the same interface and adds something before or after passing the call through. Adapter, Decorator, Facade, and Proxy are all wrappers with different intents. |
 
 ---
 
 ## 1. You already wrote some of these patterns
 
-**Basics 2** built the URL shortener's class design one principle at a time, and ended with `LinkService`, `ShortLink`, `LinkRule`, `CodeGenerator`, and `LinkRepository`. If any of those names feel unfamiliar, that page is worth a quick look before this one. Without naming them, three design patterns were already in that code:
+**Basics 2** built the cart and checkout class design one principle at a time, and ended with `CheckoutService`, `Cart`, `DiscountRule`, `OrderIdGenerator`, and `CartRepository`. If any of those names feel unfamiliar, that page is worth a quick look before this one. Without naming them, three design patterns were already in that code:
 
 | What you built in Basics 2 | The pattern |
 |---|---|
-| `LinkService` coordinates safety checks, rule checks, storage, and click tracking behind two simple methods, `shorten` and `resolve`. | **Facade** |
-| The wiring that chooses `PostgresLinkRepository` (or `InMemoryLinkRepository` for tests) and hands it to `LinkService`. | A **simple factory**, feeding a **composition root** |
-| `ShortLink` holding a `List<LinkRule>` so new link features arrive as new classes. | A shape close to **Strategy**, covered properly in Advanced 1 |
+| `CheckoutService` coordinates fraud checks, payment, storage, and events behind one method, `checkout`. | **Facade** |
+| The wiring that chooses `PostgresCartRepository` (or `InMemoryCartRepository` for tests) and hands it to `CheckoutService`. | A **simple factory**, feeding a **composition root** |
+| `Cart` holding a `List<DiscountRule>` so new discounts arrive as new classes. | A shape close to **Strategy**, covered properly in Advanced 1 |
 
-This page gives the rest of that toolbox a name, and adds the patterns that the next two features will need: letting customers reserve a memorable alias, and putting a cache in front of the database. Every pattern buys flexibility at one seam and charges indirection everywhere else, so always start from the question that justifies it: *what change do I expect, and where would it ripple through the code if I did nothing?* If you cannot name the change, you do not need the pattern yet.
+This page gives the rest of that toolbox a name, and adds the patterns that the next two features will need: letting customers pay with a saved card on file, and putting a cache in front of the cart store. Every pattern buys flexibility at one seam and charges indirection everywhere else, so always start from the question that justifies it: *what change do I expect, and where would it ripple through the code if I did nothing?* If you cannot name the change, you do not need the pattern yet.
 
 ![Two families, two kinds of coupling, each fixed by a different group of patterns](assets/topic-03/patterns_mental_model.png)
 
@@ -38,20 +38,23 @@ This page gives the rest of that toolbox a name, and adds the patterns that the 
 
 ### Level 1: Constructors, static factories, and simple factories
 
-Before any named pattern, two plain tools cover most creation needs, and both are already in `ShortCode` and `ShortLink` from Basics 2. A **constructor** is right when there are a small number of required parameters, as in `new ShortLink(code, longUrl, createdAt, rules)`. A **static factory method** adds a name, validation, or the freedom to return a cached or subtype instance:
+Before any named pattern, two plain tools cover most creation needs. A **constructor** is right when there are a small number of required parameters, as in `new CartItem(productId, quantity, unitPrice)` from Basics 2. A **static factory method** adds a name, validation, or the freedom to return a cached or subtype instance:
 
 ```java
-final class ShortCode {
-    private ShortCode(String value) { this.value = value; }
+final class OrderId {
+    private final String value;
+    private OrderId(String value) { this.value = value; }
 
-    static ShortCode of(String value) {                 // named, and it validates
-        if (!value.matches("[0-9a-zA-Z]{7}")) throw new IllegalArgumentException("invalid code");
-        return new ShortCode(value);
+    static OrderId of(String value) {                    // named, and it validates
+        if (!value.matches("ORD-[0-9]{10}")) throw new IllegalArgumentException("invalid order id");
+        return new OrderId(value);
     }
 }
 ```
 
-The next step up is a **simple factory**: one method that picks a class based on its input, such as choosing a repository by region. It is not one of the patterns the GoF catalogue names, but it is the most common factory in real code. Do not call it Factory Method; the difference matters, and it is covered next.
+The format is a capacity decision in disguise: ten digits give 10 billion IDs, which at Walmart Mexico's roughly 120 million orders a year lasts over 80 years. Validating it in one named place means nobody else has to remember the rule.
+
+The next step up is a **simple factory**: one method that picks a class based on its input, such as choosing a payment processor by payment method. It is not one of the patterns the GoF catalogue names, but it is the most common factory in real code. Do not call it Factory Method; the difference matters, and it is covered next.
 
 ### Level 2: Builder, for objects with many optional parts
 
@@ -59,59 +62,59 @@ The next step up is a **simple factory**: one method that picks a class based on
 
 ![Telescoping constructors compared with a validated builder](assets/topic-03/builder_vs_telescoping.png)
 
-So far, creating a link has needed four pieces of information. Now the product team asks for three more: an optional custom alias, an optional owner for billing, and optional UTM tracking tags for marketing campaigns. A constructor with seven parameters, several of them optional, is error-prone and hard to read at the call site. This is exactly the shape Builder exists for:
+So far, checking out a cart has needed two pieces of information: the cart and the card. Now the product team asks for three more: an optional promo code, an optional gift message, and optional delivery instructions for the courier. A constructor with five parameters, several of them optional, is error-prone and hard to read at the call site. This is exactly the shape Builder exists for:
 
 ```java
-final class ShortLinkRequest {
-    private final String longUrl;
-    private final String customAlias;         // may be null: no alias requested
-    private final List<LinkRule> rules;
+final class CheckoutRequest {
+    private final CartId cartId;
+    private final String promoCode;            // may be null: no code requested
+    private final List<DiscountRule> rules;
 
-    private ShortLinkRequest(Builder builder) {
-        longUrl = builder.longUrl; customAlias = builder.customAlias; rules = List.copyOf(builder.rules);
+    private CheckoutRequest(Builder builder) {
+        cartId = builder.cartId; promoCode = builder.promoCode; rules = List.copyOf(builder.rules);
     }
-    static Builder builder(String longUrl) { return new Builder(longUrl); }
+    static Builder builder(CartId cartId) { return new Builder(cartId); }
 
     static final class Builder {
-        private final String longUrl;                   // required, so it is a constructor parameter
-        private String customAlias;
-        private final List<LinkRule> rules = new ArrayList<>();
+        private final CartId cartId;                     // required, so it is a constructor parameter
+        private String promoCode;
+        private final List<DiscountRule> rules = new ArrayList<>();
 
-        private Builder(String longUrl) { this.longUrl = longUrl; }
-        Builder customAlias(String alias) { this.customAlias = alias; return this; }
-        Builder withRule(LinkRule rule) { rules.add(rule); return this; }
+        private Builder(CartId cartId) { this.cartId = cartId; }
+        Builder promoCode(String code) { this.promoCode = code; return this; }
+        Builder withRule(DiscountRule rule) { rules.add(rule); return this; }
 
-        ShortLinkRequest build() {                       // the single validation gate
-            if (longUrl == null || !longUrl.startsWith("http")) throw new IllegalStateException("a valid URL is required");
-            if (customAlias != null && !customAlias.matches("[a-zA-Z0-9-]{3,20}"))
-                throw new IllegalStateException("alias must be 3 to 20 letters, digits, or hyphens");
-            return new ShortLinkRequest(this);
+        CheckoutRequest build() {                        // the single validation gate
+            if (cartId == null) throw new IllegalStateException("a cart is required");
+            if (promoCode != null && !promoCode.matches("[A-Z0-9]{4,12}"))
+                throw new IllegalStateException("promo code must be 4 to 12 uppercase letters or digits");
+            return new CheckoutRequest(this);
         }
     }
 }
 
-ShortLinkRequest request = ShortLinkRequest.builder("https://example.com/report")
-        .customAlias("q3-report").withRule(new ExpiryRule(nextFriday)).build();
+CheckoutRequest request = CheckoutRequest.builder(cartId)
+        .promoCode("BUENFIN10").withRule(new PercentageOffRule(0.10)).build();
 ```
 
-Builder earns its place with several optional parameters, an immutable target, or rules that span fields. Because `build()` is the only way to create the object, a half-configured `ShortLinkRequest` can never exist. The required `longUrl` goes into `builder(longUrl)` itself so it cannot be forgotten. For two or three required fields and nothing optional, a constructor or a record, as `ShortLink` already is, stays clearer.
+Builder earns its place with several optional parameters, an immutable target, or rules that span fields. Because `build()` is the only way to create the object, a half-configured `CheckoutRequest` can never exist. The required `cartId` goes into `builder(cartId)` itself so it cannot be forgotten. For two or three required fields and nothing optional, a constructor or a record, as `Cart` already is, stays clearer.
 
 ### Level 3: Singleton, the one pattern to use with caution
 
 > Guarantee a single instance and give global access to it.
 
-Short codes are generated from an ever-increasing counter, so that two servers never hand out the same code. If two `CounterCodeGenerator` instances each kept their own counter starting at zero, both would eventually produce `"0000001"`, and the second link would silently overwrite the first. A genuine second instance of the counter *would be a bug*, which is the one situation Singleton is built for:
+Order IDs are generated from an ever-increasing counter, so that two servers never hand out the same ID. If two `SequentialOrderIdGenerator` instances each kept their own counter starting at zero, both would eventually produce `"ORD-0000000001"`, and the second order would silently overwrite the first in storage. A genuine second instance of the counter *would be a bug*, which is the one situation Singleton is built for:
 
 ```java
-enum GlobalCodeCounter {
+enum GlobalOrderCounter {
     INSTANCE;
     private final AtomicLong next = new AtomicLong(loadLastIssued());
     long nextValue() { return next.getAndIncrement(); }
 }
 
 // Usually better for most classes: one instance by decision, created at the composition root and passed in
-LinkRepository repository = RepositoryRegistry.forRegion(region);
-LinkService service = new LinkService(repository, codeGenerator);   // visible dependency, easy to fake in tests
+CartRepository repository = RepositoryRegistry.forRegion(region);
+CheckoutService service = new CheckoutService(repository, paymentProcessor);   // visible dependency, easy to fake in tests
 ```
 
 Singleton is the most over-used pattern in the catalogue, because global access hides dependencies from constructors and blocks substitution in tests. Spring beans are single per container by default, which gives "one instance" **without** global access, and that is usually what people actually want. The counter above is one of the few cases where global access is genuinely necessary, because every part of the application must share the exact same next value. Note that the `AtomicLong` is required for thread safety: `basics/15_Distributed_ID_Generation.md` covers how a single counter stops being enough once there is more than one server.
@@ -122,63 +125,64 @@ Singleton is the most over-used pattern in the catalogue, because global access 
 
 > Define the algorithm once, and let subclasses decide which product it creates.
 
-```java
-abstract class LinkImporter {
-    abstract CodeGenerator createGenerator();            // the factory method: one creation step
+A paid order always needs a receipt built, logged, and sent, but *how* it is sent depends on the customer's notification preference:
 
-    List<ShortLink> importAll(InputStream source) {      // the rest of the algorithm never changes
-        List<ShortLink> links = parse(source);
-        CodeGenerator generator = createGenerator();
-        links.forEach(link -> link.assignCodeIfMissing(generator));
-        return links;
+```java
+abstract class ReceiptDispatcher {
+    abstract NotificationChannel createChannel();         // the factory method: one creation step
+
+    void dispatch(Order order) {                          // the rest of the algorithm never changes
+        String receipt = buildReceipt(order);
+        auditLog.record(order.id(), receipt);
+        createChannel().send(order.customerContact(), receipt);
     }
 }
-final class CsvLinkImporter extends LinkImporter {
-    CodeGenerator createGenerator() { return new CounterCodeGenerator(); }
+final class EmailReceiptDispatcher extends ReceiptDispatcher {
+    NotificationChannel createChannel() { return new EmailChannel(); }
 }
 ```
 
-The defining feature is **a subclass overriding a creation step inside a larger algorithm**. A method that just switches on a parameter, such as `RepositoryRegistry.forRegion(region)`, is a simple factory, not Factory Method.
+The defining feature is **a subclass overriding a creation step inside a larger algorithm**. A method that just switches on a parameter, such as `PaymentProcessorRegistry.forMethod(method)`, is a simple factory, not Factory Method.
 
 **Abstract Factory** creates a *family* of related products that must always be used together:
 
 > Create families of related objects that must be used together.
 
 ```java
-interface InfrastructureKit {                              // one factory, a matching family
-    LinkRepository repository();
-    LinkCache cache();
-    ClickPublisher clickPublisher();
+interface CheckoutInfrastructureKit {                        // one factory, a matching family
+    CartRepository cartRepository();
+    CartCache cartCache();
+    OrderEventPublisher orderEventPublisher();
 }
-final class LocalTestKit implements InfrastructureKit {    // every member is an in-memory fake
-    public LinkRepository repository() { return new InMemoryLinkRepository(); }
-    public LinkCache cache() { return new InMemoryLinkCache(); }
-    public ClickPublisher clickPublisher() { return new InMemoryClickPublisher(); }
+final class LocalTestKit implements CheckoutInfrastructureKit {    // every member is an in-memory fake
+    public CartRepository cartRepository() { return new InMemoryCartRepository(); }
+    public CartCache cartCache() { return new InMemoryCartCache(); }
+    public OrderEventPublisher orderEventPublisher() { return new InMemoryOrderEventPublisher(); }
 }
 ```
 
-The guarantee is consistency: a test can never accidentally wire the real production database next to an in-memory cache, because one factory builds the whole, matching set. The cost is rigidity: adding a fourth member to the family, such as a rate limiter, forces an edit to every kit. Use it only when mixing members from different families would be a real bug, such as this local-versus-production split, or a cloud provider's matching storage, queue, and secrets clients.
+The guarantee is consistency: a test can never accidentally wire the real production database next to an in-memory cache, because one factory builds the whole, matching set. The cost is rigidity: adding a fourth member to the family, such as a fraud-scoring client, forces an edit to every kit. Use it only when mixing members from different families would be a real bug, such as this local-versus-production split, or a cloud provider's matching storage, queue, and secrets clients.
 
 ### Level 5: Prototype, copy instead of construct
 
 > Create a new object by copying an existing, configured one.
 
-The marketing team wants to launch 500 campaign links that are identical except for one UTM tracking tag. Building each `ShortLinkRequest` from scratch, and re-validating it, is wasteful when 499 of them are copies of the first:
+A "Buy it again" button lets a customer start a new checkout from their last order, with the same items but a fresh cart and today's prices. Building each `Cart` from scratch, and re-validating every item, is wasteful when it is really just a copy of an order the customer already placed:
 
 ```java
-final class CampaignLinkTemplate {
-    private final ShortLinkRequest base;                    // already built and validated once
-    CampaignLinkTemplate(ShortLinkRequest base) { this.base = base; }
+final class ReorderTemplate {
+    private final Order previousOrder;                      // already placed and validated once
+    ReorderTemplate(Order previousOrder) { this.previousOrder = previousOrder; }
 
-    ShortLinkRequest withTag(String utmTag) {
-        return ShortLinkRequest.builder(base.longUrl() + "?utm_source=" + utmTag)
-                .customAlias(null).withRules(base.rules())   // deep-copies the list; rules themselves are immutable
+    Cart forNewCheckout() {
+        return Cart.builder(previousOrder.customerId())
+                .withItems(previousOrder.items())            // deep-copies the list; items themselves are immutable
                 .build();
     }
 }
 ```
 
-Prototype helps when building from scratch is expensive, or when the configuration is only known at runtime, such as cloning a template a user configured in a UI. The classic defect is the **shallow copy**: if `rules` here were reused directly instead of copied, every campaign link would share the same mutable list, and changing one would silently change them all. Note that `List.copyOf` copies the list, not its elements; in Java, prefer a copy constructor or a `copy()` method over `Cloneable`, which is famously awkward.
+Prototype helps when building from scratch is expensive, or when the configuration is only known at runtime, such as cloning a saved cart a user configured earlier. The classic defect is the **shallow copy**: if `items` here were reused directly instead of copied, the new cart and the old order would share the same mutable list, and changing the quantity on one would silently change the other. Note that `List.copyOf` copies the list, not its elements; in Java, prefer a copy constructor or a `copy()` method over `Cloneable`, which is famously awkward.
 
 ??? info "Go deeper (optional): which creational pattern fits the evidence?"
     | Evidence | Choose | Optimizes for | Cost |
@@ -192,14 +196,14 @@ Prototype helps when building from scratch is expensive, or when the configurati
     | Copying a configured object beats building a new one. | Prototype. | Cheap duplication at runtime. | Careful deep copies of every mutable part. |
 
 !!! question "Practice: which creational pattern fits?"
-    1. A `VanityCodeGenerator` is picked instead of `CounterCodeGenerator` whenever the request includes a custom alias.
-    2. A `ShortLinkRequest` can include a URL, an optional alias, an optional owner, and any number of rules.
+    1. A `GiftCardPaymentProcessor` is picked instead of `StripePaymentProcessor` whenever the request pays with a gift card code.
+    2. A `CheckoutRequest` can include a cart, an optional promo code, an optional gift message, and any number of discount rules.
     3. A health check must reach the database exactly once per request, through one shared connection pool.
-    4. A test suite needs an in-memory repository, an in-memory cache, and an in-memory click publisher, and the three must never be mixed with their real counterparts.
-    5. Generating 10,000 QR codes for a batch of existing links, each only differing in the code it encodes.
+    4. A test suite needs an in-memory cart repository, an in-memory cart cache, and an in-memory order-event publisher, and the three must never be mixed with their real counterparts.
+    5. Generating 50,000 welcome-discount carts for a new cohort of signups, each only differing in which customer it is addressed to.
 
 ??? success "Answer"
-    1. A simple factory: one method picks a class based on whether an alias was requested. 2. Builder, because of the optional fields. 3. A single instance created at the composition root and injected, or a Singleton only if a second pool would truly be a bug. 4. Abstract Factory, because the whole family must stay consistent. 5. Prototype, if building the base QR template is expensive; otherwise a constructor is simplest.
+    1. A simple factory: one method picks a class based on whether a gift card code was provided. 2. Builder, because of the optional fields. 3. A single instance created at the composition root and injected, or a Singleton only if a second pool would truly be a bug. 4. Abstract Factory, because the whole family must stay consistent. 5. Prototype, if building the base cart template is expensive; otherwise a constructor is simplest.
 
 ---
 
@@ -213,95 +217,99 @@ All four of these patterns put an object between a client and a target. They dif
 
 > Convert an existing interface into the one your code expects.
 
-The trust and safety team wants to check every submitted URL against a third-party malicious-URL database before shortening it. The vendor's SDK has its own shape, with its own types and its own way of reporting problems:
+The payments team wants to charge a card through Stripe before an order is confirmed. The vendor's SDK has its own shape, with its own types and its own way of reporting problems:
 
 ```java
-final class VendorSafetyAdapter implements UrlSafetyChecker {      // our interface, from Basics 2
-    private final VendorSafeBrowsingClient client;                 // their SDK, simplified here
+final class StripePaymentAdapter implements PaymentProcessor {        // our interface, from Basics 2
+    private final StripeClient client;                                 // their SDK, simplified here
 
-    public boolean isSafe(String longUrl) {
+    public PaymentResult charge(Card card, Money amount) {
         try {
-            VendorScanResult result = client.scanUrl(longUrl);
-            return result.verdict() == VendorVerdict.CLEAN;        // translate their verdict...
-        } catch (VendorRateLimitException e) {
-            return true;                                           // ...and translate their failure into a decision
+            StripeChargeResult result = client.createPaymentIntent(card.toStripeToken(), amount.cents());
+            return result.succeeded() ? PaymentResult.approved(result.id())
+                                       : PaymentResult.declined(result.declineReason());   // translate their verdict...
+        } catch (StripeRateLimitException e) {
+            throw new PaymentUnavailableException(e);                   // ...and translate their failure into a decision
         }
     }
 }
 ```
 
-Adapter is the standard defense at a third-party boundary: vendor types stop at the adapter and never leak into domain code, so switching vendors touches one class. **Translate errors as carefully as data.** An adapter that treats "the vendor is unreachable" as "the URL is safe" has made a real safety decision inside what looks like plumbing, so that choice must be deliberate and visible, not accidental.
+Adapter is the standard defense at a third-party boundary: vendor types stop at the adapter and never leak into domain code, so switching providers touches one class. **Translate errors as carefully as data.** An adapter that treats "Stripe is rate-limiting us" as "the payment was declined" has made a real business decision inside what looks like plumbing, so that choice must be deliberate and visible, not accidental.
 
 ### Level 7: Decorator, for optional behavior that stacks
 
 > Wrap an object to add a responsibility, without changing its interface.
 
-The database is now the bottleneck on the redirect path, exactly as predicted by the capacity estimate in Basics 1. A cache needs to sit in front of `PostgresLinkRepository`, and it should be possible to measure how well the cache is working. Both needs can be met with decorators, each implementing the same `LinkRepository` interface they wrap:
+The database is now the bottleneck on the cart-read path, exactly as predicted by the capacity estimate in Basics 1: at El Buen Fin's peak of about 38,400 cart reads per second, Postgres alone cannot keep up. A cache needs to sit in front of `PostgresCartRepository`, and it should be possible to measure how well the cache is working. Both needs can be met with decorators, each implementing the same `CartRepository` interface they wrap:
 
 ```java
-final class CachingLinkRepository implements LinkRepository {
-    private final LinkRepository inner;
-    private final LinkCache cache;
+final class CachingCartRepository implements CartRepository {
+    private final CartRepository inner;
+    private final CartCache cache;
 
-    public Optional<ShortLink> findByCode(ShortCode code) {
-        Optional<ShortLink> cached = cache.get(code);
+    public Optional<Cart> findById(CartId id) {
+        Optional<Cart> cached = cache.get(id);
         if (cached.isPresent()) return cached;
-        Optional<ShortLink> fromDb = inner.findByCode(code);
-        fromDb.ifPresent(link -> cache.put(code, link));
+        Optional<Cart> fromDb = inner.findById(id);
+        fromDb.ifPresent(cart -> cache.put(id, cart));
         return fromDb;
     }
 }
-final class MetricsLinkRepository implements LinkRepository {
-    private final LinkRepository inner;
+final class MetricsCartRepository implements CartRepository {
+    private final CartRepository inner;
     private final Metrics metrics;
 
-    public Optional<ShortLink> findByCode(ShortCode code) {
-        return metrics.time("link.lookup", () -> inner.findByCode(code));
+    public Optional<Cart> findById(CartId id) {
+        return metrics.time("cart.lookup", () -> inner.findById(id));
     }
 }
 ```
 
-Because each decorator implements the same interface it wraps, decorators **compose**: `new MetricsLinkRepository(new CachingLinkRepository(postgresRepository, cache), metrics)`. Each concern (caching, metrics, retries) stays in its own small class and can be added or removed per wiring, instead of piling flags onto one class.
+Because each decorator implements the same interface it wraps, decorators **compose**: `new MetricsCartRepository(new CachingCartRepository(postgresRepository, cache), metrics)`. Each concern (caching, metrics, retries) stays in its own small class and can be added or removed per wiring, instead of piling flags onto one class.
 
 **Order is part of the behavior, not just an implementation detail.** The diagram below shows the same two decorators wrapped in each order:
 
 ![The same cache and metrics decorators wrapped in two orders produce two different measurements](assets/topic-03/decorator_ordering.png)
 
-With metrics outside the cache, every redirect is timed, hits and misses alike, which answers "how fast is the redirect path overall?" With metrics inside the cache, only database calls are timed, which answers "how fast is Postgres when the cache misses?" Neither order is wrong, but you must choose deliberately and be ready to say which question you are trying to answer.
+With metrics outside the cache, every cart lookup is timed, hits and misses alike, which answers "how fast is the cart read path overall?" With metrics inside the cache, only database calls are timed, which answers "how fast is Postgres when the cache misses?" Neither order is wrong, but you must choose deliberately and be ready to say which question you are trying to answer.
 
 ### Level 8: Facade, for a simple front door
 
 > Give callers one simple interface to a subsystem of several parts.
 
-`LinkService` from Basics 2 is already a facade: `shorten` and `resolve` each coordinate several classes behind two short methods, without asking the caller to understand `UrlSafetyChecker`, `CodeGenerator`, `LinkRepository`, or `ClickRecorder` individually:
+`CheckoutService` from Basics 2 is already a facade: `checkout` coordinates several classes behind one short method, without asking the caller to understand `FraudChecker`, `PaymentProcessor`, `CartRepository`, or `OrderEventPublisher` individually:
 
 ```java
-final class LinkService {
-    ShortCode shorten(String longUrl, List<LinkRule> rules) {
-        if (!safety.isSafe(longUrl)) throw new UnsafeUrlException(longUrl);
-        ShortLink link = new ShortLink(codes.next(), longUrl, Instant.now(), rules);
-        links.save(link);
-        return link.code();
+final class CheckoutService {
+    CheckoutResult checkout(CartId cartId, Card card) {
+        Optional<Cart> found = carts.findById(cartId);
+        if (found.isEmpty()) return CheckoutResult.cartNotFound();
+        if (fraud.isSuspicious(found.get(), card)) return CheckoutResult.declined();
+        PaymentResult payment = payments.charge(card, found.get().total());
+        Order order = new Order(orderIds.next(), found.get(), payment);
+        events.publish(order);
+        return CheckoutResult.success(order);
     }
 }
 ```
 
-A facade reduces how many concepts a caller must learn. It **orchestrates**; it should not **decide**. The malicious-URL rule belongs in `UrlSafetyChecker`, not copied into `LinkService`. A facade that accumulates business rules of its own is a god class with a friendlier name. A facade also does not forbid advanced callers from reaching the subsystem directly when they need to.
+A facade reduces how many concepts a caller must learn. It **orchestrates**; it should not **decide**. The fraud rule belongs in `FraudChecker`, not copied into `CheckoutService`. A facade that accumulates business rules of its own is a god class with a friendlier name. A facade also does not forbid advanced callers from reaching the subsystem directly when they need to.
 
 ### Level 9: Proxy, for controlling access to the real thing
 
 > Stand in for another object, with the same interface, to control access to it.
 
-Free-tier accounts are limited to 100 new links per day. Rather than scatter that check through `LinkService`, a proxy in front of the repository's `save` method can enforce it in one place:
+Card-testing fraud works by rapidly attempting many small charges against stolen card numbers until one succeeds. Rather than scatter a throttle through `CheckoutService`, a proxy in front of the payment processor's `charge` method can enforce it in one place:
 
 ```java
-final class RateLimitingLinkRepository implements LinkRepository {
-    private final LinkRepository real;
-    private final RateLimiter perUserLimiter;
+final class RateLimitingPaymentProcessor implements PaymentProcessor {
+    private final PaymentProcessor real;
+    private final RateLimiter perCardLimiter;
 
-    public void save(ShortLink link) {
-        if (!perUserLimiter.tryAcquire(link.ownerId())) throw new DailyLimitExceededException(link.ownerId());
-        real.save(link);
+    public PaymentResult charge(Card card, Money amount) {
+        if (!perCardLimiter.tryAcquire(card.fingerprint())) throw new TooManyAttemptsException(card.fingerprint());
+        return real.charge(card, amount);
     }
 }
 ```
@@ -316,15 +324,15 @@ The common variants are **virtual** (create the target lazily), **protection** (
 
     | Pattern | What it does | Example in this domain | Watch out for |
     |---|---|---|---|
-    | **Composite** | Treats a single object and a group of objects through the same interface, so trees can be handled recursively. | A `LinkFolder` that reports a total click count equal to the sum of its links and sub-folders. | Operations that only make sense for groups, like adding a child, end up on the shared interface. |
-    | **Bridge** | Separates an abstraction from its implementation, so each can vary on its own. | Link rules (expiry, password, country) × notification channels for "link about to expire" alerts, without one class per combination. | Two hierarchies to understand; only worth it when both dimensions really vary. |
-    | **Flyweight** | Shares common, immutable state between many small objects to save memory. | `Currency.getInstance("USD")` in the JDK, reusing one shared instance per currency code. | Shared state must be immutable, and callers must pass in the part that varies. |
+    | **Composite** | Treats a single object and a group of objects through the same interface, so trees can be handled recursively. | An `OrderBundle` (a gift set) that reports a total price equal to the sum of its items and nested bundles. | Operations that only make sense for groups, like adding a child, end up on the shared interface. |
+    | **Bridge** | Separates an abstraction from its implementation, so each can vary on its own. | Discount rules (percentage, free shipping, BOGO) × notification channels for "your cart is about to expire" alerts, without one class per combination. | Two hierarchies to understand; only worth it when both dimensions really vary. |
+    | **Flyweight** | Shares common, immutable state between many small objects to save memory. | `Currency.getInstance("MXN")` in the JDK, reused inside every `Money` value instead of recreated each time. | Shared state must be immutable, and callers must pass in the part that varies. |
 
 !!! question "Practice: Adapter, Decorator, Facade, or Proxy?"
-    1. A class wraps the AWS SDK's `S3Client` behind our own `LinkArchiveStore` interface.
-    2. A class wraps `LinkRepository` to add a short-lived cache in front of `findByCode`.
+    1. A class wraps the AWS SDK's `S3Client` behind our own `ReceiptArchiveStore` interface.
+    2. A class wraps `CartRepository` to add a short-lived cache in front of `findById`.
     3. A class offers one `checkout()` method that coordinates fraud checks, tax, payment, and the ledger.
-    4. A class wraps `LinkRepository` and only loads the full link row from the database the first time any field is accessed.
+    4. A class wraps `CartRepository` and only loads the full cart row from the database the first time any field is accessed.
     5. Which JDK class is built the same way as item 1: `InputStreamReader`, which turns a byte `InputStream` into a character `Reader`?
 
 ??? success "Answer"
@@ -364,21 +372,21 @@ Recognizing patterns in familiar libraries makes them easier to recall, and it m
 
 ---
 
-## 5. Putting it together: the URL shortener, one year later
+## 5. Putting it together: cart and checkout, one year later
 
-![Each pattern in the URL shortener chain absorbs one expected change](assets/topic-03/url_shortener_architecture.png)
+![Each pattern in the checkout chain absorbs one expected change](assets/topic-03/cart_checkout_patterns.png)
 
-**Prompt:** "A year after launch, extend the URL shortener to support custom aliases and to keep working as traffic grows."
+**Prompt:** "A year after launch, extend checkout to support saved payment methods and to keep working as traffic grows."
 
 | Design element | Pattern | Change it absorbs | Cost or guardrail |
 |---|---|---|---|
-| `LinkService.shorten(...)` / `.resolve(...)` | Facade | Callers never see `UrlSafetyChecker`, `CodeGenerator`, `LinkRepository`, or `ClickRecorder` change. | It must orchestrate only; rules stay in the subsystem classes. |
-| `ShortLinkRequest.builder(...)` | Builder | A new optional field, like a UTM tag, needs no new constructor. | `build()` must check every rule, such as alias format. |
-| `RepositoryRegistry.forRegion(...)` | Simple factory | A new region is one new registry entry. | It must fail clearly for an unsupported region instead of returning `null`. |
-| `MetricsLinkRepository` | Decorator | Metrics can be added, changed, or removed per environment. | Its position in the chain decides what it measures; document the order. |
-| `CachingLinkRepository` | Decorator | A cache can be added without touching `PostgresLinkRepository`. | The cache must be invalidated or overwritten whenever a link is updated. |
-| `PostgresLinkRepository` | No pattern needed | Nothing: it still implements `LinkRepository` directly. | JDBC is already a standard interface; wrapping it in an Adapter would add nothing. |
-| `VendorSafetyAdapter` | Adapter | The malicious-URL vendor can be replaced behind one class. | Every vendor outcome, including rate limits and timeouts, maps to a clear decision. |
+| `CheckoutService.checkout(...)` | Facade | Callers never see `FraudChecker`, `PaymentProcessor`, `CartRepository`, or `OrderEventPublisher` change. | It must orchestrate only; rules stay in the subsystem classes. |
+| `CheckoutRequest.builder(...)` | Builder | A new optional field, like a gift message, needs no new constructor. | `build()` must check every rule, such as promo code format. |
+| `PaymentProcessorRegistry.forMethod(...)` | Simple factory | A new payment method, like a saved card on file, is one new registry entry. | It must fail clearly for an unsupported method instead of returning `null`. |
+| `MetricsCartRepository` | Decorator | Metrics can be added, changed, or removed per environment. | Its position in the chain decides what it measures; document the order. |
+| `CachingCartRepository` | Decorator | A cache can be added without touching `PostgresCartRepository`. | The cache must be invalidated or overwritten whenever a cart is updated. |
+| `PostgresCartRepository` | No pattern needed | Nothing: it still implements `CartRepository` directly. | JDBC is already a standard interface; wrapping it in an Adapter would add nothing. |
+| `StripePaymentAdapter` | Adapter | The payment vendor can be replaced behind one class. | Every vendor outcome, including declines and timeouts, maps to a clear decision. |
 
 Two details are worth saying out loud. The decorator chain is built in exactly one place, the composition root, so the wrapper order is written down once instead of copied per environment. And there is no Proxy in this chain: nothing here controls access or lifecycle, and adding one just to use the name would be pattern worship, the same trap the "Why is there no Adapter?" note calls out from the other direction.
 
@@ -386,11 +394,11 @@ Two details are worth saying out loud. The decorator chain is built in exactly o
 
 | Change request | What you edit | What you add | What stays untouched |
 |---|---|---|---|
-| Let customers reserve a custom alias. | The wiring that picks a code generator when a request includes an alias. | A `VanityCodeGenerator` that checks the alias is not already taken. | `LinkService`, `ShortLink`, and the other rules. |
-| Add a cache in front of the database. | The wiring in the composition root. | `CachingLinkRepository`, as shown in Level 7. | `PostgresLinkRepository`, `LinkService`, and every rule. |
-| Store European customers' links in an EU-only database for data residency. | The wiring in the composition root. | One `RepositoryRegistry` entry and an EU `PostgresLinkRepository` instance pointed at an EU database. | `LinkService` and every decorator. |
-| Enforce a daily link limit on free accounts. | The composition root's wiring. | `RateLimitingLinkRepository`, as shown in Level 9. | Every other repository decorator and `LinkService`. |
-| Let link owners edit where an existing link points. | `LinkService`, because the workflow itself changes. | An "update link" method and its validation. | The rules, the generators, and the repository contract. |
+| Let customers pay with a saved card on file. | The wiring that picks a payment processor when a request includes a saved card. | A `SavedCardPaymentProcessor`. | `CheckoutService`, `Cart`, and the other discount rules. |
+| Add a cache in front of the cart store. | The wiring in the composition root. | `CachingCartRepository`, as shown in Level 7. | `PostgresCartRepository`, `CheckoutService`, and every rule. |
+| Store Central American customers' carts in an in-region database for data residency, as Walmart de México y Centroamérica expands online beyond Mexico. | The wiring in the composition root. | One `RepositoryRegistry` entry and a Central America `PostgresCartRepository` instance pointed at an in-region database. | `CheckoutService` and every decorator. |
+| Slow down card-testing fraud with a per-card daily attempt limit. | The composition root's wiring. | `RateLimitingPaymentProcessor`, as shown in Level 9. | Every other decorator and `CheckoutService`. |
+| Let customers edit their shipping address after checkout. | `CheckoutService`, because the workflow itself changes. | An "update shipping address" method and its validation. | The discount rules, the payment processors, and the repository contract. |
 
 The last row matters. A new workflow is exactly what the facade is supposed to absorb, so editing it is correct, not a design failure. Patterns protect the changes you anticipated, and saying so is a stronger interview answer than claiming a design handles everything.
 
@@ -416,16 +424,16 @@ The last row matters. A new workflow is exactly what the facade is supposed to a
 
 !!! question "Problem 1 (spot the over-engineering)"
     ```java
-    interface CodeGeneratorFactory { CodeGenerator create(); }
-    final class CounterCodeGeneratorFactory implements CodeGeneratorFactory {
-        public CodeGenerator create() { return new CounterCodeGenerator(); }
+    interface PaymentProcessorFactory { PaymentProcessor create(); }
+    final class StripePaymentProcessorFactory implements PaymentProcessorFactory {
+        public PaymentProcessor create() { return new StripePaymentProcessor(); }
     }
-    // Nothing else has ever implemented CodeGeneratorFactory.
+    // Nothing else has ever implemented PaymentProcessorFactory.
     ```
     What is wrong here, and what would you do instead?
 
 ??? success "Answer"
-    This is a factory with exactly one product that has never changed. It adds a layer of indirection, an interface and a class, for a decision that is not actually variable yet. Inline it: let the composition root call `new CounterCodeGenerator()` directly, and introduce a factory only when a second code scheme is real or contracted.
+    This is a factory with exactly one product that has never changed. It adds a layer of indirection, an interface and a class, for a decision that is not actually variable yet. Inline it: let the composition root call `new StripePaymentProcessor()` directly, and introduce a factory only when a second provider is real or contracted.
 
 !!! question "Problem 2 (name the pattern)"
     What pattern is `new BufferedReader(new InputStreamReader(System.in))`, and why does the order of the two constructors matter less here than it does for the cache and metrics example in Level 7?
@@ -437,14 +445,14 @@ The last row matters. A new workflow is exactly what the facade is supposed to a
     Customers order a base coffee (espresso, filter, or cold brew) and any number of add-ons (milk, extra shot, syrup), each adding to the price. New add-ons are added to the menu often. Sketch the classes.
 
 ??? success "Answer"
-    An inheritance design such as `EspressoWithMilkAndSyrup extends Espresso` multiplies a class for every combination, exactly like the `ExpiringPasswordLink` problem from Basics 2. Decorator avoids it: each add-on wraps a `Beverage` and implements the same interface.
+    An inheritance design such as `EspressoWithMilkAndSyrup extends Espresso` multiplies a class for every combination, exactly like the `PercentageFreeShippingCart` problem from Basics 2. Decorator avoids it: each add-on wraps a `Beverage` and implements the same interface.
 
     ```java
     interface Beverage { String description(); Money cost(); }
 
     final class Espresso implements Beverage {
         public String description() { return "Espresso"; }
-        public Money cost() { return Money.of("2.50"); }
+        public Money cost() { return Money.of(4500, "MXN"); }     // 45 pesos, in centavos
     }
 
     abstract class AddOn implements Beverage {
@@ -454,7 +462,7 @@ The last row matters. A new workflow is exactly what the facade is supposed to a
     final class Milk extends AddOn {
         Milk(Beverage base) { super(base); }
         public String description() { return base.description() + " + Milk"; }
-        public Money cost() { return base.cost().plus(Money.of("0.50")); }
+        public Money cost() { return base.cost().plus(Money.of(1000, "MXN")); }
     }
 
     Beverage order = new Milk(new ExtraShot(new Espresso()));   // any combination, no new class per combination
@@ -485,9 +493,9 @@ Remove any pattern whose expected change never arrived.
 
 | Topic you may have heard about | Where it is covered |
 |---|---|
-| Strategy (the shape behind `LinkRule` and `CodeGenerator`), Observer, Template Method, and other behavioral patterns | Advanced 1: Behavioral Design Patterns |
+| Strategy (the shape behind `DiscountRule` and `OrderIdGenerator`), Observer, Template Method, and other behavioral patterns | Advanced 1: Behavioral Design Patterns |
 | Full machine-coding case studies, such as a parking lot or a ticket booking system | Advanced 2: Real-World Machine Coding Case Studies |
 | Service boundaries, modular monoliths, and microservices | Basics 5: Architecture Styles & Service Decomposition |
 | Cache strategies, expiry, and eviction in more depth | Basics 9: Caching Core |
-| Generating unique short codes across many servers at once | Basics 15: Distributed ID Generation |
-| Thread safety for the shared counter behind `GlobalCodeCounter` | Advanced 3: Concurrency Control, Race Conditions & Locking |
+| Generating unique order IDs across many servers at once | Basics 15: Distributed ID Generation |
+| Thread safety for the shared counter behind `GlobalOrderCounter` | Advanced 3: Concurrency Control, Race Conditions & Locking |

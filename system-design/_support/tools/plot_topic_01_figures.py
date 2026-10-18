@@ -263,61 +263,132 @@ def failure_response() -> plt.Figure:
     return fig
 
 
-def url_shortener_architecture() -> plt.Figure:
+# Shared grid for the two cart & checkout diagrams. Every box sits in one cell, so
+# every arrow is a short hop through an empty gap and nothing can cross anything.
+COL_CLIENT, COL_2, COL_3, COL_4 = 2, 20, 44, 68      # left x of each column
+CLIENT_W, CELL_W, CELL_H = 11, 15, 14
+ROW_1, ROW_2, ROW_3 = 62, 36, 8                       # bottom y of each row
+LEGEND_X = 87
+
+
+def tag(ax: plt.Axes, x: float, y: float, text: str, color: str,
+        ha: str = "center") -> None:
+    """Arrow label placed beside its arrow, never on top of the line."""
+    ax.text(x, y, text, ha=ha, va="center", fontsize=8, color=color, linespacing=1.3,
+            bbox=dict(facecolor=WHITE, edgecolor="none", pad=1))
+
+
+def legend_note(ax: plt.Axes, y: float, title: str, body: str, color: str) -> None:
+    ax.text(LEGEND_X, y, title, fontsize=8, fontweight="bold", color=color)
+    ax.text(LEGEND_X, y - 2.5, body, fontsize=8, color=INK, va="top", linespacing=1.4)
+
+
+def cart_row(ax: plt.Axes, *, cache_title: str, cache_subtitle: str,
+             cache_style: dict, cache_label: str, cache_color: str) -> None:
+    """Row 1, identical in both diagrams apart from the cache's health."""
+    mid = ROW_1 + CELL_H / 2
+    box(ax, COL_CLIENT, ROW_1, CLIENT_W, CELL_H, "Client", "app / web",
+        face=WHITE, edge=NAVY)
+    box(ax, COL_2, ROW_1, CELL_W, CELL_H, "Load balancer", "route + health")
+    box(ax, COL_3, ROW_1, CELL_W, CELL_H, "Cart service", "stateless", face=MIST)
+    box(ax, COL_4, ROW_1, CELL_W, CELL_H, cache_title, cache_subtitle, **cache_style)
+    arrow(ax, (COL_CLIENT + CLIENT_W + 0.5, mid), (COL_2 - 0.5, mid), color=NAVY)
+    arrow(ax, (COL_2 + CELL_W + 0.5, mid), (COL_3 - 0.5, mid), color=BLUE)
+    tag(ax, (COL_2 + CELL_W + COL_3) / 2, mid + 3.5, "cart ops", BLUE)
+    arrow(ax, (COL_3 + CELL_W + 0.5, mid), (COL_4 - 0.5, mid), color=cache_color)
+    tag(ax, (COL_3 + CELL_W + COL_4) / 2, mid + 3.5, cache_label, cache_color)
+
+
+def checkout_links(ax: plt.Axes, *, checkout_color: str, payment_color: str,
+                   payment_label: str, payment_dashed: bool) -> None:
+    """The arrows leaving the load balancer and the checkout service."""
+    spine_x = COL_2 + CELL_W / 2                      # LB -> checkout -> queue, one vertical line
+    gap_top, gap_bottom = ROW_1 - 0.5, ROW_2 + CELL_H + 0.5
+    arrow(ax, (spine_x, gap_top), (spine_x, gap_bottom), color=checkout_color)
+    tag(ax, spine_x - 1.5, (gap_top + gap_bottom) / 2, "checkout", checkout_color, ha="right")
+    # Checkout calls the cart service to read the cart: the only diagonal, alone in its gap.
+    arrow(ax, (COL_2 + CELL_W - 2, gap_bottom), (COL_3 + 2.5, gap_top), color=GREY, dashed=True)
+    tag(ax, COL_3 - 2.5, (gap_top + gap_bottom) / 2 - 1.5, "read cart", GREY, ha="left")
+    mid = ROW_2 + CELL_H / 2
+    arrow(ax, (COL_2 + CELL_W + 0.5, mid), (COL_3 - 0.5, mid), color=payment_color,
+          dashed=payment_dashed)
+    tag(ax, (COL_2 + CELL_W + COL_3) / 2, mid + 3.5, payment_label, payment_color)
+
+
+def order_queue_links(ax: plt.Axes, *, publish_label: str, publish_color: str,
+                      publish_dashed: bool) -> None:
+    """Checkout publishes to the queue; the order service subscribes and pulls."""
+    spine_x = COL_2 + CELL_W / 2
+    top, bottom = ROW_2 - 0.5, ROW_3 + CELL_H + 0.5
+    arrow(ax, (spine_x, top), (spine_x, bottom), color=publish_color, dashed=publish_dashed)
+    tag(ax, spine_x - 1.5, (top + bottom) / 2, publish_label, publish_color, ha="right")
+    mid = ROW_3 + CELL_H / 2
+    arrow(ax, (COL_3 - 0.5, mid), (COL_2 + CELL_W + 0.5, mid), color=AMBER)
+    tag(ax, (COL_2 + CELL_W + COL_3) / 2, mid + 4, "subscribes,\npulls order", AMBER)
+
+
+def caller_footnote(ax: plt.Axes) -> None:
+    ax.text(50, 1.5, "Arrows point from the caller to the service it calls",
+            ha="center", fontsize=8.5, color=GREY, style="italic")
+
+
+def cart_checkout_architecture() -> plt.Figure:
     fig, ax = canvas(15, 7.4)
-    heading(ax, "URL Shortener: Fast Redirects, Durable Writes, Async Analytics",
-            "The redirect remains available even when analytics is delayed")
-    box(ax, 3, 58, 11, 16, "Client", "create / redirect", face=WHITE, edge=NAVY)
-    box(ax, 20, 58, 13, 16, "Load balancer", "route + health")
-    box(ax, 39, 58, 13, 16, "Link API", "stateless", face=MIST)
-    box(ax, 60, 66, 13, 15, "Cache", "short code lookup")
-    box(ax, 60, 42, 13, 15, "Link store", "durable source", face=WHITE, edge=NAVY)
-    for start, end in [((14.5, 66), (19.5, 66)), ((33.5, 66), (38.5, 66)),
-                       ((52.5, 68), (59.5, 73.5))]:
-        arrow(ax, start, end)
-    arrow(ax, (66.5, 65.5), (66.5, 57.5), label="miss", color=RED)
-    arrow(ax, (52.5, 62), (59.5, 49.5), label="create", color=NAVY)
-    box(ax, 39, 20, 13, 15, "Event queue", "durable buffer", face=AMBER_FACE,
-        edge=AMBER, title_color=AMBER)
-    box(ax, 60, 20, 13, 15, "Workers", "idempotent", face=AMBER_FACE,
-        edge=AMBER, title_color=AMBER)
-    box(ax, 81, 20, 15, 15, "Analytics store", "query-optimized", face=WHITE,
-        edge=AMBER, title_color=AMBER)
-    arrow(ax, (45.5, 57.5), (45.5, 35.5), label="click event", color=AMBER,
-          dashed=True)
-    arrow(ax, (52.5, 27.5), (59.5, 27.5), color=AMBER)
-    arrow(ax, (73.5, 27.5), (80.5, 27.5), color=AMBER)
-    ax.text(83, 69, "REDIRECT PATH", fontsize=8, fontweight="bold", color=BLUE)
-    ax.text(83, 63, "cache-first, low latency", fontsize=8, color=INK)
-    ax.text(83, 48, "CREATE PATH", fontsize=8, fontweight="bold", color=NAVY)
-    ax.text(83, 42, "durable before acknowledge", fontsize=8, color=INK)
+    heading(ax, "Cart & Checkout: Cached Carts, Payment Service, Queued Orders",
+            "Checkout reads the cart, authorizes through the Payment service, "
+            "then publishes the submitted order")
+    cart_row(ax, cache_title="Cart cache", cache_subtitle="active carts, 30-day TTL",
+             cache_style={}, cache_label="get / set", cache_color=BLUE)
+    box(ax, COL_2, ROW_2, CELL_W, CELL_H, "Checkout service", "stateless, small fleet",
+        face=MIST)
+    box(ax, COL_3, ROW_2, CELL_W, CELL_H, "Payment service", "idempotent charges",
+        face=MIST)
+    box(ax, COL_4, ROW_2, CELL_W, CELL_H, "Payment gateway", "external provider",
+        face=WHITE, edge=GREY, title_color=GREY)
+    checkout_links(ax, checkout_color=NAVY, payment_color=NAVY,
+                   payment_label="authorize", payment_dashed=False)
+    mid = ROW_2 + CELL_H / 2
+    arrow(ax, (COL_3 + CELL_W + 0.5, mid), (COL_4 - 0.5, mid), color=GREY)
+    tag(ax, (COL_3 + CELL_W + COL_4) / 2, mid + 3.5, "charge", GREY)
+    box(ax, COL_2, ROW_3, CELL_W, CELL_H, "Submitted orders", "queue (durable topic)",
+        face=AMBER_FACE, edge=AMBER, title_color=AMBER)
+    box(ax, COL_3, ROW_3, CELL_W, CELL_H, "Order service", "post-order processing",
+        face=WHITE, edge=AMBER, title_color=AMBER)
+    order_queue_links(ax, publish_label="publish order", publish_color=AMBER,
+                      publish_dashed=False)
+    legend_note(ax, ROW_1 + 11, "CART PATH", "cache-first,\nlow latency", BLUE)
+    legend_note(ax, ROW_2 + 11, "CHECKOUT PATH", "synchronous and\nidempotent", NAVY)
+    legend_note(ax, ROW_3 + 11, "ORDER HAND-OFF", "Order service is one\nof several subscribers",
+                AMBER)
+    caller_footnote(ax)
     return fig
 
 
-def url_shortener_degraded() -> plt.Figure:
+def cart_checkout_degraded() -> plt.Figure:
     fig, ax = canvas(15, 7.4)
-    heading(ax, "URL Shortener, Degraded Mode: Link Store Down",
-            "Warm redirects keep working; creates fail loudly; analytics buffers")
-    box(ax, 3, 58, 11, 16, "Client", "create / redirect", face=WHITE, edge=NAVY)
-    box(ax, 20, 58, 13, 16, "Load balancer", "route + health")
-    box(ax, 39, 58, 13, 16, "Link API", "stateless", face=MIST)
-    box(ax, 60, 66, 13, 15, "Cache", "warm codes: HIT", face=GREEN_FACE, edge=GREEN,
-        title_color=GREEN)
-    box(ax, 60, 40, 13, 15, "Link store: DOWN", "unavailable", face=DEAD, edge=RED,
+    heading(ax, "Cart & Checkout, Degraded Mode: Payment Service Down",
+            "Cart browsing keeps working from cache; checkout fails loudly instead of silently")
+    cart_row(ax, cache_title="Cart cache: OK", cache_subtitle="active carts: HIT",
+             cache_style=dict(face=GREEN_FACE, edge=GREEN, title_color=GREEN),
+             cache_label="hit", cache_color=GREEN)
+    box(ax, COL_2, ROW_2, CELL_W, CELL_H, "Checkout service", "returns 503 fast", face=MIST)
+    box(ax, COL_3, ROW_2, CELL_W, CELL_H, "Payment service", "DOWN", face=DEAD, edge=RED,
         title_color=RED)
-    for start, end in [((14.5, 66), (19.5, 66)), ((33.5, 66), (38.5, 66))]:
-        arrow(ax, start, end)
-    arrow(ax, (52.5, 68), (59.5, 73.5), color=GREEN, label="hit")
-    arrow(ax, (52.5, 62), (59.5, 48), color=RED, label="create -> 503", dashed=True)
-    box(ax, 39, 18, 13, 14, "Event queue", "buffering", face=AMBER_FACE, edge=AMBER,
-        title_color=AMBER)
-    arrow(ax, (45.5, 57.5), (45.5, 32.5), color=AMBER, dashed=True, label="click event")
-    ax.text(80, 76, "WARM REDIRECTS", fontsize=8, fontweight="bold", color=GREEN)
-    ax.text(80, 71, "served from cache", fontsize=8, color=INK)
-    ax.text(80, 55, "COLD REDIRECTS", fontsize=8, fontweight="bold", color=AMBER)
-    ax.text(80, 50, "miss -> fail fast, bounded", fontsize=8, color=INK)
-    ax.text(80, 40, "CREATES", fontsize=8, fontweight="bold", color=RED)
-    ax.text(80, 35, "never ack an unsaved code", fontsize=8, color=INK)
+    box(ax, COL_4, ROW_2, CELL_W, CELL_H, "Payment gateway", "not reached",
+        face=WHITE, edge=GREY, title_color=GREY)
+    checkout_links(ax, checkout_color=NAVY, payment_color=RED,
+                   payment_label="times out", payment_dashed=True)
+    box(ax, COL_2, ROW_3, CELL_W, CELL_H, "Submitted orders", "queue: nothing published",
+        face=AMBER_FACE, edge=AMBER, title_color=AMBER)
+    box(ax, COL_3, ROW_3, CELL_W, CELL_H, "Order service", "idle, nothing to pull",
+        face=WHITE, edge=AMBER, title_color=AMBER)
+    order_queue_links(ax, publish_label="skipped:\nnot paid", publish_color=RED,
+                      publish_dashed=True)
+    legend_note(ax, ROW_1 + 11, "CART BROWSING", "served from cache,\nunaffected", GREEN)
+    legend_note(ax, ROW_2 + 11, "CHECKOUT", "fails fast with 503,\nnever fakes success", RED)
+    legend_note(ax, ROW_3 + 11, "NO GHOST ORDERS", "an order is published\nonly after payment\n"
+                "is authorized", AMBER)
+    caller_footnote(ax)
     return fig
 
 
@@ -329,8 +400,8 @@ FIGURES = {
     "estimate_to_decision": estimate_to_decision,
     "decision_framework": decision_framework,
     "failure_response": failure_response,
-    "url_shortener_architecture": url_shortener_architecture,
-    "url_shortener_degraded": url_shortener_degraded,
+    "cart_checkout_architecture": cart_checkout_architecture,
+    "cart_checkout_degraded": cart_checkout_degraded,
 }
 
 
