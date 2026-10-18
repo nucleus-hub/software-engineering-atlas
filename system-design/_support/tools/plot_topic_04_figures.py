@@ -76,32 +76,53 @@ def bar(ax: plt.Axes, x: float, y: float, width: float, height: float, color: st
 # ---------- figures --------------------------------------------------------------
 
 def network_layers() -> plt.Figure:
-    fig, ax = canvas(15, 7)
-    heading(ax, "Four Layers Carry Every Request",
-            "Each layer solves one problem and relies on the layer below it")
-    caps(ax, 12, 80, "LAYER")
-    caps(ax, 27, 80, "WHAT IT ADDS", ha="left")
-    caps(ax, 63, 80, "IN ONE CLICK ON go.example.com/aB3xK9", ha="left")
-    rows = [
-        ("Application", "HTTP", "Meaning: methods, status codes, headers",
-         "GET /aB3xK9  ->  302 Found, Location: ...", BLUE, PALE),
-        ("Security", "TLS", "Encryption, plus proof of the server's identity",
-         "certificate for go.example.com is checked", NAVY, MIST),
-        ("Transport", "TCP / UDP", "Ports; TCP also adds reliable, ordered delivery",
-         "a TCP connection to port 443", GREEN, GREEN_FACE),
-        ("Network", "IP", "Addresses, and routing between machines",
-         "packets travel to 203.0.113.10", AMBER, AMBER_FACE),
+    fig, ax = canvas(15, 7.5)
+    heading(ax, "The Network, One Layer at a Time",
+            "Each layer does one job, and wraps the layer above it before sending")
+    layers = [
+        # tag, name, protocol, job, example, edge colour, face colour, wrapper label
+        ("L7", "Application", "HTTP", "Says what the request means",
+         "GET /aB3xK9  ->  302 Found", BLUE, PALE, "HTTP request"),
+        ("*", "Security", "TLS", "Keeps it secret; proves the server is real",
+         "certificate for go.example.com checked", NAVY, MIST,
+         "TLS: everything inside is encrypted"),
+        ("L4", "Transport", "TCP / UDP", "Delivers it to the right program",
+         "port 443, nothing lost or out of order", GREEN, GREEN_FACE,
+         "TCP header: port 443, sequence numbers"),
+        ("L3", "Network", "IP", "Moves packets between machines",
+         "to 203.0.113.10, router by router", AMBER, AMBER_FACE,
+         "IP header: to 203.0.113.10"),
     ]
-    for index, (name, protocol, adds, example, color, face) in enumerate(rows):
-        y = 62 - index * 16
-        box(ax, 3, y, 18, 10, name, protocol, face=face, edge=color)
-        note(ax, 27, y + 5, adds, size=9.5)
-        note(ax, 63, y + 5, example, size=9.5, color=color if color != AMBER else INK)
-        if index < len(rows) - 1:
-            ax.plot([3, 97], [y - 3, y - 3], color=LINE, linewidth=1)
-    note(ax, 50, 4, "DNS runs before all of this. It is an application-layer lookup "
-         "that finds the IP address the network layer needs.", ha="center",
-         color=GREY, size=9)
+
+    caps(ax, 26, 81, "THE STACK  (TOP = CLOSEST TO YOUR CODE)")
+    caps(ax, 76, 81, "ONE REQUEST, WRAPPED FOR SENDING")
+    ax.plot([52, 52], [4, 84], color=LINE, linewidth=1.2)
+
+    for index, (tag, name, protocol, job, example, edge, face, _) in enumerate(layers):
+        y = 63 - index * 16
+        box(ax, 2, y, 6, 11, tag, face=WHITE, edge=edge,
+            title_color=GREY if tag == "*" else NAVY)
+        box(ax, 11, y, 14, 11, name, protocol, face=face, edge=edge)
+        note(ax, 28, y + 7.3, job, size=9.2)
+        note(ax, 28, y + 3.2, example, size=8.2, color=GREY)
+
+    # The same layers as nested envelopes: the outermost wrapper is the lowest layer.
+    for depth, (*_, edge, face, label) in enumerate(reversed(layers)):
+        inset = depth * 3
+        x, y = 54 + inset, 14 + inset
+        width, height = 44 - 2 * inset, 62 - 2 * inset - depth * 3
+        ax.add_patch(Rectangle((x, y), width, height, facecolor=face, edgecolor=edge,
+                               linewidth=2))
+        ax.text(x + 1.3, y + height - 2.6, label, va="center", fontsize=8.4,
+                fontweight="bold", color=edge)
+    note(ax, 76, 43, "GET /aB3xK9", size=10.5, color=NAVY, ha="center")
+    note(ax, 76, 37, "Host: go.example.com", size=8.6, color=GREY, ha="center")
+
+    note(ax, 26, 6.5, "* TLS has no clean OSI layer number, so people just call it TLS.",
+         size=8.2, color=GREY, ha="center")
+    note(ax, 76, 7, "The receiver unwraps in reverse order. A Layer 4 load balancer\n"
+         "reads only up to TCP; a Layer 7 one unwraps TLS to read HTTP.",
+         size=8.2, color=GREY, ha="center")
     return fig
 
 

@@ -54,9 +54,18 @@ Steps 1, 2, 3, and 7 cross the public internet, where every round trip costs ten
 
 ## 2. The network, one layer at a time
 
-![Four layers carry every request: HTTP, TLS, TCP or UDP, and IP](assets/topic-04/network_layers.png)
+![The network stack (HTTP, TLS, TCP, IP) and one request wrapped layer by layer](assets/topic-04/network_layers.png)
 
-Networking is built in layers. Each layer solves one problem and relies on the layer below it, so HTTP never worries about routing and IP never worries about status codes. You will hear these layers referred to by number, because of an older seven-layer model called OSI. Two numbers matter in system design interviews:
+Networking is built in **layers**, and each layer does exactly one job:
+
+- **HTTP** says what the request means: "where does short code `aB3xK9` point?"
+- **TLS** keeps it secret, and proves the server really is `go.example.com`.
+- **TCP** (or UDP) delivers it to the right program on the server.
+- **IP** moves the packets from one machine to the next until they arrive.
+
+When the browser sends a request, each layer wraps what the layer above gave it, like a letter in an envelope inside a parcel. The receiving machine unwraps it in the reverse order. Because each layer only reads its own wrapper, HTTP never has to think about routing, and IP never has to think about status codes.
+
+Engineers often call layers by number. The numbers come from an older seven-layer reference model called **OSI**, and two of them come up again and again in system design interviews:
 
 | Name you will hear | What it means | Why it matters in design |
 |---|---|---|
