@@ -1,13 +1,11 @@
-"""Render the request-lifecycle, DNS, connection, HTTP, and timeout diagrams for topic 04.
+"""Render the diagrams for Topic 04: Networking & Request Lifecycle.
 
-Run from the system-design directory:
+Run from the system-design directory (optionally pass figure names):
 
     uv run --with matplotlib \
       --index-url https://pypi.ci.artifacts.walmart.com/artifactory/api/pypi/external-pypi/simple \
       --allow-insecure-host pypi.ci.artifacts.walmart.com \
       python _support/tools/plot_topic_04_figures.py
-
-Pass figure names to render only selected assets.
 """
 
 from __future__ import annotations
@@ -15,13 +13,15 @@ from __future__ import annotations
 import sys
 
 import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle
+from matplotlib.patches import FancyArrowPatch, Rectangle
 
 from figure_style import (
     AMBER,
     AMBER_FACE,
     BLUE,
+    DEAD,
     GREEN,
+    GREEN_FACE,
     GREY,
     INK,
     LINE,
@@ -29,6 +29,7 @@ from figure_style import (
     NAVY,
     PALE,
     RED,
+    RED_FACE,
     SKY,
     WHITE,
     arrow,
@@ -42,212 +43,364 @@ from figure_style import (
 TOPIC = "topic-04"
 
 
-def side_note(ax: plt.Axes, x: float, y: float, title: str, body: str,
-              color: str = NAVY) -> None:
-    ax.text(x, y, title, fontsize=8, fontweight="bold", color=color)
-    ax.text(x, y - 5, body, fontsize=8, color=INK, va="top", linespacing=1.45)
+# ---------- small local helpers ------------------------------------------------
+
+def caps(ax: plt.Axes, x: float, y: float, text: str, *, color: str = GREY,
+         ha: str = "center") -> None:
+    """Grey ALL-CAPS column or zone label, as used across the curriculum."""
+    ax.text(x, y, text, ha=ha, va="center", fontsize=8.5, fontweight="bold",
+            color=color)
+
+
+def note(ax: plt.Axes, x: float, y: float, text: str, *, color: str = INK,
+         size: float = 8.6, ha: str = "left") -> None:
+    ax.text(x, y, text, ha=ha, va="center", fontsize=size, color=color,
+            linespacing=1.45)
+
+
+def two_way(ax: plt.Axes, start: tuple[float, float], end: tuple[float, float],
+            color: str = GREY) -> None:
+    ax.add_patch(FancyArrowPatch(start, end, arrowstyle="<|-|>", mutation_scale=12,
+                                 linewidth=1.6, color=color))
+
+
+def bar(ax: plt.Axes, x: float, y: float, width: float, height: float, color: str,
+        label: str = "", *, text_color: str = WHITE, hatch: str = "") -> None:
+    ax.add_patch(Rectangle((x, y), width, height, facecolor=color, edgecolor=WHITE,
+                           linewidth=1.2, hatch=hatch))
+    if label:
+        ax.text(x + width / 2, y + height / 2, label, ha="center", va="center",
+                fontsize=8, fontweight="bold", color=text_color)
+
+
+# ---------- figures --------------------------------------------------------------
+
+def network_layers() -> plt.Figure:
+    fig, ax = canvas(15, 7)
+    heading(ax, "Four Layers Carry Every Request",
+            "Each layer solves one problem and relies on the layer below it")
+    caps(ax, 12, 80, "LAYER")
+    caps(ax, 27, 80, "WHAT IT ADDS", ha="left")
+    caps(ax, 63, 80, "IN ONE CLICK ON go.example.com/aB3xK9", ha="left")
+    rows = [
+        ("Application", "HTTP", "Meaning: methods, status codes, headers",
+         "GET /aB3xK9  ->  302 Found, Location: ...", BLUE, PALE),
+        ("Security", "TLS", "Encryption, plus proof of the server's identity",
+         "certificate for go.example.com is checked", NAVY, MIST),
+        ("Transport", "TCP / UDP", "Ports; TCP also adds reliable, ordered delivery",
+         "a TCP connection to port 443", GREEN, GREEN_FACE),
+        ("Network", "IP", "Addresses, and routing between machines",
+         "packets travel to 203.0.113.10", AMBER, AMBER_FACE),
+    ]
+    for index, (name, protocol, adds, example, color, face) in enumerate(rows):
+        y = 62 - index * 16
+        box(ax, 3, y, 18, 10, name, protocol, face=face, edge=color)
+        note(ax, 27, y + 5, adds, size=9.5)
+        note(ax, 63, y + 5, example, size=9.5, color=color if color != AMBER else INK)
+        if index < len(rows) - 1:
+            ax.plot([3, 97], [y - 3, y - 3], color=LINE, linewidth=1)
+    note(ax, 50, 4, "DNS runs before all of this. It is an application-layer lookup "
+         "that finds the IP address the network layer needs.", ha="center",
+         color=GREY, size=9)
+    return fig
 
 
 def request_lifecycle() -> plt.Figure:
-    fig, ax = canvas(15, 7)
+    fig, ax = canvas(15, 7.5)
     heading(ax, "One Click on a Short Link: The Request Lifecycle",
-            "Steps 1-3 happen before the request ever reaches your code")
-    box(ax, 3, 56, 12, 16, "Browser", "clicks the link", face=WHITE, edge=NAVY)
-    box(ax, 3, 16, 12, 16, "DNS resolver", "name -> IP address", face=WHITE, edge=GREY,
+            "Most of the time is spent crossing the internet, not running your code")
+    ax.add_patch(Rectangle((1, 6), 36, 78, facecolor=WHITE, edgecolor=LINE,
+                           linestyle="--", linewidth=1.4))
+    ax.add_patch(Rectangle((39, 6), 60, 78, facecolor="#F6F9FF", edgecolor=LINE,
+                           linewidth=1.4))
+    caps(ax, 19, 80, "PUBLIC INTERNET  ·  ~30 ms PER ROUND TRIP")
+    caps(ax, 69, 80, "INSIDE THE DATA CENTER  ·  ~0.5 ms PER ROUND TRIP")
+
+    box(ax, 4, 52, 12, 14, "Browser", "user clicks", face=WHITE, edge=NAVY)
+    box(ax, 4, 14, 12, 14, "DNS resolver", "name -> IP", face=WHITE, edge=GREY,
         title_color=GREY)
-    box(ax, 24, 56, 15, 16, "Load balancer", "TLS ends here")
-    box(ax, 48, 56, 13, 16, "Link API", "stateless", face=MIST)
-    box(ax, 70, 66, 12, 13, "Cache", "code -> URL")
-    box(ax, 70, 38, 12, 13, "Link store", "on a miss", face=WHITE, edge=NAVY)
-    arrow(ax, (9, 55.5), (9, 32.5), color=GREY)
-    badge(ax, 11.5, 44, "1", color=GREY)
-    ax.text(13.5, 44, "resolve name", fontsize=8, color=GREY, va="center")
-    arrow(ax, (15.5, 67), (23.5, 67))
-    arrow(ax, (23.5, 60), (15.5, 60), color=GREEN)
-    for x, label in ((17, "2"), (19.5, "3"), (22, "4")):
-        badge(ax, x, 74.5, label)
-    ax.text(19.5, 79, "TCP / TLS / GET", ha="center", fontsize=7.5, color=BLUE)
-    badge(ax, 19.5, 53.5, "7", color=GREEN)
-    ax.text(19.5, 49, "302 Found", ha="center", fontsize=7.5, color=GREEN)
-    arrow(ax, (39.5, 64), (47.5, 64), label="pooled HTTP")
-    arrow(ax, (61.5, 66), (69.5, 72.5))
-    badge(ax, 65.5, 74, "5")
-    arrow(ax, (61.5, 60), (69.5, 44.5), color=RED)
-    badge(ax, 65.5, 47, "6", color=RED)
-    side_note(ax, 86, 74, "NETWORK", "steps 1-4 and 7:\nround trips to\nthe user", BLUE)
-    side_note(ax, 86, 50, "YOUR CODE", "steps 5-6:\na few ms in\nthe data center", GREEN)
+    box(ax, 42, 52, 13, 14, "Load balancer", "TLS ends here")
+    box(ax, 62, 52, 12, 14, "Link API", "12 stateless", face=MIST)
+    box(ax, 82, 63, 13, 11, "Cache", "code -> URL")
+    box(ax, 82, 33, 13, 11, "Link store", "on a miss", face=WHITE, edge=NAVY)
+
+    arrow(ax, (10, 51), (10, 29), color=GREY)
+    badge(ax, 12.5, 40, "1", color=GREY)
+    note(ax, 14.2, 40, "resolve the name", color=GREY, size=8.2)
+
+    arrow(ax, (16.5, 62), (41.5, 62))
+    badge(ax, 19, 74, "2")
+    note(ax, 20.8, 74, "TCP + TLS handshakes", color=BLUE, size=8.2)
+    badge(ax, 19, 68, "3")
+    note(ax, 20.8, 68, "GET /aB3xK9", color=BLUE, size=8.2)
+    arrow(ax, (41.5, 55), (16.5, 55), color=GREEN)
+    badge(ax, 19, 49, "7", color=GREEN)
+    note(ax, 20.8, 49, "302 Found + Location", color=GREEN, size=8.2)
+
+    arrow(ax, (55.5, 59), (61.5, 59))
+    badge(ax, 58.5, 64, "4")
+    arrow(ax, (74.5, 63), (81.5, 68.5))
+    badge(ax, 77.5, 70, "5")
+    arrow(ax, (74.5, 55), (81.5, 39), color=RED, dashed=True)
+    badge(ax, 76.5, 44, "6", color=RED)
+
+    legend = [
+        ("4", "forward the request over an already-open, pooled connection", BLUE),
+        ("5", "look the code up in the cache (about 1 ms)", BLUE),
+        ("6", "only on a cache miss: read the link store (a few ms)", RED),
+    ]
+    for index, (label, text, color) in enumerate(legend):
+        y = 23 - index * 7
+        badge(ax, 43, y, label, color=NAVY if color == BLUE else color)
+        note(ax, 45, y, text, size=8.6)
     return fig
 
 
 def dns_resolution() -> plt.Figure:
-    fig, ax = canvas(14, 6.6)
-    heading(ax, "DNS Resolution: Usually a Cache Hit, Occasionally a Walk",
-            "Every layer caches the answer for the record's TTL")
-    box(ax, 3, 42, 14, 16, "Browser + OS", "local cache", face=WHITE, edge=NAVY)
-    box(ax, 29, 42, 16, 16, "Recursive resolver", "ISP or public, cached", face=MIST)
-    box(ax, 62, 68, 18, 12, "Root servers", "who runs .com?")
-    box(ax, 62, 44, 18, 12, "TLD servers (.com)", "who runs example.com?")
-    box(ax, 62, 20, 18, 12, "Authoritative", "go.example.com = IP")
-    arrow(ax, (17.5, 53), (28.5, 53), label="1 query")
-    arrow(ax, (28.5, 46), (17.5, 46), color=GREEN, label="5 IP + TTL")
-    arrow(ax, (45.5, 55), (61.5, 73), color=GREY, label="2")
-    arrow(ax, (45.5, 50), (61.5, 50), color=GREY, label="3")
-    arrow(ax, (45.5, 45), (61.5, 27), color=GREY, label="4")
-    side_note(ax, 85, 72, "WARM", "answered from\na cache: ~0 ms")
-    side_note(ax, 85, 50, "COLD", "steps 2-4 run:\n20-120 ms")
-    side_note(ax, 85, 28, "TTL", "how long every\nlayer may cache", AMBER)
+    fig, ax = canvas(15, 7)
+    heading(ax, "DNS: Turning go.example.com Into an IP Address",
+            "A full walk takes several round trips, so every step caches the answer")
+    box(ax, 3, 42, 15, 16, "Browser + OS", "check local caches", face=WHITE, edge=NAVY)
+    box(ax, 30, 42, 17, 16, "Recursive resolver", "ISP or 8.8.8.8", face=MIST)
+    box(ax, 66, 68, 22, 10, "Root servers", "\"ask the .com servers\"")
+    box(ax, 66, 45, 22, 10, ".com TLD servers", "\"ask ns1.example.com\"")
+    box(ax, 66, 22, 22, 10, "example.com authoritative",
+        "\"203.0.113.10, TTL 300 s\"", face=WHITE, edge=NAVY)
+
+    arrow(ax, (18.5, 54), (29.5, 54))
+    badge(ax, 24, 59.5, "1")
+    arrow(ax, (29.5, 46), (18.5, 46), color=GREEN)
+    badge(ax, 24, 40.5, "8", color=GREEN)
+    note(ax, 24, 35, "IP + TTL", color=GREEN, ha="center", size=8.2)
+
+    for (start, end, first, second, bx, by) in (
+        ((47.5, 56), (65.5, 72), "2", "3", 50, 67),
+        ((47.5, 50), (65.5, 50), "4", "5", 55, 54.5),
+        ((47.5, 44), (65.5, 28), "6", "7", 50, 31),
+    ):
+        two_way(ax, start, end)
+        badge(ax, bx, by, first, color=GREY)
+        badge(ax, bx + 3.2, by, second, color=GREY)
+
+    caps(ax, 94, 62, "STEPS 2-7", color=GREY)
+    note(ax, 94, 53, "are skipped\nwhen the resolver\nalready has the\nanswer cached:\n"
+         "the usual case", ha="center", color=GREY, size=8.2)
+
+    ax.plot([3, 97], [15, 15], color=LINE, linewidth=1)
+    note(ax, 50, 8, "Cached at every step (browser, OS, resolver) for the record's TTL. "
+         "A changed record can take up to one TTL to reach everyone.",
+         ha="center", size=9)
     return fig
 
 
-def message(ax: plt.Axes, y: float, text: str, *, to_server: bool,
-            color: str = BLUE) -> None:
-    left, right = (22, 62) if to_server else (62, 22)
-    arrow(ax, (left, y), (right, y - 4), color=color)
-    ax.text(42, y + 0.5, text, ha="center", fontsize=8, color=color,
-            bbox=dict(facecolor=WHITE, edgecolor="none", pad=1))
-
-
 def connection_setup() -> plt.Figure:
-    fig, ax = canvas(14, 7.6)
-    heading(ax, "A New Connection Costs Round Trips Before Any Work Happens",
-            "TCP, then TLS 1.3, then the actual request: three round trips on a cold start")
-    for x, name in ((22, "Browser"), (62, "Load balancer")):
-        ax.text(x, 82, name, ha="center", fontsize=10, fontweight="bold", color=NAVY)
-        ax.plot([x, x], [79, 8], color=LINE, linewidth=2)
-    phases = [
-        (75, "TCP: 1 round trip", "SYN", "SYN-ACK", NAVY),
-        (55, "TLS 1.3: 1 round trip", "ClientHello", "ServerHello + certificate", BLUE),
-        (35, "HTTP: 1 round trip", "GET /x7Kp2Qa", "302 Found", GREEN),
+    fig, ax = canvas(15, 8)
+    heading(ax, "What a New Connection Costs, in Round Trips",
+            "With TLS 1.3, a cold request needs three round trips before the answer arrives")
+    client_x, server_x = 18, 52
+    box(ax, client_x - 6, 78, 12, 5, "Browser", face=WHITE, edge=NAVY)
+    box(ax, server_x - 7, 78, 14, 5, "Load balancer")
+    for x in (client_x, server_x):
+        ax.plot([x, x], [77, 17], color=LINE, linewidth=2)
+
+    messages = [
+        (74, "SYN", True, SKY),
+        (69, "SYN-ACK", False, SKY),
+        (62, "ACK + ClientHello", True, NAVY),
+        (57, "ServerHello, certificate, Finished", False, NAVY),
+        (50, "Finished + GET /aB3xK9", True, GREEN),
+        (45, "302 Found", False, GREEN),
+        (30, "GET /x7Pq2 (same connection)", True, GREEN),
+        (25, "302 Found", False, GREEN),
     ]
-    for top, label, request, reply, color in phases:
-        message(ax, top, request, to_server=True, color=color)
-        message(ax, top - 8, reply, to_server=False, color=color)
-        ax.plot([16, 16], [top, top - 12], color=color, linewidth=3)
-        ax.text(15, top - 6, label, ha="right", va="center", fontsize=8.2,
-                fontweight="bold", color=color)
-    side_note(ax, 70, 70, "COLD CONNECTION", "3 round trips before\nthe answer arrives")
-    side_note(ax, 70, 46, "REUSED CONNECTION", "keep-alive skips TCP and\nTLS: 1 round trip", GREEN)
-    side_note(ax, 70, 22, "TLS 1.2", "needs 2 round trips,\nso a cold start costs 4", AMBER)
+    for y, label, outbound, color in messages:
+        start, end = ((client_x, y), (server_x, y - 3.5)) if outbound else \
+            ((server_x, y), (client_x, y - 3.5))
+        ax.add_patch(FancyArrowPatch(start, end, arrowstyle="-|>", mutation_scale=12,
+                                     linewidth=1.6, color=color))
+        ax.text((client_x + server_x) / 2, y - 0.6, label, ha="center", va="bottom",
+                fontsize=7.8, color=color,
+                bbox=dict(facecolor=WHITE, edgecolor="none", pad=0.6))
+
+    for top, bottom, label, color in (
+        (75, 65, "RTT 1\nTCP", SKY),
+        (63, 53, "RTT 2\nTLS 1.3", NAVY),
+        (51, 41, "RTT 3\nHTTP", GREEN),
+        (31, 21, "warm\nrequest", GREEN),
+    ):
+        ax.plot([9, 9], [bottom, top], color=color, linewidth=3,
+                solid_capstyle="round")
+        ax.text(7.5, (top + bottom) / 2, label, ha="right", va="center", fontsize=8,
+                fontweight="bold", color=color, linespacing=1.3)
+    ax.text((client_x + server_x) / 2, 36, "connection kept open (keep-alive)",
+            ha="center", fontsize=8, style="italic", color=GREY)
+
+    caps(ax, 79, 80, "ROUND TRIPS BEFORE THE ANSWER")
+    summary = [
+        ("Cold, TLS 1.3: 3", "TCP + TLS + HTTP", WHITE, NAVY),
+        ("Cold, TLS 1.2: 4", "its handshake needs two round trips", WHITE, GREY),
+        ("Cold, HTTP/3 (QUIC): 2", "transport and TLS share one round trip", PALE, BLUE),
+        ("Warm (reused): 1", "only the HTTP request itself", GREEN_FACE, GREEN),
+    ]
+    for index, (title, subtitle, face, edge) in enumerate(summary):
+        box(ax, 63, 64 - index * 14, 32, 9, title, subtitle, face=face, edge=edge,
+            title_color=NAVY if edge != GREEN else GREEN)
+    note(ax, 79, 12, "At 30 ms per round trip: cold ≈ 90 ms, warm ≈ 30 ms",
+         ha="center", size=9, color=NAVY)
+    return fig
+
+
+def http_versions() -> plt.Figure:
+    fig, ax = canvas(15, 7.5)
+    heading(ax, "HTTP/1.1 vs HTTP/2 vs HTTP/3",
+            "Three requests (A, B, C) to one server, and what one lost packet does")
+    colors = {"A": BLUE, "B": GREEN, "C": AMBER}
+    caps(ax, 46, 82, "ONE CONNECTION, OVER TIME  →")
+    caps(ax, 87, 82, "WHAT TO REMEMBER")
+
+    def lane(y: float, height: float = 6) -> None:
+        ax.add_patch(Rectangle((20, y), 52, height, facecolor=WHITE, edgecolor=LINE,
+                               linewidth=1.2))
+
+    def lost(x: float, y: float, size: float = 1.1) -> None:
+        """Draw a red X marking a lost packet (two strokes, no glyph needed)."""
+        dy = size * 15 / 7.5          # keep the X square on this aspect ratio
+        for sign in (1, -1):
+            ax.plot([x - size, x + size], [y - sign * dy, y + sign * dy],
+                    color=RED, linewidth=2.6, solid_capstyle="round")
+
+    # HTTP/1.1: one request at a time.
+    box(ax, 2, 64, 13, 11, "HTTP/1.1", "1997", face=WHITE, edge=GREY)
+    lane(66.5)
+    for index, name in enumerate("ABC"):
+        bar(ax, 21 + index * 16.5, 67, 15.5, 5, colors[name], f"request {name}")
+    note(ax, 76, 72.5, "One request at a time per connection.")
+    note(ax, 76, 67.5, "A slow A delays B and C, so browsers\nopen about 6 connections per host.",
+         size=8.2, color=GREY)
+
+    # HTTP/2: frames interleaved on one TCP connection; one loss stalls all.
+    box(ax, 2, 38, 13, 11, "HTTP/2", "2015, over TCP", face=PALE, edge=BLUE)
+    lane(40.5)
+    sequence = "ABCABCABCABC"
+    for index, name in enumerate(sequence):
+        stalled = index > 3
+        bar(ax, 21 + index * 4.25, 41, 3.9, 5, DEAD if stalled else colors[name],
+            name, text_color=GREY if stalled else WHITE)
+    lost(21 + 4 * 4.25 + 1.95, 49.5)
+    note(ax, 76, 46.5, "Many streams share one TCP connection.")
+    note(ax, 76, 41.5, "TCP delivers bytes in order, so one lost\npacket stalls every stream.",
+         size=8.2, color=GREY)
+
+    # HTTP/3: QUIC streams recover independently.
+    box(ax, 2, 12, 13, 11, "HTTP/3", "2022, QUIC over UDP", face=MIST, edge=NAVY)
+    for row, name in enumerate("ABC"):
+        y = 22 - row * 6
+        lane(y, 5)
+        for index in range(4):
+            stalled = name == "B" and index > 0
+            bar(ax, 21 + index * 12.5, y + 0.5, 11.8, 4,
+                DEAD if stalled else colors[name], name,
+                text_color=GREY if stalled else WHITE)
+    lost(21 + 12.5 + 2.2, 18.5, size=0.7)
+    note(ax, 76, 20, "Each stream recovers on its own.")
+    note(ax, 76, 13.5, "Only B waits. QUIC also combines the\ntransport and TLS handshakes, and\n"
+         "survives a Wi-Fi to mobile switch.", size=8.2, color=GREY)
+    ax.add_patch(Rectangle((52, 2), 2.5, 2.5, facecolor=DEAD, edgecolor=LINE))
+    note(ax, 55.5, 3.3, "waiting for the lost packet to be resent", size=8, color=GREY)
+    lost(48.5, 3.3, size=0.7)
+    return fig
+
+
+def timeout_budget() -> plt.Figure:
+    fig, ax = canvas(15, 7.5)
+    heading(ax, "Timeout Budgets: Inner Timeouts Must End First",
+            "Every call gets a timeout, and each one is shorter than its caller's")
+    origin, scale = 30, 60 / 600     # 600 ms of time across 60 units
+
+    def span(start_ms: float, length_ms: float, y: float, color: str, label: str,
+             *, text_color: str = WHITE) -> None:
+        bar(ax, origin + start_ms * scale, y, length_ms * scale, 5, color, label,
+            text_color=text_color)
+
+    caps(ax, 4, 80, "GOOD", color=GREEN, ha="left")
+    rows = [(73, "Load balancer -> API"), (65, "API request deadline"), (57, "Calls inside the API")]
+    for y, label in rows:
+        note(ax, origin - 1.5, y + 2.5, label, ha="right", size=8.8)
+    span(0, 500, 73, NAVY, "500 ms")
+    span(0, 300, 65, BLUE, "300 ms")
+    span(0, 20, 57, AMBER, "")
+    span(20, 100, 57, GREEN, "DB 100 ms")
+    span(120, 100, 57, SKY, "retry 100 ms")
+    span(220, 80, 57, DEAD, "spare", text_color=GREY)
+    note(ax, origin + 0.2, 54.5, "cache 20 ms", size=7.6, color=AMBER)
+    note(ax, 93, 65, "The API answers\n(or fails cleanly)\nbefore the load\nbalancer gives up.",
+         size=8.4, color=GREEN)
+
+    ax.plot([3, 97], [47, 47], color=LINE, linewidth=1)
+
+    caps(ax, 4, 41, "BAD", color=RED, ha="left")
+    note(ax, origin - 1.5, 36.5, "Load balancer -> API", ha="right", size=8.8)
+    note(ax, origin - 1.5, 28.5, "API database call", ha="right", size=8.8)
+    span(0, 500, 34, NAVY, "500 ms")
+    bar(ax, origin, 26, 62, 5, RED_FACE)
+    ax.text(origin + 31, 28.5, "DB call with a 30-second timeout  →", ha="center",
+            va="center", fontsize=8, fontweight="bold", color=RED)
+    ax.plot([origin + 50, origin + 50], [22, 42], color=RED, linewidth=1.6, linestyle="--")
+    note(ax, origin + 50.8, 21, "504 sent to the user at 500 ms", size=8, color=RED)
+    note(ax, 50, 12, "The user already has an error, but the API thread and its database "
+         "connection stay busy for 30 seconds.\nUnder load, these abandoned calls fill "
+         "every pool and take the whole service down.", ha="center", size=8.8)
+
+    for ms in (0, 100, 200, 300, 400, 500, 600):
+        ax.text(origin + ms * scale, 50.5, f"{ms}", ha="center", fontsize=7, color=GREY)
     return fig
 
 
 def latency_budget() -> plt.Figure:
-    fig, ax = canvas(14, 6)
-    heading(ax, "Cold vs Warm: Where One Redirect's Time Goes",
-            "User 40 ms away (round trip); the server's own work is only 5 ms")
-    left, scale = 24, 0.34
-    segments = {"DNS": (GREY, "#E3E8F1"), "TCP": (NAVY, MIST), "TLS": (BLUE, PALE),
-                "HTTP": (GREEN, "#E9F7EF"), "server": (AMBER, AMBER_FACE)}
+    fig, ax = canvas(15, 6.5)
+    heading(ax, "One Redirect: Cold vs Warm Latency",
+            "The user is about 30 ms (one round trip) from the data center")
+    origin, scale = 30, 0.48        # milliseconds -> canvas units
+    parts = {
+        "DNS": GREY, "TCP": SKY, "TLS": NAVY, "HTTP": BLUE,
+        "edge -> origin": AMBER, "server": GREEN,
+    }
     rows = [
-        ("Cold, TLS 1.2", [("DNS", 30), ("TCP", 40), ("TLS", 80), ("HTTP", 40), ("server", 5)]),
-        ("Cold, TLS 1.3", [("DNS", 30), ("TCP", 40), ("TLS", 40), ("HTTP", 40), ("server", 5)]),
-        ("Warm, reused", [("HTTP", 40), ("server", 5)]),
+        (62, "Cold connection", [("DNS", 30), ("TCP", 30), ("TLS", 30), ("HTTP", 30),
+                                 ("server", 3)]),
+        (42, "Cold, TLS ends at a\nnearby edge (5 ms away)",
+         [("DNS", 5), ("TCP", 5), ("TLS", 5), ("HTTP", 5), ("edge -> origin", 30),
+          ("server", 3)]),
+        (22, "Warm (reused) connection", [("HTTP", 30), ("server", 3)]),
     ]
-    for index, (label, parts) in enumerate(rows):
-        y = 64 - index * 17
-        ax.text(left - 2, y + 4, label, ha="right", va="center", fontsize=9,
+    for y, label, segments in rows:
+        note(ax, origin - 1.5, y + 4, label, ha="right", size=9)
+        x = origin
+        for name, ms in segments:
+            width = ms * scale
+            bar(ax, x, y, width, 8, parts[name], name if width > 7 else "")
+            x += width
+        total = sum(ms for _, ms in segments)
+        ax.text(x + 1.2, y + 4, f"{total} ms", va="center", fontsize=10,
                 fontweight="bold", color=NAVY)
-        x = left
-        for name, ms in parts:
-            edge, face = segments[name]
-            ax.add_patch(Rectangle((x, y), ms * scale, 8, facecolor=face,
-                                   edgecolor=edge, linewidth=1.4))
-            if ms >= 30:
-                ax.text(x + ms * scale / 2, y + 4, f"{name} {ms}", ha="center",
-                        va="center", fontsize=7.5, color=INK)
-            x += ms * scale
-        total = sum(ms for _, ms in parts)
-        ax.text(x + 1.5, y + 4, f"{total} ms", va="center", fontsize=9,
-                fontweight="bold", color=INK)
-    target_x = left + 100 * scale
-    ax.plot([target_x, target_x], [26, 78], color=RED, linewidth=1.5, linestyle="--")
-    ax.text(target_x, 81, "100 ms target", ha="center", fontsize=8, color=RED)
-    ax.text(left, 16, "Amber = server work (5 ms). Everything else is the network.",
-            fontsize=8.5, color=INK)
-    return fig
-
-
-def lane(ax: plt.Axes, y: float, start: float, end: float, color: str, text: str) -> None:
-    ax.add_patch(Rectangle((start, y), end - start, 3.6, facecolor=color,
-                           edgecolor=WHITE, linewidth=1))
-    ax.text((start + end) / 2, y + 1.8, text, ha="center", va="center",
-            fontsize=7, color=WHITE, fontweight="bold")
-
-
-def stall(ax: plt.Axes, y: float, start: float, end: float) -> None:
-    ax.add_patch(Rectangle((start, y), end - start, 3.6, facecolor="#E6E9EF",
-                           edgecolor=GREY, linewidth=0.8, hatch="///"))
-
-
-def http_versions() -> plt.Figure:
-    fig, ax = canvas(15, 7.4)
-    heading(ax, "HTTP/1.1 vs HTTP/2 vs HTTP/3: Three Requests, One Lost Packet",
-            "Grey hatching = waiting. Red mark = a lost packet being re-sent")
-    labels = [
-        (70, "HTTP/1.1", "one request at a time\non a connection"),
-        (45, "HTTP/2", "many streams on\none TCP connection"),
-        (20, "HTTP/3", "independent streams\nover QUIC (UDP)"),
-    ]
-    for y, title, sub in labels:
-        ax.text(3, y + 7, title, fontsize=10.5, fontweight="bold", color=NAVY)
-        ax.text(3, y + 3, sub, fontsize=7.8, color=INK, va="top", linespacing=1.35)
-    lane(ax, 74, 24, 40, NAVY, "A")
-    lane(ax, 74, 40, 56, BLUE, "B")
-    lane(ax, 74, 56, 72, SKY, "C")
-    for row, (y, lost_all) in enumerate(((45, True), (20, False))):
-        for offset, (name, color) in enumerate((("A", NAVY), ("B", BLUE), ("C", SKY))):
-            sub_y = y + 9 - offset * 4.6
-            stalled = lost_all or name == "B"
-            lane(ax, sub_y, 24, 36, color, name)
-            if stalled:
-                stall(ax, sub_y, 36, 48)
-                lane(ax, sub_y, 48, 58, color, name)
-            else:
-                lane(ax, sub_y, 36, 46, color, name)
-        ax.plot(36, y + 7.4 if row else y + 5, marker="X", markersize=11, color=RED)
-    notes = [
-        (76, "C waits for A and B, so browsers open\n~6 connections per site to compensate"),
-        (51, "one lost TCP packet stalls every stream:\nTCP head-of-line blocking"),
-        (26, "a lost packet stalls only its own stream;\nA and C finish early"),
-    ]
-    for y, text in notes:
-        ax.text(76, y, text, fontsize=8, color=INK, va="center", linespacing=1.4)
-    return fig
-
-
-def nested(ax: plt.Axes, x: float, y: float, w: float, h: float, title: str,
-           edge: str, face: str) -> None:
-    box(ax, x, y, w, h, "", face=face, edge=edge)
-    ax.text(x + 1.2, y + h - 3, title, fontsize=9, fontweight="bold", color=edge, va="top")
-
-
-def timeout_budget() -> plt.Figure:
-    fig, ax = canvas(14, 6.6)
-    heading(ax, "Timeout Budgets Nest: Every Callee Gives Up Before Its Caller",
-            "Not to scale. Normal times in brackets; timeouts are the ceilings")
-    nested(ax, 3, 12, 94, 66, "Load balancer: 1,000 ms", NAVY, WHITE)
-    nested(ax, 7, 16, 70, 50, "Link API request deadline: 200 ms", BLUE, PALE)
-    box(ax, 11, 29, 14, 18, "Cache", "10 ms  (~1 ms)", face=WHITE, edge=GREEN, title_color=GREEN)
-    box(ax, 29, 29, 14, 18, "Link store", "50 ms  (~5 ms)", face=WHITE, edge=GREEN,
-        title_color=GREEN)
-    box(ax, 47, 29, 14, 18, "One retry", "50 ms", face=AMBER_FACE, edge=AMBER,
-        title_color=AMBER)
-    arrow(ax, (25.5, 38), (28.5, 38), color=GREEN)
-    arrow(ax, (43.5, 38), (46.5, 38), color=AMBER)
-    ax.text(69, 38, "slack\n90 ms", ha="center", va="center", fontsize=8.5, color=GREY)
-    ax.text(87, 48, "10 + 50 + 50\n= 110 ms\nfits inside 200",
-            ha="center", va="center", fontsize=9, color=NAVY, fontweight="bold",
-            linespacing=1.5)
+    for index, (name, color) in enumerate(parts.items()):
+        x = 14 + index * 13.5
+        ax.add_patch(Rectangle((x, 79), 2.4, 3.5, facecolor=color, edgecolor=WHITE))
+        note(ax, x + 3.2, 80.8, name, size=8.4)
+    note(ax, 50, 9, "Your code is the 3 ms green sliver. Reusing connections and ending "
+         "TLS close to the user save far more than tuning the server.",
+         ha="center", size=9, color=NAVY)
     return fig
 
 
 FIGURES = {
+    "network_layers": network_layers,
     "request_lifecycle": request_lifecycle,
     "dns_resolution": dns_resolution,
     "connection_setup": connection_setup,
-    "latency_budget": latency_budget,
     "http_versions": http_versions,
     "timeout_budget": timeout_budget,
+    "latency_budget": latency_budget,
 }
 
 

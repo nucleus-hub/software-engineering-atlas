@@ -6,37 +6,53 @@ You do not need to memorize these. Come back to this table whenever a term feels
 
 | Term | What it means in plain words |
 |---|---|
-| **Architecture style** | The overall shape of a system: how its code is grouped, how the groups talk to each other, and how they are deployed. |
-| **Monolith** | One application, built and deployed as a single unit. Its parts call each other directly, inside one process. |
-| **Module** | A group of code inside an application, with a clear job and a small public interface that the rest of the code must use. |
-| **Microservice** | A small application that is deployed on its own, owns its own data, and talks to other services over the network. |
-| **Deployable unit** | Whatever gets released together. A monolith is one deployable unit; ten microservices are ten. |
-| **Stateless** | A service that keeps no user data in its own memory between requests, so any copy of it can handle any request. |
-| **Stateful** | A service that keeps data in its own memory or disk, such as a database, so requests must reach the copy holding that data. |
-| **Bounded context** | A part of the business inside which every term has exactly one meaning. "Click" can mean one thing to Analytics and another to Billing. |
-| **Blast radius** | How much of the system breaks when one part fails or one bad change is released. |
-| **Service discovery** | How one service finds the current network addresses of another service's healthy copies. |
+| **Deployable unit** | One thing you build, test, and release as a whole, such as one JAR file or one container image. |
+| **Monolith** | An application that is deployed as a single unit, even if its code is large and well organized. |
+| **Module** | A self-contained part of a codebase with a small public interface and hidden internals. In a monolith, modules call each other with ordinary method calls. |
+| **Service** | A separately deployed program that other programs call over the network. |
+| **Microservices** | An architecture in which an application is split into many small services, each owned by one team and released on its own schedule. |
+| **Domain** | The business area the software serves, such as links, billing, or analytics, with its own rules and vocabulary. |
+| **Bounded context** | A boundary inside which every word has one exact meaning. "Link" can mean different things in billing and in analytics, and each context keeps its own model. |
+| **Stateless service** | A service whose instances keep nothing between requests, so any instance can handle any request. |
+| **Stateful service** | A service whose instances hold data that matters, such as a database or a server holding live user sessions. |
+| **Service discovery** | How a caller finds the current network addresses of the healthy instances of a service. |
+| **Configuration** | Settings that change between environments, such as database addresses and feature flags, kept outside the code. |
+| **Distributed monolith** | A system split into services that still have to be changed and deployed together. It has the costs of both styles and the benefits of neither. |
+| **Conway's law** | The observation that a system's structure tends to copy the communication structure of the teams that build it. |
+
+??? info "Java and Spring features used on this page (open if they are new to you)"
+    - **Packages** such as `com.shortener.links.api` are used to group classes. Classes without the `public` keyword are visible only inside their own package, which is the simplest way to hide a module's internals.
+    - **ArchUnit** is a testing library that checks architecture rules, such as "nothing outside the links module uses its internal classes", as ordinary unit tests.
+    - **`@Repository`** and **`@Service`** are Spring annotations that mark classes for Spring to create and connect at startup, as described in [Basics 3](03_LLD_Creational_And_Structural_Design_Patterns.md).
+    - **`application.yml`** is a Spring Boot configuration file. Values such as `${DB_URL}` are filled in from environment variables when the application starts.
 
 ---
 
 ## 1. Architecture style is a decision, not a fashion
 
-Basics 1 designed a URL shortener with a single stateless Link API, a cache, a database, and a queue for click analytics, and it said: "no microservices; none of the numbers require them." This page explains how to recognize the moment when the numbers, or the organization, *do* require something different, and how to split a system well when they do.
+An **architecture style** answers two questions: how is the code split into parts, and how are those parts deployed and connected? The answer has little to do with what is fashionable, and everything to do with a few forces in your situation.
 
-Every architecture style answers the same few questions, and the answers come from your situation, not from what large tech companies use:
+| Force | The question to ask | When the answer is yes, it points towards |
+|---|---|---|
+| **Team size** | Are several teams blocked waiting for each other to release? | Separate deployable units, so each team can release alone |
+| **Different needs** | Does one part need a much higher availability, a different kind of hardware, or very different scaling than the rest? | Separating that one part |
+| **Fault isolation** | Would a crash or memory leak in one feature take down a more important one? | Running them in separate processes |
+| **Change rate** | Does one part change daily while the rest changes monthly? | A boundary between them, at least inside the code |
+| **Operational maturity** | Can the team run many services, with automated deployment, monitoring, and tracing? | If no, fewer deployable units, whatever the other answers say |
 
-| Force | The question it raises |
-|---|---|
-| **Team size** | How many people change this code every week, and do they keep getting in each other's way? |
-| **Release pace** | Does one part need to be released daily while another changes once a quarter? |
-| **Scale profile** | Does one part handle 100 times the traffic of another? |
-| **Failure isolation** | Must one part keep working while another is broken? |
-| **Data ownership** | Is it clear who is allowed to change each piece of data, and its structure? |
+!!! tip "The decision in one sentence"
+    Start with the fewest deployable units that meet the requirements, draw strong boundaries inside them, and split a part out only when it needs something the rest of the system cannot give it.
 
-!!! tip "Decomposition in one sentence"
-    Split a system along the lines where its parts change, scale, or fail differently, and only when the cost of the split is smaller than the cost of keeping those parts together.
+**The running example.** [Basics 1](01_Interview_Framework_And_Capacity_Estimation.md) designed a URL shortener as one stateless application, and [Basics 4](04_Networking_And_Request_Lifecycle.md) followed one redirect through it. This page follows the same product into its **second year**, when it has grown:
 
-There is also a social force, known as **Conway's law**: systems tend to mirror the communication structure of the teams that build them. Three teams that rarely talk will drift towards three loosely connected components, whether or not anyone planned it. Good boundaries work with the team structure instead of against it.
+| What changed | Year one | Year two |
+|---|---|---|
+| Features | Create links and redirect | Also user accounts, custom domains, click dashboards, and paid plans |
+| Peak traffic | 8,000 redirects and 80 creates per second | 20,000 redirects, 200 creates, and about 50 dashboard requests per second |
+| People | One team of 5 | Four teams, about 25 engineers |
+| Availability target | 99.9% for everything | **99.99% for redirects** (a broken link looks like a broken website), 99.9% for the rest |
+
+The question for the rest of this page: should year two split the application into services, and if so, where?
 
 ---
 
@@ -44,312 +60,434 @@ There is also a social force, known as **Conway's law**: systems tend to mirror 
 
 ![Layered monolith vs modular monolith vs microservices](assets/topic-05/architecture_spectrum.png)
 
-The sections below form a ladder, like the earlier pages. Each level introduces one idea, applies it to the URL shortener, and ends with a practice problem about the note-taking app from Basics 1, now a year older and growing.
+The three styles in the picture can contain the same code. What changes is **where the boundaries are, and what enforces them**: nothing but discipline in a layered monolith, rules and tests in a modular monolith, and the network itself in microservices. Each level below fixes a problem from the level before it, and adds a cost.
 
 ### Level 1: Layered architecture
 
-Most applications start in layers, each with one technical job:
+The most familiar structure splits code by technical role. Each layer may only call the layer directly below it:
 
 ```text
-LinkController   (API layer)        parses the HTTP request, returns the HTTP response
-LinkService      (business layer)   applies the rules: valid URL, code not taken, expiry
-LinkRepository   (data layer)       reads and writes the link table
+com.shortener
+├── controller     LinkController, AccountController, DashboardController   (HTTP in, JSON out)
+├── service        LinkService, AccountService, BillingService              (business rules)
+├── repository     LinkRepository, AccountRepository, ClickRepository       (SQL)
+└── model          Link, Account, Click                                     (shared data classes)
 ```
 
-The rule that makes layers useful is that **dependencies point one way**: the controller calls the service, the service calls the repository, and never the reverse. Basics 2's Dependency Inversion principle refines this: the business layer owns the `LinkRepository` interface, and the database code implements it, so business rules never depend on database details.
+**What it gets right.** Every developer knows where a controller or a repository lives, and the rule "controllers never write SQL" keeps the worst tangles out.
 
-Layers have one well-known weakness. They group code by *technical role*, but changes usually arrive by *business feature*. Adding "links can be password-protected" touches the controller, the service, and the repository at once. When an application grows to many features, every change cuts across every layer, and layers that only pass calls through without adding anything (sometimes called "lasagna code") become pure overhead.
+**What goes wrong as it grows.** The layers say nothing about the *business*. Adding custom domains touches a controller, a service, a repository, and a model, in four different packages. Worse, nothing stops `BillingService` from calling `LinkRepository` directly, or `DashboardController` from reading the `Click` table, so after a year every part of the business can reach every other part. This is often called a "big ball of mud". It is not because layers are wrong, but because layers alone draw no boundaries between business areas.
 
-!!! question "Practice: the note-taking app"
-    The note-taking app adds a rule: "a note can be shared with at most 50 people." Which layer should own that rule, and what goes wrong if it lives in the controller instead?
+!!! question "Practice"
+    In a layered codebase, where does the code for one feature, such as "custom domains", end up? Why is that a problem when four teams share the codebase?
 
 ??? success "Answer"
-    The **business layer** (`SharingService` or similar). If it lives in the controller, any other way of sharing, such as a batch import or a future mobile API, skips the check, because it calls the service directly. Rules belong where every path must pass through them.
+    It is spread across every layer: a controller, a service, a repository, and model classes. Every team edits every layer, so two teams changing unrelated features still collide in the same packages and files, and nobody owns any one package. Grouping code by business area (Level 3) gives each team its own place.
 
-### Level 2: The modular monolith
+### Level 2: Hexagonal architecture (ports and adapters)
 
-A **modular monolith** keeps the single deployable unit but organizes the code *by business area* instead of only by layer. Each module owns its own slice of every layer, its own database tables, and a small public interface. For the URL shortener a year later, the modules might be Links, Redirects, Analytics, and Accounts.
+![Layered vs hexagonal: which way the dependencies point](assets/topic-05/layered_vs_hexagonal.png)
 
-The rules that make it work:
+In the layered picture, the arrows point down, so the business rules depend on the database code beneath them. Testing a rule needs a database, and changing the storage means editing the services. **Hexagonal architecture**, also called *ports and adapters*, flips those arrows. It is the Dependency Inversion rule from [Basics 2](02_LLD_Object_Oriented_Principles_And_Clean_Code.md), applied to the whole application:
 
-- Each module **exposes a small public interface** and hides everything else.
-- **No module reads another module's tables.** Analytics asks the Links module through its interface; it never queries the link table directly.
-- Modules talk through **plain method calls or in-process events**, which are fast and cannot fail the way network calls can.
-
-In Java, the simplest enforcement is package-private visibility: only the module's public interface is `public`, and everything else is invisible outside its package.
+- The **domain** (the business rules) sits in the middle and imports no framework or database code.
+- The domain defines **ports**: interfaces describing what it needs (`LinkRepository`) or offers (`CreateLink`).
+- **Adapters** live outside and plug into the ports. Some *drive* the domain (a REST controller or a scheduled job calls a port); others *are driven* by it (a Postgres class implements `LinkRepository`).
 
 ```java
-package com.example.shortener.links;
-
-public interface LinksApi {                       // the only door into the module
-    Optional<String> destinationFor(String code);
+// Inside the domain: a port, shaped around what the business needs, not around SQL
+public interface LinkRepository {
+    Optional<Link> findByCode(ShortCode code);
+    void save(Link link);
 }
 
-class LinkService implements LinksApi { /* ... */ }   // package-private: hidden
-class LinkRepository { /* ... */ }                    // package-private: hidden
+// Inside the domain: business rules, with no imports from Spring, JDBC, or HTTP
+final class LinkService {
+    private final LinkRepository links;
+    LinkService(LinkRepository links) { this.links = links; }
+
+    Link create(LongUrl url, AccountId owner) { /* rules: quota, blocked domains, code generation */ }
+}
+
+// Outside the domain: an adapter, and the only class that knows about Postgres
+@Repository
+final class PostgresLinkRepository implements LinkRepository { /* SQL lives here, and only here */ }
 ```
 
-Larger teams add automated architecture tests that fail the build when one module imports another module's internals.
+The adapter is exactly the Adapter pattern from [Basics 3](03_LLD_Creational_And_Structural_Design_Patterns.md): it translates between the interface the domain expects and the API a tool provides. In tests, a `FakeLinkRepository` backed by a `HashMap` replaces Postgres, so business rules are tested in milliseconds.
 
-A modular monolith keeps most of a monolith's advantages: one build, one deployment, fast in-process calls, simple transactions, and easy refactoring when a boundary turns out to be in the wrong place. Its costs are that every module shares one release schedule, one runtime, and one scaling decision. A memory leak in Analytics can crash the process that serves redirects, and the whole application must be scaled to handle the busiest module's load.
+**Watch out:** for a small CRUD service with almost no business rules, ports for everything are ceremony. Use this style where the rules are worth protecting.
 
-!!! question "Practice: the note-taking app"
-    The note-taking app now has notes, sharing, search, attachments, and billing. A developer makes the search feature faster by querying the notes table directly from the search module. What rule did they break, and what will it cost later?
+!!! question "Practice"
+    A teammate's `LinkService` constructor creates a `JdbcTemplate` and writes SQL inline. Which two problems does that cause, and how does hexagonal architecture fix them?
 
 ??? success "Answer"
-    They broke **"no module reads another module's tables."** The search module now depends on the exact structure of the notes table, so the notes team can no longer rename a column or change how notes are stored without breaking search, often without knowing it. If search is ever moved into its own service, this hidden dependency must be untangled first. The fix is to go through the notes module's interface, or to have search keep its own index updated from "note saved" events.
+    First, the business rules cannot be tested without a real database. Second, the rules and the storage details change for different reasons but live in one class, so a schema change risks breaking a business rule. The fix is to define a `LinkRepository` port in the domain, move the SQL into a `PostgresLinkRepository` adapter, and pass the repository into `LinkService` through its constructor.
 
-### Level 3: Microservices
+### Level 3: The modular monolith
 
-**Microservices** take the module boundaries and turn each one into a separately deployed application that owns its data and talks to the others over the network. What that buys and what it costs:
+Hexagonal architecture organizes one area well. A **modular monolith** applies boundaries between areas: the code is split by **business capability**, each module hides its internals behind a small public API, and the whole thing still deploys as one unit.
+
+```text
+com.shortener
+├── links
+│   ├── api          LinkApi, LinkView                    <- the only classes other modules may use
+│   └── internal     LinkService, PostgresLinkRepository  <- hidden: package-private or checked by tests
+├── accounts
+│   ├── api          AccountApi, PlanLimits
+│   └── internal     ...
+├── billing
+└── analytics
+```
+
+A modular monolith lives or dies by three rules:
+
+1. **Modules talk only through each other's `api` package.** No module calls another module's internal classes.
+2. **Each module owns its tables.** Each module gets its own database schema, and no module reads another module's tables, even though they share a database server.
+3. **The rules are checked automatically**, because a rule that is not tested will eventually be broken by someone in a hurry.
+
+The third rule is a few lines with ArchUnit, and it runs with the other unit tests:
+
+```java
+@ArchTest
+static final ArchRule modulesUseOnlyPublicApis =
+        noClasses().that().resideOutsideOfPackage("..links..")
+                .should().dependOnClassesThat().resideInAPackage("..links.internal..");
+```
+
+(Spring Modulith provides the same checks for every module at once, based on the package structure.)
+
+**What this gives year two.** Each team owns one module and its schema. Teams still share one build and one release, but their code no longer tangles. And if one module must later become its own service, its boundary is already clean: the `LinkApi` interface becomes a network API, and its schema moves to its own database. That is a far smaller step than untangling a big ball of mud.
+
+!!! question "Practice: code review"
+    To build a dashboard faster, the analytics module runs `SELECT title FROM links.links WHERE code = ?` directly. The query works. Which rule does it break, and why does it matter?
+
+??? success "Answer"
+    It breaks **"each module owns its tables"**. Analytics now depends on the exact structure of the links table, so the links team cannot rename that column, split the table, or move it to another database without breaking analytics, often without knowing analytics depends on it. The fix is to call `LinkApi` (for example, `linkApi.titlesFor(codes)`), or to keep a copy of titles inside analytics, updated by events (section 5).
+
+### Level 4: Microservices
+
+**Microservices** take module boundaries and turn each one into a separate deployable unit, with its own process, its own data store, and usually its own team. The boundary is now enforced by the network: another team physically cannot call your internal classes.
 
 | What you gain | What you pay |
 |---|---|
-| Each service is released on its own schedule. | Every call between services is now a network call, with all the latency, timeouts, pools, and failure modes from Basics 4. |
-| Each service scales on its own. | Data is split, so there are no joins or transactions across services, and copies of data can be briefly out of date. |
-| A crash in one service does not take the process of another down with it. | You must monitor, trace, deploy, and secure many applications instead of one. |
-| Teams own services end to end and choose fitting tools. | API changes must stay backward compatible, because callers upgrade on their own schedule. |
+| Each team releases on its own schedule, without coordinating a shared release. | Every call between services is a network call, with the latency, timeouts, pools, and failure modes from Basics 4. |
+| One service can scale, or use different hardware, independently. | Data is spread across stores, so cross-service queries and transactions become hard (section 5). |
+| A crash or memory leak stays inside one service. | Failures become partial: one service is down while others are up, and every caller must handle that. |
+| Each service can use the technology that best fits its job. | Every service needs its own build pipeline, deployment, monitoring, alerts, and on-call rotation. |
+| Ownership is unmistakable: one team, one service. | Debugging one user request means following it across many services, which needs distributed tracing. |
 
-The network cost is the one beginners underestimate. A method call inside one process takes well under a microsecond and practically never fails. A call to another service in the same data center takes around a millisecond, about a thousand times longer, and can fail in every way Basics 4 described. Availability also multiplies along a chain of synchronous calls. If one request must pass through five services, each available 99.9% of the time:
+The network cost is the one beginners underestimate. A method call inside one process takes nanoseconds and never fails because of the network. A call to another service in the same data center takes about half a millisecond at best, and it can time out, be refused, or return an unknown outcome. Chains of calls multiply both problems: if one user request passes through five services, each 99.9% available, the chain is only about 0.999⁵ ≈ **99.5%** available, which allows roughly 44 hours of downtime a year instead of 9. Combining availabilities is covered in **Basics 14 (Availability & Deployment Fundamentals)**.
 
-```text
-Availability of the chain = 0.999 × 0.999 × 0.999 × 0.999 × 0.999 ≈ 99.5%
-Allowed downtime per year: about 8.8 hours for one service, but about 44 hours for the chain
+??? info "Go deeper (optional): the fallacies of distributed computing"
+    In the 1990s, engineers at Sun Microsystems listed false assumptions that people make when they move code across a network. The first four do the most damage when splitting a monolith: *the network is reliable*, *latency is zero*, *bandwidth is infinite*, and *the network is secure*. Every one of them is true of a method call and false of a network call. Each time you draw an arrow between two services, ask what happens when that arrow is slow, fails, or is attacked.
+
+**When microservices are the right answer.** When there are several teams blocked by a shared release, when parts of the system have truly different availability, scaling, or security needs, and when the organization can already run many services well. If those conditions are not met, a modular monolith gives most of the benefits at a fraction of the cost.
+
+!!! question "Practice"
+    A startup with 6 engineers and one product wants to begin with 12 microservices "so we can scale later". What would you tell them?
+
+??? success "Answer"
+    Twelve services for six engineers means each engineer runs two services, with twelve pipelines, twelve sets of alerts, and network calls where method calls would do. Nothing in their situation needs independent releases or isolation yet. Start with a modular monolith with strict module boundaries. If a team or a scaling need later demands it, a clean module can be extracted into a service. Splitting is easier than merging, but only when the boundaries were clean in the first place.
+
+### Other styles you will hear about
+
+| Style | The idea in one line | Where it is covered |
+|---|---|---|
+| **Event-driven architecture** | Services publish facts ("LinkCreated") and others react, instead of calling each other directly. | Basics 13 and Advanced 6 |
+| **Serverless (functions as a service)** | You deploy single functions; the platform runs and scales them per request, and you pay per call. Good for spiky, short tasks. | Mentioned here only |
+| **Service-oriented architecture (SOA)** | An older style of large shared services, often connected through a central message bus that held business logic. Microservices grew partly as a reaction to it. | Mentioned here only |
+| **Cell-based architecture** | The whole stack is copied into independent "cells", each serving a slice of users, so a failure affects only one cell. | Related ideas in Advanced 19 (isolation) |
+
+---
+
+## 3. Stateless vs stateful services
+
+![Stateless vs stateful services: shared session store vs sticky sessions](assets/topic-05/stateless_vs_stateful.png)
+
+Whatever the style, each running part is either **stateless**, keeping nothing between requests, or **stateful**, holding data that matters. This one property decides how easily a part can be scaled, deployed, and recovered.
+
+The classic mistake is to keep user sessions in a server's memory:
+
+```java
+// Stateful: the session exists only inside this one server's memory
+final class SessionHolder {
+    private final Map<String, Session> sessions = new ConcurrentHashMap<>();
+    Session find(String sessionId) { return sessions.get(sessionId); }   // null on any other server
+}
 ```
 
-The worst outcome is a **distributed monolith**: services that are separately deployed but so tightly connected that they must be released together, or that call each other back and forth in long synchronous chains. It has the costs of microservices and the coupling of a monolith.
+This works on one server. With twelve, a user who logs in on server 3 appears logged out on server 7. The usual workaround is **sticky sessions**, where the load balancer always sends the same user to the same server, but the picture shows the price: when that server crashes, is scaled in, or is redeployed, its users lose their sessions.
 
-| | Layered monolith | Modular monolith | Microservices |
-|---|---|---|---|
-| Deployable units | One | One | One per service |
-| Calls between parts | In-process | In-process, through module interfaces | Over the network |
-| Data | One shared schema | One database, tables owned per module | One database per service |
-| Scaling | All together | All together | Per service |
-| Failure isolation | None | Limited (same process) | Strong, if calls are designed for failure |
-| Fits best | Small apps, small teams | Most products, most teams | Large organizations whose parts truly differ in scale, pace, or reliability needs |
+The fix is to move the state out of the instances, so that every instance looks the same:
 
-!!! question "Practice: the note-taking app"
-    The note-taking app is built by one team of 6 engineers who release twice a week. Someone proposes splitting it into 8 microservices "to be ready for growth." What would you recommend, and why?
+| Option | How it works | Trade-off |
+|---|---|---|
+| **Shared session store** | Sessions live in Redis or a database that every instance reads. | One extra fast lookup per request, plus a store to run. |
+| **Signed token** | The session data travels with each request in a signed token, such as a JWT, that any instance can verify. | No lookup at all, but a token is hard to revoke before it expires. Covered in Basics 6. |
 
-??? success "Answer"
-    **Stay with a modular monolith.** Six people releasing twice a week are not blocking each other, the traffic (about 19 servers' worth, from Basics 1) is easily handled by one scaled application, and 8 services would multiply deployments, monitoring, and network failure modes with no requirement asking for them. Good module boundaries now make a later split cheap if a real force appears: a much larger team, or one part with a very different scale or reliability need.
+Some parts are stateful by nature: databases, caches, message brokers, and servers that hold open WebSocket connections. You cannot make them stateless, so you treat them differently:
 
-### Level 4: Stateless vs stateful services
+| | Stateless services | Stateful services |
+|---|---|---|
+| Scaling | Add identical instances behind a load balancer. | Split the data across instances (partitioning) and copy it (replication). Basics 12. |
+| An instance crashes | Nothing is lost; the load balancer stops sending it traffic. | Its data must survive on a replica, and something must take over its role. |
+| Deploying | Replace instances one at a time, at any moment. | Move or drain the data and the connections first, then restart carefully. |
+| Where they fit | Application logic: the Link API, the dashboard backend | Data and live connections |
 
-![Stateless vs stateful services](assets/topic-05/stateless_vs_stateful.png)
-
-A **stateless** service keeps nothing about users in its own memory between requests. Everything it needs comes with the request or from a shared store. The Link API from Basics 1 is stateless, which is why the load balancer can send any request to any of its 12 servers, and why servers can be added, removed, or replaced at any time.
-
-A **stateful** service keeps data locally, so requests must reach the specific copy holding that data. Databases, caches, and servers holding open real-time connections are stateful by nature. They need more care: replication so data survives a crash, routing so requests find the right copy, and careful, slower deployments.
-
-The healthy pattern is to **push state into a few well-run stores and keep everything else stateless**. A common mistake is a service that looks stateless but quietly is not: for example, it stores login sessions in local memory. Then the load balancer must use *sticky sessions* (always sending a user to the same server), and when that server restarts, its users are logged out. Moving sessions into a shared store, or into a signed token the client carries, makes the service stateless again.
+**The design rule:** push state down into a few well-run stateful systems, and keep everything above them stateless.
 
 !!! question "Practice: the note-taking app"
-    The note-taking app is adding live collaborative editing: several people type in the same note and see each other's changes instantly over open connections. Which components are stateless and which are stateful, and how should collaboration requests be routed?
+    The note-taking app keeps each user's unsaved draft in the memory of the server handling their requests, with sticky sessions. What happens during a deployment, and how would you fix it?
 
 ??? success "Answer"
-    The Note API is **stateless**. The database and the cache are **stateful**. The collaboration servers are **stateful** too: they hold open connections and the live state of each document being edited.
-
-    All editors of the same note must reach the **same collaboration server**, so route by note ID rather than randomly, and save the document's state frequently, so another server can take over if that one fails.
+    A rolling deployment restarts every server, so every user loses their unsaved draft at some point, and a crash loses the drafts of everyone on that server. Save drafts to a shared store instead: write them to the database every few seconds, or keep them in Redis with an expiry. The servers become stateless, deployments and crashes stop losing work, and sticky sessions are no longer needed.
 
 ---
 
-## 3. Drawing boundaries (Level 5)
+## 4. Drawing boundaries: bounded contexts and ownership
 
-![Bounded contexts in the URL shortener](assets/topic-05/bounded_contexts.png)
+![Bounded contexts: what "link" means in four parts of the URL shortener](assets/topic-05/bounded_contexts.png)
 
-The hardest part of decomposition is not the technology; it is choosing where the lines go. The most reliable guide is the **bounded context**: a region of the business in which every important word has exactly one meaning.
+Whether the boundaries become modules or services, the hard part is **where to draw them**. The most reliable tool comes from domain-driven design: the **bounded context**.
 
-In the URL shortener a year later, the word "link" means an owner, a destination, an expiry date, and tags to the Links team, but only "code → URL" to the redirect path. "Click" means an event with a time, country, and referrer to Analytics, but one unit of usage counted against a paid plan to Billing. A single shared `Link` class serving all four would need every field from every context, and every change to it would ripple through every team. Where a word changes meaning, a boundary probably belongs.
+Look at what the word "link" means in each part of the year-two URL shortener. To link management, a link has an owner, a title, tags, and an expiry date. To the redirect path, a link is just a code and a long URL, nothing else. To analytics, a link is a code plus click counts by day and country. To billing, it is one unit of a plan's quota. Forcing one `Link` class to serve all four creates a class that every team edits and nobody owns. Instead, **each context keeps its own small model**, and the contexts exchange only what they need.
 
-Other useful signals for a good boundary:
+**Signals that a boundary is in the right place:**
 
-- **Data that changes together stays together.** A link and its expiry date are always edited together; a link and its click counts are not.
-- **One team owns it end to end**: the code, the data, the API, and the pager when it breaks. Shared ownership usually means no ownership.
-- **It changes at its own pace.** Billing rules change with every pricing experiment; the redirect logic barely changes at all.
+| A good boundary | A poor boundary |
+|---|---|
+| It follows a **business capability**: "manage links", "serve redirects", "bill customers". | It follows a **technical layer**: a "database service" or a "validation service". |
+| Things that **change together** sit together. | Every feature needs changes in three services at once. |
+| Data that must be **consistent in one transaction** sits together. | A simple operation needs a transaction across services. |
+| **One team** owns it completely. | Two teams share it, or one team's work is spread across many services. |
+| Calls across it are **few and coarse**: "create this link". | Calls across it are many and small: "get the owner", then "get the owner's plan", then "get the plan's limits". |
 
-Signals that a boundary is in the wrong place: most features require coordinated changes in several services, two services call each other many times per request, or two services read and write the same tables.
+!!! warning "The entity-service trap"
+    A very common first attempt makes one service per noun: `LinkService`, `UserService`, `ClickService`, each a thin wrapper around one table. Every real feature then needs several of them, called in sequence, so the services are tightly coupled through constant, chatty calls. Split by what the business **does** (capabilities), not by the nouns in the database.
+
+**Ownership and Conway's law.** Systems tend to copy the communication structure of the teams that build them. If two teams share one service, its code soon develops a seam along the team boundary anyway; if one team owns parts of five services, every feature needs five releases. So design teams and boundaries together: each context should have exactly one owning team that builds it, runs it, and is on call for it. Deliberately shaping teams to get the architecture you want is called the **inverse Conway maneuver**.
 
 !!! question "Practice: the note-taking app"
-    In the note-taking app, list what "note" means to the Notes, Search, Sharing, and Billing areas. What does that suggest about a single shared `Note` class?
+    The note-taking app now has these features: writing and editing notes, sharing notes with other users, full-text search, and a paid plan with storage limits. Propose bounded contexts, and name one word that means different things in two of them.
 
 ??? success "Answer"
-    - **Notes:** the content, title, and version history.
-    - **Search:** a set of words to index and rank.
-    - **Sharing:** a resource with an owner and a list of permissions.
-    - **Billing:** some bytes counted against a storage quota.
+    A reasonable split is **Notes** (writing, editing, and versions), **Sharing** (who can see or edit which note), **Search** (indexing and querying), and **Billing** (plans and storage limits).
 
-    One shared `Note` class would mix four unrelated concerns. Each area should keep its own model and share only an ID and the facts it needs, typically through events such as "note saved."
+    "Note" is a good example. In Notes, it is the full document with its history. In Search, it is a set of searchable words plus an ID. In Billing, it is only a size in bytes that counts against a storage limit. Each context keeps just the fields it needs.
 
 ---
 
-## 4. Data ownership: shared database or one per service (Level 6)
+## 5. Data ownership: shared database or one per service
 
 ![Shared database vs database per service](assets/topic-05/database_ownership.png)
 
-Sharing a database between services is the tightest coupling two services can have. If Analytics reads the Links service's tables directly, then renaming a column in Links breaks Analytics, a slow analytics query can slow down link creation, and nobody can say who owns the table's structure.
+Boundaries in the code mean little if every part still reads every table. **Whoever owns a context owns its data**, and that leaves three practical options:
 
-**Database per service** means each service is the only one allowed to touch its data. Others get what they need in one of two ways:
-
-| Approach | How it works | Trade-off |
+| Option | How it works | Trade-off |
 |---|---|---|
-| **Ask through an API** | Analytics calls the Links service's API to look up a link's owner. | Always current, but adds a network call and a runtime dependency: if Links is down, the lookup fails. |
-| **Keep a local copy from events** | Links publishes a "LinkCreated" event; Analytics stores the fields it needs. | Fast and independent, but the copy can lag behind by a moment (*eventual consistency*). |
+| **Shared tables** | Every module or service reads and writes the same tables. | Easy joins and transactions, but every table becomes a shared contract: one team's column rename breaks another team's code, and one team's heavy query slows everyone. |
+| **Shared server, schema per owner** | One database server, but each owner has its own schema, and nobody reads anyone else's. | The right default for a modular monolith. Ownership is clear, and moving a schema to its own server later is straightforward. |
+| **Database per service** | Each service has its own data store, possibly of a different type. | Full independence, and each store fits its access pattern (key-value for redirects, columnar for analytics), but data must be copied between services, and those copies lag behind. |
 
-The price of database per service is that **cross-service joins and transactions disappear**. Reporting needs data to be copied together somewhere, and a business operation that spans two services needs patterns such as sagas, covered in **Advanced 4 (Distributed Transactions & Consensus)** and **Advanced 6 (Event-Driven Systems & Message Queues)**.
+**When you need data you do not own**, you have three choices:
 
-There is a practical middle ground, especially for a modular monolith: **one database server, one schema per module, and no module touching another's schema**. It is cheap to run, keeps ownership clear, and makes a later split far easier.
+| Choice | Example | Cost |
+|---|---|---|
+| **Ask the owner, synchronously** | The dashboard calls `LinkApi.titlesFor(codes)` when it renders. | Adds a network call and a runtime dependency: if links is down, the dashboard is degraded. |
+| **Keep a local copy, updated by events** | Analytics stores each link's title when it receives `LinkCreated` or `LinkRenamed`. | No runtime dependency, but the copy is briefly out of date, which is called **eventual consistency**. |
+| **Move the boundary** | If two contexts constantly need each other's data in one transaction, they may really be one context. | A redesign, but often the honest fix. |
 
-!!! question "Practice: the note-taking app"
-    The search feature needs the text of every note. Compare reading the notes database directly with keeping a search index updated from "note saved" events. Which would you choose, and what does the user experience as a result?
+!!! warning "Publishing events reliably"
+    "Save to my database, then publish an event" has a gap: if the service crashes between the two steps, the event is lost and every copy is wrong forever. The standard fix, the **outbox pattern**, saves the event in the same database transaction as the change, and a separate process publishes it. It is covered in **Advanced 6 (Event-Driven Systems & Message Queues)**. When an operation must change data in several services, such as "charge the card, then upgrade the plan", it becomes a **saga**: a sequence of local transactions with undo steps if a later step fails, covered in **Advanced 4 (Distributed Transactions & Consensus)**.
+
+!!! question "Practice"
+    The URL shortener's dashboard shows each link's title next to its click count. Titles belong to link management; click counts belong to analytics, in a separate store. Give two ways to build this page, and the trade-off between them.
 
 ??? success "Answer"
-    Reading the notes database directly couples search to the notes schema, and heavy search queries would compete with note saves for database capacity.
+    1. **Compose at read time:** the dashboard asks analytics for the counts and link management for the titles, then joins them in memory. The data is always current, but the page depends on both services being up and fast.
+    2. **Keep a copy:** analytics stores each link's title, updated from `LinkCreated` and `LinkRenamed` events, so one query returns both. The page has a single dependency and is faster, but a renamed link may show its old title for a few seconds.
 
-    **Choose events**: the notes module publishes "note saved," and search updates its own index. The result is that a just-saved note can take a second or two to appear in search results, which is an acceptable trade for most users. The important part is to say that trade-off out loud.
+    For a dashboard, a few seconds of stale titles is acceptable, so the copy is usually the better choice. For something that must be exact, such as a bill, it would not be.
 
 ---
 
-## 5. Finding services and configuring them (Level 7)
+## 6. How services find and configure each other
 
-![Service discovery with a registry](assets/topic-05/service_discovery.png)
+![Service discovery: client-side registry vs server-side stable name](assets/topic-05/service_discovery.png)
 
-Once services call each other, each needs a way to find the others. Hard-coding IP addresses fails as soon as instances are replaced, scaled out, or moved, which in a modern deployment happens daily. **Service discovery** solves this: services are found by *name*, and something keeps the list of healthy addresses for each name up to date.
+Once there is more than one service, two practical problems appear: how a caller finds the instances of a service that keep starting and stopping, and how each service gets the right settings in each environment.
 
-| Shape | How it works | Typical examples |
+**Service discovery.** Hard-coding IP addresses breaks the moment an instance is replaced, so callers use a name, and something keeps that name pointing at healthy instances.
+
+| Approach | How it works | Trade-off | Examples |
+|---|---|---|---|
+| **Client-side discovery** | Instances register with a registry and send heartbeats. The caller asks the registry for the list and picks an instance itself. | No extra network hop, but every caller needs a discovery library, in every language used. | Eureka, Consul |
+| **Server-side discovery** | The caller calls a stable name; a load balancer or platform routes it to a healthy instance. | Callers stay simple. The platform does the work, and adds a small hop. | Kubernetes Services, cloud load balancers |
+| **Service mesh** | A small proxy runs beside every instance and handles discovery, retries, and mTLS for it. | Powerful and language-neutral, but one more complex system to run. | Istio, Linkerd |
+
+All of them depend on **health checks** to remove broken instances, which are covered in **Basics 14 (Availability & Deployment Fundamentals)**, and on the timeout lessons from Basics 4: a discovery system that sends you to a hung instance is only safe if your call has a timeout.
+
+**Configuration management.** The same build should run in every environment, so anything that differs between environments lives outside the code:
+
+```yaml
+# application.yml: one artifact, configured per environment at startup
+links:
+  redirect-cache-ttl: 10m                  # a safe default, kept in the code
+spring:
+  datasource:
+    url: ${DB_URL}                         # different in dev, staging, and production
+    password: ${DB_PASSWORD}               # injected from a secrets manager, never committed to git
+features:
+  custom-domains-enabled: ${CUSTOM_DOMAINS_ENABLED:false}   # a feature flag, off unless switched on
+```
+
+| Kind of setting | Where it lives | Rule |
 |---|---|---|
-| **DNS-based** | The service name resolves to the addresses of healthy instances. | Kubernetes Services |
-| **Client-side registry** | Instances register and send heartbeats; callers ask the registry and pick an instance themselves. | Consul, Eureka |
-| **Server-side** | Callers send requests to a load balancer, which knows the healthy instances. | A cloud load balancer in front of each service |
-| **Sidecar proxy** | A small proxy next to each service does discovery, retries, and encryption for it. | Envoy, often as part of a service mesh such as Istio |
+| Safe defaults | In the code | Change them through code review. |
+| Environment settings, such as addresses and pool sizes | Environment variables or a config service | The same artifact is promoted unchanged from staging to production. |
+| Secrets, such as passwords and API keys | A secrets manager, such as Vault or a cloud equivalent | Never in git, never in logs, and rotated regularly. |
+| Feature flags | A flag service | They switch behavior at runtime without a deployment, which also gives a fast "off switch" for a bad release. |
 
-All of them depend on health checks to remove broken instances, which **Basics 14 (Availability & Deployment Fundamentals)** covers, and on the timeout lessons from **Basics 4**: a discovery list that is a few seconds out of date means callers will occasionally reach an instance that just died.
-
-**Configuration management** answers a related question: where do settings such as database addresses, timeouts, and feature switches live? The widely used rules are:
-
-- **Keep configuration out of the code**, so the same build runs in testing and production with different settings.
-- **Keep secrets out of configuration files**, in a dedicated secrets store, covered in **Basics 6 (API Correctness, Security & Resource Design)**.
-- **Treat configuration changes like code changes**: review them, validate them, and roll them out gradually. A large share of real outages are caused by a bad configuration change pushed everywhere at once.
-- **Use feature flags** for behavior that should change without a deployment, such as turning a new feature on for 5% of users first.
-
-!!! question "Practice: the note-taking app"
-    The attachment size limit is hard-coded at 10 MB. Product now wants 100 MB for premium users, starting with a small group, and the storage bucket's access key is currently in the same configuration file. What would you change?
+!!! question "Practice"
+    A team stores the production database password in `application-prod.yml`, inside the git repository, "because the repository is private". What are two risks, and what is the fix?
 
 ??? success "Answer"
-    - Move the limit into configuration, keyed by plan (10 MB free, 100 MB premium), so it can change without a code change.
-    - Put the premium limit behind a **feature flag** and enable it for a small group first.
-    - Move the bucket access key into a **secrets store**. Configuration files are widely readable and often committed to version control; secrets must not be.
+    First, everyone with read access to the repository, plus every laptop, CI system, and backup that holds a copy, now holds the production password, and git history keeps it forever even after the file is changed. Second, rotating the password requires a code change and a deployment. Store it in a secrets manager, inject it at startup as `${DB_PASSWORD}`, rotate it, and treat the old value as leaked.
 
 ---
 
-## 6. Putting it together: the URL shortener, year two
+## 7. Splitting a monolith safely
 
-![URL shortener in year two](assets/topic-05/url_shortener_year_two.png)
+When a part really does need to become a service, do not rewrite it from scratch. The safest path, called the **strangler fig** after a vine that slowly grows around a tree, moves traffic over gradually:
 
-A year after the design in Basics 1, the URL shortener has grown: users have accounts, paid plans offer custom domains and analytics dashboards, and the team has grown to about 20 engineers. Should it become microservices? Go area by area, and let the forces from section 1 decide:
+```text
+1. MODULARIZE  Give the part a clean module boundary and its own schema, inside the monolith.
+2. ROUTE       Put a router (often the load balancer) in front, so its traffic can be sent elsewhere.
+3. BUILD       Run the new service beside the monolith, behind the same API contract.
+4. SHIFT       Move traffic gradually: 1% -> 10% -> 50% -> 100%, comparing results and errors.
+5. MIGRATE     Move the data to the service's own store, keeping both in sync during the switch.
+6. DELETE      Remove the old module from the monolith. Until this step, rolling back is one config change.
+```
 
-| Area | Scales differently? | Fails differently? | Changes at its own pace? | Verdict |
-|---|---|---|---|---|
-| Links (create, edit, expire) | No: about 80 writes per second | No | Weekly, with product features | Module in the core monolith |
-| Accounts | No | No | Occasionally | Module in the core monolith |
-| Billing | No | No | Often, with pricing experiments | Module in the core monolith, owned by one team |
-| **Redirects** | **Yes: about 8,000 reads per second, 100 times the writes** | **Yes: must keep working when everything else is down** | **Rarely** | **Separate, stateless, read-only service** |
-| **Analytics** | **Yes: a write-heavy event stream** | **Yes: may lag without harming anyone** | Often, with new reports | **Separate service, fed by a queue** |
-
-The result is deliberately modest: **one modular monolith plus two services.** The redirect service is tiny, stateless, and read-only. It answers from its own store of code-to-URL mappings, kept up to date by "LinkCreated" events from the core, so a bad billing release cannot break a single redirect. Analytics consumes click events from the queue that Basics 1 already introduced, at its own pace and on its own data store. Links, Accounts, and Billing share one core database, with a schema per module, because nothing in the numbers asks for more.
-
-Splits like these are done gradually. The usual technique, the *strangler fig* approach, routes a small slice of traffic to the new service, compares results, and moves the rest over once it is proven, while the old code path still works. It is covered in **Advanced 16 (Data Migration & Zero-Downtime Evolution)**.
-
-Notice what would justify the next split: Billing being extracted when it needs a separate release process for compliance, or Links being split when its team grows past what one codebase comfortably supports. Name those triggers, rather than splitting in advance.
+Step 1 does most of the work. A part that cannot be separated cleanly *inside* the monolith will not separate cleanly across a network either. Moving data without downtime is covered in **Advanced 16 (Data Migration & Zero-Downtime Evolution)**.
 
 ---
 
-## 7. Common beginner mistakes
+## 8. Putting it together: the URL shortener, year two
 
-- **Starting with microservices.** Splitting before the boundaries are understood usually puts them in the wrong place, and moving a boundary between services is far harder than moving one between modules.
-- **Splitting by technical layer.** A "database service" and a "validation service" turn every feature into a multi-service change. Split by business area.
-- **Sharing a database between services.** It keeps the coupling of a monolith and adds the costs of distribution.
-- **Building long chains of synchronous calls.** Latency adds up and availability multiplies down; prefer fewer hops, local copies, or asynchronous events.
-- **Calling a service stateless while it keeps sessions in memory.** Sticky sessions hide the problem until a server restarts.
-- **Treating configuration changes as harmless.** Unreviewed configuration pushed everywhere at once is a classic cause of outages.
-- **Having no clear owner.** Every service and every table needs one team that is responsible for it.
+![URL shortener in year two: an extracted redirect service beside a modular monolith](assets/topic-05/url_shortener_year_two.png)
+
+Now apply the forces from section 1 to the year-two requirements. The rule is to split only where a part needs something the rest cannot give it.
+
+| Part | Decision | The need that justifies it |
+|---|---|---|
+| **Redirect service** | Extract as its own small, stateless service, with its own key-value store of code → URL. | It alone needs **99.99%** availability, and it carries **99% of the traffic** (20,000 requests per second against about 250 for everything else). It must keep working when the dashboards, billing, or the main database fail, and it must not be redeployed every time billing ships a change. |
+| **Click workers and analytics store** | Run separately, fed by `LinkClicked` events. | Recording 20,000 clicks per second is write-heavy batch work with a different shape from everything else, and it was already asynchronous in Basics 1. A slow analytics pipeline must never slow down a redirect. |
+| **Links, accounts, billing, and dashboards** | Keep together as one **modular monolith**, with a schema per module. | They share a 99.9% target, a modest load, and frequent features that cross modules (such as "plan limits on links"). Four teams can work in four modules without the cost of four services. |
+
+**How data flows.** Link management owns the links. When a link is created, changed, or deleted, it publishes an event (through an outbox), and the redirect service updates its own key-value copy. The redirect service publishes `LinkClicked` for every redirect, and the click workers aggregate those clicks into the analytics store, which the dashboards module queries through analytics' API rather than its tables. No part reads another part's tables.
+
+**The failure path.**
+
+1. **The main database goes down.** Users cannot create links or view dashboards, but every existing link keeps redirecting, because the redirect service reads only its own store. This is exactly why it was extracted.
+2. **The event bus is delayed.** A brand-new link may not redirect for a few seconds. If that is unacceptable, the redirect service can, on a miss, ask link management directly with a tight timeout. That adds back a runtime dependency on the rarely used miss path only, which is a trade-off worth stating out loud.
+3. **The analytics pipeline falls behind.** Dashboards show slightly old numbers; redirects are unaffected, because events wait safely in the queue.
+
+**Change walkthrough.** A good decomposition keeps each likely change inside one part:
+
+| Change request | What changes | What stays untouched |
+|---|---|---|
+| Add a new plan tier | The billing and accounts modules | The redirect service and analytics |
+| Redirects must work for custom domains | The redirect service's lookup key (domain + code), and the events that feed it | Billing and dashboards |
+| Add a "clicks by device" chart | The click workers and the dashboards module | The redirect service, apart from adding the device to `LinkClicked` |
+| Billing grows to its own team, with weekly compliance releases | Extract the billing module into a service, using the strangler fig steps in section 7 | Everything else, because the module boundary and schema already exist |
+
+The last row is the payoff of the modular monolith: when a new need arrives, the next split is a known, low-risk procedure instead of a rewrite.
+
+!!! tip "The headline to say out loud"
+    "One service is extracted because it alone needs 99.99% availability and carries 99% of the traffic. Everything else stays a modular monolith with strict module boundaries, so any part can be extracted later if a real need appears."
 
 ---
 
-## 8. Test yourself
+## 9. Common beginner mistakes
+
+- **Starting with microservices.** Without several teams or truly different needs, services add network calls, pipelines, and on-call work, and give little back.
+- **A distributed monolith.** If two services must always be changed and deployed together, they are one component paying network costs. Merge them, or move the boundary.
+- **Sharing tables between services.** The schema becomes a hidden contract that no team can change safely.
+- **One service per database table.** Entity services make every feature a chain of chatty calls. Split by business capability instead.
+- **Long chains of synchronous calls.** Five services in a row multiply latency and divide availability. Prefer one coarse call, or an event.
+- **Keeping sessions in instance memory.** It forces sticky sessions and loses users' state on every crash and deployment.
+- **Boundaries without enforcement.** A modular monolith without automated rules quietly turns back into a big ball of mud.
+- **Secrets in the repository.** Use a secrets manager, and inject secrets at startup.
+
+---
+
+## 10. Test yourself
 
 These three problems increase in difficulty. Try each one on paper before opening the answer.
 
-!!! question "Problem 1 (warm-up): name the smell"
-    Name the problem in each situation:
-    1. Three services must always be deployed together, in a specific order.
-    2. The Reports service queries the Orders service's tables directly.
-    3. Users get logged out whenever one particular server restarts.
-    4. Showing one page requires the Profile service to call Settings, which calls Preferences, which calls Settings again.
+!!! question "Problem 1 (warm-up): stateless or stateful?"
+    Classify each, and say how you would scale it: (a) a REST API that reads products from a database; (b) a chat server holding 50,000 open WebSocket connections; (c) PostgreSQL; (d) an image-resizing worker that reads jobs from a queue.
 
 ??? success "Answer"
-    1. A **distributed monolith**: separate deployments with monolith-level coupling.
-    2. A **shared database**: Reports depends on Orders' internal schema.
-    3. **Hidden state**: sessions kept in server memory, so the service is not really stateless.
-    4. **Chatty, circular synchronous calls**: a sign the boundary between Settings and Preferences is in the wrong place.
+    (a) **Stateless**: add instances behind a load balancer. (b) **Stateful**, because each connection lives on one server: scale by adding servers and spreading users across them, and drain connections gracefully during deployments. (c) **Stateful**: add read replicas, then partition the data if writes outgrow one machine. (d) **Stateless**: add workers; the queue holds the state, and any worker can take any job.
 
-!!! question "Problem 2 (numbers): the cost of a chain"
-    A request passes synchronously through 4 services. Each is available 99.9% of the time, does about 20 ms of work, and each network hop adds about 1 ms. What are the availability and latency of the whole request, and what could you change?
+!!! question "Problem 2 (diagnosis): the services that deploy together"
+    A company has `OrderService`, `OrderItemService`, and `OrderPricingService`. Almost every feature needs changes to all three, they are always deployed together in a fixed order, and placing one order takes 9 calls between them. What has gone wrong, and what would you do?
 
 ??? success "Answer"
-    ```text
-    Availability = 0.999⁴ ≈ 99.6%   (about 35 hours of downtime per year, instead of 8.8)
-    Latency      = 4 × (20 ms + 1 ms) = 84 ms
-    ```
+    It is a **distributed monolith**, created by splitting one bounded context (orders) into entity services. The three change together, need consistent data together, and talk constantly, so every signal says they belong to one context.
 
-    Options:
-    - Merge services that are always called together, since they are probably one bounded context.
-    - Call independent services in parallel instead of in sequence.
-    - Replace a synchronous lookup with a local copy kept current by events.
-    - Move work that the user does not wait for onto a queue.
+    Merge them into one `Orders` service, or into one module of a monolith, with one schema, one transaction for placing an order, and in-process calls instead of nine network calls. If something inside orders genuinely needs separating later, such as a pricing engine with a different team and release schedule, split along *that* need, with one coarse call such as `quote(cart)`.
 
-    Each option removes a hop from the chain, which helps both numbers at once.
-
-!!! question "Problem 3 (full design): the note-taking app, year two"
-    The note-taking app now has notes, sharing, billing, full-text search, image attachments up to 100 MB, and live collaborative editing. The team has grown to 30 engineers in 4 teams. Traffic is still about 6,000 reads and 600 writes per second at peak, and up to 50,000 people may be editing collaboratively at once. Propose a decomposition, and justify every split with a force from section 1.
+!!! question "Problem 3 (design): a food-delivery startup"
+    A food-delivery company has 30 engineers in 5 teams: restaurants and menus, ordering and checkout, payments, delivery tracking (driver locations update every 4 seconds from 20,000 active drivers), and notifications. Today everything is one layered monolith, releases happen weekly and often break, and a bug in menu editing recently took down checkout. Propose an architecture for the next year.
 
 ??? success "Answer"
-    **A core modular monolith for notes, sharing, and billing.** Their traffic fits one scaled application, they change together often, and one database with a schema per module keeps transactions simple. Billing gets its own module and owning team.
+    Start by giving every capability a module with its own schema and enforced rules, so the five teams stop tangling. Then split only where a need differs:
 
-    **A separate collaboration service.** It is **stateful**: it holds 50,000 open connections and live document state. It scales by concurrent connections rather than requests per second, and it is routed by note ID. Running it inside the core would mean every core release disconnects every editor.
+    | Part | Decision | Reason |
+    |---|---|---|
+    | **Delivery tracking** | Separate service | 20,000 drivers every 4 seconds is about 5,000 location writes per second, of short-lived data, with a different store (in-memory or time-series) and very different scaling from the rest. |
+    | **Payments** | Separate service | It needs strict security and compliance controls, a small audited surface, and careful releases. |
+    | **Checkout** | Isolate from menu editing | The outage showed that a menu bug can kill revenue. Keep the menu *read* path that checkout needs fast and separate from the menu *editing* tools, for example through a copy of menus updated by events. |
+    | **Notifications** | Asynchronous worker fed by events | Nothing should wait for an SMS. Order events go on a queue, and a worker sends messages. |
+    | **Restaurants, menus, and ordering** | Stay in the modular monolith for now | Moderate load and shared release needs; extract later using the strangler fig if a team needs independence. |
 
-    **A separate search service with its own index.** It needs a different kind of data store and can lag a second or two behind. It is fed by "note saved" events, so a search outage never blocks saving a note.
-
-    **Attachments in object storage, not a new service.** The client uploads straight to storage using a short-lived upload link issued by the core, so 100 MB files never pass through the application servers. Storage types are covered in **Advanced 13 (Storage Types)**.
-
-    That gives **one monolith, two services, and object storage**: four teams can each own an area, and every split exists because of a scaling, state, or failure difference, not because of fashion.
+    The expected outcome: tracking load and payment risk are isolated, a menu bug can no longer break checkout, and the team runs three or four deployable units instead of fifteen. Checkout and payments together need a saga for "charge, then confirm the order, or refund" (Advanced 4).
 
 ---
 
-## 9. Checklist and what comes next
+## 11. Checklist and what comes next
+
+In an interview, architecture style comes up as "would you use microservices here?", or as a follow-up when your diagram grows. A strong answer always names the force behind each boundary: "I split this because it needs X that the rest cannot give it." It also names what that split costs, and what the simpler alternative would have been.
 
 ```text
-[ ] NAME the forces: team size, release pace, scale profile, failure isolation, data ownership
-[ ] START with a modular monolith: business-area modules, small interfaces, owned tables
-[ ] KEEP services stateless; push state into a few well-run stores
-[ ] DRAW boundaries where meanings, data, ownership, or pace of change differ
-[ ] GIVE every service its own data; share through APIs or events, and state the lag
-[ ] FIND services by name through discovery; keep configuration and secrets out of code
-[ ] SPLIT only where the numbers disagree, and name the trigger for the next split
+[ ] START from the forces: teams, differing needs, fault isolation, change rate, operational maturity
+[ ] DEFAULT to a modular monolith: modules by business capability, a schema per module, rules enforced by tests
+[ ] PROTECT business rules with ports and adapters where the rules are worth it
+[ ] KEEP services stateless; push state down into a few well-run stateful systems
+[ ] DRAW boundaries around bounded contexts with one owning team, never around tables or layers
+[ ] OWN data: no reading another context's tables; use APIs, events, or move the boundary
+[ ] SPLIT only where a part needs something the rest cannot give it, and say what the split costs
+[ ] EXTRACT with the strangler fig, keeping a one-step rollback until the end
 ```
 
-This page skipped several topics on purpose. Here is where each one is covered:
+This page skipped several topics on purpose. Here is where each one is covered once you have the right foundations:
 
 | Topic you may have heard about | Where it is covered |
 |---|---|
 | REST vs gRPC, synchronous vs asynchronous calls, and API versioning | Basics 7: API Design & Service Communication |
+| Sessions, cookies, and JWT trade-offs | Basics 6: API Correctness, Security & Resource Design |
 | Load balancers and reverse proxies in front of services | Basics 8: Load Balancing & Proxying |
 | Designing each service's data model | Basics 11: Practical Data Modeling & Query Design |
+| Partitioning and replicating stateful systems | Basics 12: Data Partitioning, Sharding & Replication |
 | Queues and events between services | Basics 13: Asynchronous Processing Basics |
-| Health checks, rolling deployments, and graceful shutdown | Basics 14: Availability & Deployment Fundamentals |
-| Transactions that span services, and sagas | Advanced 4: Distributed Transactions & Consensus |
-| Event-driven architectures and message brokers | Advanced 6: Event-Driven Systems & Message Queues |
+| Health checks, rolling deployments, and availability arithmetic | Basics 14: Availability & Deployment Fundamentals |
+| Sagas and transactions that span services | Advanced 4: Distributed Transactions & Consensus |
+| Event-driven systems and the outbox pattern | Advanced 6: Event-Driven Systems & Message Queues |
 | Circuit breakers and bulkheads between services | Advanced 11: Fault Tolerance, Resilience & Failure Handling |
 | Tracing a request across many services | Advanced 14: Observability, Monitoring & Alerting |
-| Extracting a service without downtime (strangler fig) | Advanced 16: Data Migration & Zero-Downtime Evolution |
-| Serving many customers from shared services | Advanced 19: Multi-Tenancy, Isolation & Fairness |
+| Extracting a service and moving its data without downtime | Advanced 16: Data Migration & Zero-Downtime Evolution |
+| Cells, tenants, and isolating customers from each other | Advanced 19: Multi-Tenancy, Isolation & Fairness |
