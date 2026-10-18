@@ -55,12 +55,12 @@ def panel_title(ax: plt.Axes, x: float, text: str, color: str = NAVY) -> None:
 
 
 def policy_boundary(ax: plt.Axes, x0: float, x1: float, y: float) -> None:
-    """Dashed line separating stable policy (above) from volatile details (below)."""
+    """Dashed line separating business logic (above) from swappable plug-ins (below)."""
     ax.plot([x0, x1], [y, y], color=GREY, linewidth=1.2, linestyle=(0, (5, 4)))
-    ax.text(x0, y + 1.8, "POLICY: stable", ha="left", va="bottom", fontsize=7.5,
-            fontweight="bold", color=NAVY)
-    ax.text(x0, y - 1.8, "DETAILS: volatile", ha="left", va="top", fontsize=7.5,
-            fontweight="bold", color=NAVY)
+    ax.text(x0, y + 1.8, "BUSINESS LOGIC: changes rarely", ha="left", va="bottom",
+            fontsize=7.5, fontweight="bold", color=NAVY)
+    ax.text(x0, y - 1.8, "PLUG-INS: vendors and tools", ha="left", va="top",
+            fontsize=7.5, fontweight="bold", color=NAVY)
 
 
 def lld_interview_framework() -> plt.Figure:
@@ -129,51 +129,52 @@ def coupling_cohesion() -> plt.Figure:
 
 
 SOLID = [
-    ("S", "Single Responsibility", "Who asks for\nthis to change?",
-     "God class: unrelated\nedits collide", NAVY, PALE),
-    ("O", "Open / Closed", "Can a new case be\na new class?",
-     "A switch on a type\ncode keeps growing", BLUE, PALE),
-    ("L", "Liskov Substitution", "Can every subtype\nstand in safely?",
-     "Overrides that throw\nor silently no-op", GREEN, GREEN_FACE),
-    ("I", "Interface Segregation", "Does each client\nuse all of it?",
-     "Stubs that throw\nUnsupportedOperation", AMBER, AMBER_FACE),
-    ("D", "Dependency Inversion", "Can the policy run\nwithout infrastructure?",
-     "new MySqlRepo()\ninside business logic", RED, RED_FACE),
+    ("S", "Single Responsibility", "One class, one job:\none reason to change",
+     "Different teams keep\nediting the same class", NAVY, PALE),
+    ("O", "Open / Closed", "Add new behavior by\nadding a new class",
+     "Every new case means\nediting an if or switch", BLUE, PALE),
+    ("L", "Liskov Substitution", "A subclass must work\nwherever its parent does",
+     "A subclass throws or\ndoes nothing instead", GREEN, GREEN_FACE),
+    ("I", "Interface Segregation", "Keep interfaces small,\nshaped by their callers",
+     "Classes forced to write\nmethods they never use", AMBER, AMBER_FACE),
+    ("D", "Dependency Inversion", "Depend on interfaces,\nnot on vendors or tools",
+     "Business code calls\nnew TwilioClient() itself", RED, RED_FACE),
 ]
 
 
 def solid_principles() -> plt.Figure:
     fig, ax = canvas(15, 6.6)
-    heading(ax, "SOLID: Five Questions About the Shape of Change",
-            "Ask the question, look for the smell; the principle names the fix")
-    card_row(ax, SOLID, ("ASK", "SMELL"))
+    heading(ax, "SOLID: Five Rules That Keep Changes Small",
+            "Each rule in plain words, and the warning sign that it is being broken")
+    card_row(ax, SOLID, ("RULE", "WARNING SIGN"))
     return fig
 
 
 def dependency_inversion() -> plt.Figure:
     fig, ax = canvas(14, 6.6)
-    heading(ax, "Dependency Inversion: Flip the Arrow Across the Boundary",
-            "Source dependencies point toward policy; at runtime, calls still reach the database")
+    heading(ax, "Dependency Inversion: The Business Code Owns the Interface",
+            "Vendors plug in from below, so they can be swapped, or faked in tests")
     ax.plot([46, 46], [4, 82], color=LINE, linewidth=1.5)
-    panel_title(ax, 23, "BEFORE: policy depends on detail", RED)
-    panel_title(ax, 73, "AFTER: detail depends on policy's interface", GREEN)
+    panel_title(ax, 23, "BEFORE: business code depends on the vendor", RED)
+    panel_title(ax, 73, "AFTER: the vendor plugs into an interface", GREEN)
 
-    box(ax, 12, 52, 22, 13, "OrderService", "business rules")
-    box(ax, 12, 20, 22, 13, "MySqlOrderRepo", "infrastructure", face=RED_FACE, edge=RED)
+    box(ax, 12, 52, 22, 13, "NotificationService", "business logic")
+    box(ax, 12, 20, 22, 13, "TwilioClient", "SMS vendor's library", face=RED_FACE, edge=RED)
     arrow(ax, (23, 51.5), (23, 33.5), color=RED)
-    ax.text(24.5, 42.5, "imports + new", ha="left", va="center", fontsize=8, color=RED)
-    ax.text(23, 9, "Untestable without MySQL;\nswapping stores edits the policy",
+    ax.text(24.5, 42.5, "new TwilioClient(...)", ha="left", va="center", fontsize=8, color=RED)
+    ax.text(23, 9, "Can't test without sending real texts;\nswitching vendor means editing the service",
             ha="center", va="center", fontsize=8.5, color=RED, linespacing=1.4)
 
     policy_boundary(ax, 49, 98, 43)
-    box(ax, 50, 52, 20, 13, "OrderService", "business rules")
-    box(ax, 76, 52, 20, 13, "OrderRepository", "interface owned by policy", edge=NAVY)
-    arrow(ax, (70.5, 58.5), (75.5, 58.5), color=NAVY)
-    box(ax, 50, 18, 20, 13, "InMemoryOrderRepo", "test fake", face=WHITE)
-    box(ax, 76, 18, 20, 13, "MySqlOrderRepo", "production", face=GREEN_FACE, edge=GREEN)
-    arrow(ax, (86, 31.5), (86, 51.5), color=GREEN, dashed=True)
-    arrow(ax, (60, 31.5), (80, 51.5), color=BLUE, dashed=True)
-    ax.text(73, 7, "Both arrows cross the line upward: details depend on policy",
+    box(ax, 50, 52, 18, 13, "NotificationService", "business logic")
+    box(ax, 74, 52, 22, 13, "Sender", "interface the service owns", edge=NAVY)
+    arrow(ax, (68.5, 58.5), (73.5, 58.5), color=NAVY, label="uses")
+    box(ax, 58, 18, 17, 13, "SmsSender", "wraps Twilio", face=GREEN_FACE, edge=GREEN)
+    box(ax, 80, 18, 16, 13, "FakeSender", "used in tests", face=WHITE)
+    arrow(ax, (66.5, 31.5), (80, 51.5), color=GREEN, dashed=True)
+    arrow(ax, (88, 31.5), (88, 51.5), color=BLUE, dashed=True)
+    ax.text(89.5, 37, "implements", ha="left", va="center", fontsize=7.5, color=GREY)
+    ax.text(73, 7, "Both plug-ins point UP at the interface: that flip is the \"inversion\"",
             ha="center", va="center", fontsize=8.5, fontweight="bold", color=GREEN)
     return fig
 
@@ -257,7 +258,7 @@ def design_smells() -> plt.Figure:
 
 def notification_architecture() -> plt.Figure:
     fig, ax = canvas(15, 7.6)
-    heading(ax, "Notification Service: Stable Policy, Replaceable Details",
+    heading(ax, "Notification Service: Business Logic Above, Plug-ins Below",
             "New channels plug in below the line; nothing above it is edited")
     box(ax, 6, 60, 21, 13, "PreferencePolicy", "opt-outs, quiet hours")
     box(ax, 39.5, 60, 21, 13, "NotificationService", "orchestrates only", face=MIST)

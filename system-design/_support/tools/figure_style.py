@@ -52,10 +52,11 @@ def render(figures: dict[str, Callable[[], plt.Figure]], topic: str,
 
 def badge(ax: plt.Axes, x: float, y: float, text: str, *, color: str = NAVY,
           size: float = 7.5) -> None:
-    """Draw a small numbered disc that stays round on any canvas aspect ratio."""
+    """Draw a numbered disc that is round on any aspect ratio and the same
+    diameter whatever the label length ("1" and "FM" match)."""
+    ax.plot(x, y, marker="o", markersize=size * 2.3, color=color, zorder=3)
     ax.text(x, y, text, ha="center", va="center", fontsize=size,
-            fontweight="bold", color=WHITE, zorder=4,
-            bbox=dict(boxstyle="circle,pad=0.3", facecolor=color, edgecolor=color))
+            fontweight="bold", color=WHITE, zorder=4)
 
 
 def canvas(width: float = 14, height: float = 6) -> tuple[plt.Figure, plt.Axes]:
@@ -166,13 +167,11 @@ def card_row(
     Each card shows a coloured badge, a navy name, and two labelled sections,
     e.g. ASK/SMELL or USE WHEN/COST. Sized for a 15 x 6.6 canvas.
     """
-    for index, (badge, name, first, second, color, face) in enumerate(cards):
+    for index, (badge_text, name, first, second, color, face) in enumerate(cards):
         x = 3 + index * 19.2
         centre_x = x + 8.5
         box(ax, x, 8, 17, 64, "", face=face, edge=color)
-        ax.add_patch(Circle((centre_x, 79), 3.6, facecolor=color, edgecolor=color))
-        ax.text(centre_x, 79, badge, ha="center", va="center", fontsize=14,
-                fontweight="bold", color=WHITE)
+        badge(ax, centre_x, 79, badge_text, color=color, size=14)
         ax.text(centre_x, 64, name, ha="center", va="center", fontsize=10.5,
                 fontweight="bold", color=NAVY)
         ax.plot([x + 3, x + 14], [58, 58], color=LINE, linewidth=1.2)

@@ -297,15 +297,15 @@ This habit is called **"tell, don't ask."** A related rule, the *Law of Demeter*
 
 ## 4. SOLID, one letter at a time (Level 6)
 
-![Five SOLID principles framed as questions about change](assets/topic-02/solid_principles.png)
+![Five SOLID rules, each with its warning sign](assets/topic-02/solid_principles.png)
 
-SOLID is a set of five guidelines for keeping change local. Each letter is best remembered as a question you ask about your code, and each one has a typical symptom, or *smell*, that tells you it is being broken. The sections below apply each letter to the notification service.
+SOLID is five rules for keeping classes easy to change. The picture gives each rule in plain words, plus the warning sign that it is being broken. Below, each rule is applied to the notification service, followed by one common trap.
 
 ### S: Single Responsibility
 
-**A class should have only one reason to change.** The useful way to apply this is to ask *who* would ask for the class to change.
+**Rule: a class should have one job, so only one kind of request makes it change.** A quick test is to ask *who* would ask for the class to change.
 
-The original `NotificationManager` is changed by three different groups: the marketing team edits message wording, the product team edits opt-out rules, and the operations team switches SMS providers. Their edits collide in one file. The fix gives each group its own class, and keeps one small class that coordinates them:
+Three different teams change the original `NotificationManager`: marketing edits the message wording, product edits the opt-out rules, and operations switches SMS providers. All of their edits land in the same file. The fix gives each team its own class, plus one small class that coordinates them:
 
 ```java
 final class PreferencePolicy  { Set<Channel> allowedChannels(User user) { ... } }      // product team
@@ -314,37 +314,29 @@ final class SmsSender implements Sender { ... }                                 
 final class NotificationService { /* coordinates the others, shown in section 6 */ }
 ```
 
-**Trap:** single responsibility does not mean "one method per class". Methods that protect the same rule belong together. Splitting them across many files scatters one rule, which is the opposite of the goal.
+**Trap:** one job does not mean one method. Methods that protect the same rule belong together in one class.
 
 ### O: Open/Closed
 
-**A class should be open for extension but closed for modification.** In plain words, a new case should arrive as a new class, without editing code that is already tested.
+**Rule: add new behavior by adding new code, not by editing code that already works.**
 
-Level 3 already achieved this for channels. Adding WhatsApp means writing a `WhatsAppSender` class and adding one entry where the senders are wired together. The `NotificationService` itself is not edited.
+Level 3 already did this for channels. Adding WhatsApp means writing a new `WhatsAppSender` class and registering it with the other senders. `NotificationService` itself is not edited.
 
-**Trap:** only build extension points for changes you have real evidence for. The product team has asked for new channels, so a channel extension point is justified. Adding extension points for changes nobody has asked for is guessing, and that breaks YAGNI (Level 7).
+**Trap:** only build this flexibility where change is actually expected. New channels really have been requested, so it is worth it here. Building it "just in case" breaks YAGNI (Level 7).
 
 ### L: Liskov Substitution
 
-**Any implementation must be usable wherever its interface is expected, without surprising the caller.** Matching the method signatures is the easy part. What matters is that every implementation *behaves* the way the contract promises.
+**Rule: an implementation must work anywhere its interface, or parent class, is expected, without surprising the caller.** Having the right method names is not enough; it must also *behave* the way the interface promises.
 
-The `Sender` contract promises that `send` returns `RETRYABLE_FAILURE` for temporary problems, such as a timeout, and `PERMANENT_FAILURE` for problems that will never succeed, such as an invalid phone number. Imagine an `SmsSender` that returns `PERMANENT_FAILURE` on a timeout, or throws the provider's exception instead of returning a result. The code still compiles, but the retry logic now gives up on messages it should have retried. That implementation cannot be safely substituted for a `Sender`.
+The `Sender` interface promises to return `RETRYABLE_FAILURE` for temporary problems, such as a timeout. Imagine an `SmsSender` that returns `PERMANENT_FAILURE` on a timeout instead. The code still compiles, but the retry logic now gives up on messages it should have retried. That `SmsSender` breaks the rule.
 
-The other common symptom is a method that an implementation cannot support. If `Sender` also had a `recall(messageId)` method for "unsending" a message, `EmailSender` would have to throw `UnsupportedOperationException`, because an email cannot be unsent. Any caller that trusts the interface would crash. The fix is to model capabilities honestly: keep `recall` in a separate `Recallable` interface that only channels which support it implement.
+The classic interview example is `Square extends Rectangle`. Code that sets a rectangle's width and then its height expects both values to stick, but a square must keep its sides equal, so it quietly changes the other side too.
 
-The classic interview example is `Square extends Rectangle`. Code that sets a rectangle's width and then its height expects both values to stick, but a square must keep its sides equal, so it silently changes the other side and surprises the caller.
-
-??? info "Go deeper (optional): the four formal substitution rules"
-    | Rule | Meaning | Violation example |
-    |---|---|---|
-    | Preconditions | An implementation cannot demand more from callers than the interface does. | The interface accepts any message, but one implementation rejects messages over 160 characters. |
-    | Postconditions | An implementation cannot promise less than the interface does. | The interface guarantees a result, but one implementation returns `null`. |
-    | Invariants | An implementation must keep every rule the interface keeps true. | A `Square` breaks the rectangle rule that width and height can change independently. |
-    | Exceptions | An implementation cannot add new ways to fail. | The interface never throws on `send`, but one implementation throws `UnsupportedOperationException`. |
+**Warning sign:** a subclass that throws "not supported" or does nothing, where its parent does real work.
 
 ### I: Interface Segregation
 
-**No caller should be forced to depend on methods it does not use.** Interfaces should be shaped around what each kind of caller actually needs.
+**Rule: keep interfaces small, so no class depends on methods it does not use.**
 
 Suppose `Sender` grew over time to include everything anyone asked for:
 
@@ -362,15 +354,15 @@ interface Recallable  { void recall(String messageId); }
 interface StatsSource { DeliveryStats monthlyStats(); }
 ```
 
-One class may still implement several of these interfaces. The point is that the `NotificationService` depends only on `send`, so it is not affected when the analytics team changes its statistics methods.
+Now `NotificationService` depends only on `send`, so it is unaffected when the analytics team changes its statistics methods. One class can still implement several of these small interfaces.
 
-**Trap:** split interfaces by what callers need, not mechanically by method. A codebase where every interface has exactly one method is just as hard to work with as one giant interface.
+**Trap:** split by what callers need, not into one method per interface. Hundreds of one-method interfaces are as hard to work with as one giant one.
 
 ### D: Dependency Inversion
 
-**Business logic should depend on interfaces it owns, not on concrete infrastructure.** Infrastructure, such as databases and third-party providers, then plugs in behind those interfaces.
+**Rule: business code should depend on interfaces it owns, not directly on vendors, databases, or other tools.**
 
-The original `NotificationManager` creates `new TwilioClient(API_KEY)` itself. That welds the business logic to Twilio, makes it impossible to test without sending real text messages, and means switching providers requires editing the business logic. The fix is to depend on the `Sender` interface and receive the implementations from outside, through the constructor:
+The original `NotificationManager` calls `new TwilioClient(API_KEY)` itself. So it cannot be tested without sending real text messages, and switching SMS vendor means editing it. The fix is to depend on the `Sender` interface and pass the real implementations in from outside:
 
 ```java
 final class NotificationService {
@@ -383,11 +375,11 @@ final class NotificationService {
 // In production, the wiring passes real senders. In tests, it passes a FakeSender.
 ```
 
-The diagram below shows the same move in its most common form, with a database instead of a notification provider. Before the change, the business logic points at MySQL. After it, both the real MySQL repository and an in-memory test fake point up at an interface that belongs to the business logic.
+![Dependency inversion: before, the service depends on Twilio; after, SmsSender and FakeSender both plug into the service's Sender interface](assets/topic-02/dependency_inversion.png)
 
-![Dependency inversion: before, policy depends on MySQL; after, both adapters depend on a policy-owned interface](assets/topic-02/dependency_inversion.png)
+Look at the arrows in the picture. Before, the business code points *down* at the vendor. After, the vendor code (`SmsSender`) points *up* at an interface the business code owns. That flip is the "inversion", and it is why a `FakeSender` can stand in during tests.
 
-**Trap:** the interface must be shaped by what the business logic needs, such as `send(notification)`, not copied from the provider's API, such as `sendText(apiKey, from, to, body)`. An interface that mirrors one vendor adds a layer without removing the dependency. Also note that *dependency injection* (passing dependencies in through the constructor) is just the technique used to wire this design; the principle is about which way the dependency points.
+**Trap:** shape the interface around what the business code needs, such as `send(notification)`, not around one vendor's API, such as `sendText(apiKey, from, to, body)`. Passing dependencies in through the constructor is called *dependency injection*; it is the technique that makes this rule easy to follow.
 
 !!! question "Practice: which SOLID letter does each snippet break?"
     1. `class InvoiceService { Money calculate(...); void saveToDatabase(...); void emailPdf(...); }`
