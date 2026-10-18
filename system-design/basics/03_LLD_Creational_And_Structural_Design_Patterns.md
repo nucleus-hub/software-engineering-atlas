@@ -423,12 +423,12 @@ class PaymentService {                                         // the facade
 
 ### Proxy: control access to the real object
 
-**What it is:** a proxy stands in for the real object, with exactly the same methods, and decides *when* or *whether* the real object is used. The calling code cannot tell the difference.
+**What it is:** a proxy is a class that stands in for another object, offering the exact same methods, and controls when that real object gets used. Anything calling the proxy cannot tell it apart from the real object, except that the real work may happen later, or not at all. Think of a stunt double on a film set: the double looks like the real actor and stands in for them, and the real actor only appears for the scenes that truly need them.
 
-**When it helps.** A product page shows 100 high-resolution images, but most customers only look at the first few. Loading all 100 from disk up front is slow and wasteful. A proxy loads each image only when it is shown for the first time:
+**When it helps.** A product page shows 100 high-resolution images, but most customers only ever scroll past the first few. One option is to load all 100 images from disk the moment the page opens, but that wastes time loading images nobody looks at. A proxy fixes this: it looks exactly like a real image to the page, but only loads the actual file the first time it is shown:
 
 ```java
-class LazyImage implements Image {                 // the proxy: the same interface as the real image
+class LazyImage implements Image {                 // the proxy: same interface as the real image
     private final String fileName;
     private Image real;                            // not loaded yet
 
@@ -438,12 +438,14 @@ class LazyImage implements Image {                 // the proxy: the same interf
 
     public void show() {
         if (real == null) {
-            real = new HighResImage(fileName);     // load from disk only the first time
+            real = new HighResImage(fileName);     // load from disk, but only the first time
         }
-        real.show();
+        real.show();                                // every other time, this reuses the image already loaded
     }
 }
 ```
+
+The page calls `show()` on a `LazyImage` exactly as it would on a real one. The first call loads the file from disk; every call after that just shows the image that is already loaded.
 
 Proxies are also used to check permissions before a call, to cache results, and to make a call to another server look like an ordinary method call.
 
