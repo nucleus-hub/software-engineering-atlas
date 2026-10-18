@@ -326,13 +326,39 @@ Polymorphism (section 2) already did this for channels. Adding WhatsApp means wr
 
 ### L: Liskov Substitution
 
-**Rule: an implementation must work anywhere its interface, or parent class, is expected, without surprising the caller.** Having the right method names is not enough; it must also *behave* the way the interface promises.
+**Rule: if code works with a parent class (or an interface), it must keep working when you hand it any subclass (or implementation).** The subclass can do things differently, but it must not break what the caller expects.
 
-The `Sender` interface promises to return `RETRYABLE_FAILURE` for temporary problems, such as a timeout. Imagine an `SmsSender` that returns `PERMANENT_FAILURE` on a timeout instead. The code still compiles, but the retry logic now gives up on messages it should have retried. That `SmsSender` breaks the rule.
+**Example 1: the square that breaks a rectangle.** In geometry a square *is* a rectangle, so `Square extends Rectangle` looks reasonable. Now look at code written for rectangles:
 
-The classic interview example is `Square extends Rectangle`. Code that sets a rectangle's width and then its height expects both values to stick, but a square must keep its sides equal, so it quietly changes the other side too.
+```java
+void stretch(Rectangle shape) {
+    shape.setWidth(5);
+    shape.setHeight(10);
+    System.out.println(shape.area());   // a Rectangle prints 50
+}
 
-**Warning sign:** a subclass that throws "not supported" or does nothing, where its parent does real work.
+stretch(new Square());   // prints 100: setHeight(10) also changed the width to 10
+```
+
+A square must keep its sides equal, so `setHeight(10)` quietly sets the width to 10 as well. The code compiles, but `stretch` now gets the wrong answer. A `Square` cannot safely stand in for a `Rectangle`, so it should not extend it. The fix is the one from the polymorphism practice question: make both implement a `Shape` interface with an `area()` method.
+
+**Example 2: a sender that breaks the retry logic.** `NotificationService` relies on a promise every `Sender` makes: a temporary problem, such as a timeout, comes back as `RETRYABLE_FAILURE`.
+
+```java
+// NotificationService trusts that promise
+if (sender.send(notification) == SendResult.RETRYABLE_FAILURE) { retry(); }
+
+// A broken SmsSender
+catch (TimeoutException e) {
+    return SendResult.PERMANENT_FAILURE;    // wrong: a timeout is temporary
+}
+```
+
+Nothing crashes, and it compiles. But every SMS that times out is now given up on, instead of retried, so users silently miss messages. The `SmsSender` has the right method, but it breaks the promise behind it.
+
+The penguin from the composition section is the same mistake: code that calls `fly()` on any `Bird` crashes when it gets a `Penguin`.
+
+**Quick test:** could you swap in this subclass without the caller noticing? If the caller needs an `if` to handle it specially, or would get a wrong result, the rule is broken.
 
 ### I: Interface Segregation
 
