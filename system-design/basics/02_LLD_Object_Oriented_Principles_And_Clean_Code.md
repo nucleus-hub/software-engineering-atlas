@@ -197,15 +197,22 @@ Adding WhatsApp is now a new `WhatsAppSender` class plus one extra entry in the 
 
 ### Level 4: Composition over inheritance
 
-**Inheritance** creates an *is-a* relationship: a subclass reuses its parent's code and promises to behave like its parent everywhere. **Composition** creates a *has-a* relationship: an object holds another object and hands work over to it.
+There are two ways for one class to reuse another's code:
 
-The classic illustration is a bird that can fly, and a penguin that cannot:
+- **Inheritance (*is-a*):** `RetryingEmailSender extends EmailSender`. The new class *is* an email sender, plus some extra code.
+- **Composition (*has-a*):** a class *holds* another object and passes work to it. `NotificationService` *has* a `RetryPolicy`.
 
-![Comparison of inheritance and composition for flight behavior](assets/topic-02/composition_vs_inheritance.png)
+**The problem with inheritance.** Suppose failed sends should be retried. With inheritance, every sender needs a retrying subclass. Then someone adds logging the same way:
 
-If `Penguin extends Bird` and overrides `fly()` to throw an exception, any code that calls `bird.fly()` on a list of birds crashes on the penguin. With composition, a bird *has* a flight behavior, and a penguin is simply a bird given `NoFlight`. No method is overridden, and nothing breaks.
+```text
+EmailSender   RetryingEmailSender   LoggingEmailSender   RetryingLoggingEmailSender
+SmsSender     RetryingSmsSender     LoggingSmsSender     RetryingLoggingSmsSender
+PushSender    RetryingPushSender    LoggingPushSender    RetryingLoggingPushSender
+```
 
-The notification service runs into the same problem when we add retries. Suppose temporary failures, such as timeouts, should be retried a few times. Inheritance tempts us towards `RetryingEmailSender extends EmailSender`, then `RetryingSmsSender`, then `RetryingPushSender`. If logging is added later in the same way, the number of classes doubles again. Composition avoids that explosion: we write one `RetryPolicy` class, and the service *has* one:
+Three channels and two extras already make 12 classes, and the retry code is copied into six of them. Every new channel, or new extra, multiplies the count again.
+
+**The composition fix.** Write the retry logic once, in its own class, and let the service hold one:
 
 ```java
 final class RetryPolicy {
@@ -216,11 +223,21 @@ final class RetryPolicy {
         // Call attempt.get() again while the result is RETRYABLE_FAILURE, up to maxAttempts times.
     }
 }
+
+// Inside NotificationService, which has a RetryPolicy, any send can be retried:
+retryPolicy.run(() -> sender.send(notification));
 ```
 
-One `RetryPolicy` now works with every sender, including senders that do not exist yet, and changing the retry rules means editing exactly one class.
+`RetryPolicy` does not know or care which sender it is retrying. The three senders stay simple, one retry class replaces six retrying subclasses, and changing the retry rules means editing exactly one place. Logging can be added the same way.
 
-Inheritance is still the right tool when the relationship is a true *is-a*, the hierarchy is shallow (one or two levels), and every subclass keeps every promise its parent makes. A quick test: if you are about to override a method just to throw an exception or do nothing, the relationship was never *is-a*, so use composition instead.
+**A warning sign.** Inheritance also goes wrong when a subclass cannot keep its parent's promises. The classic example is a penguin:
+
+![Comparison of inheritance and composition for flight behavior](assets/topic-02/composition_vs_inheritance.png)
+
+If `Penguin extends Bird` and overrides `fly()` to throw an exception, any code that loops over birds and calls `fly()` crashes on the penguin. With composition, a bird *has* a flight behavior, and a penguin simply gets `NoFlight`.
+
+!!! tip "When inheritance is fine"
+    Use inheritance when all three are true: the subclass really *is* a kind of its parent, it keeps every promise the parent makes, and the hierarchy is shallow (one or two levels). If you are about to override a method just to throw an exception or do nothing, use composition instead.
 
 ??? info "Go deeper (optional): the fragile base class problem"
     Inheritance ties a subclass to its parent's *implementation*, not just its interface. This example, from the book *Effective Java*, tries to count how many items are added to a set:
@@ -248,24 +265,37 @@ Inheritance is still the right tool when the relationship is a true *is-a*, the 
 
 ![Quadrant of coupling against cohesion with the modular quadrant as the goal](assets/topic-02/coupling_cohesion.png)
 
-Coupling and cohesion are the two measurements behind almost every design principle.
+Both ideas answer one question: **when something changes, how many places must you edit?**
 
-- **Cohesion** asks whether the code inside one class belongs together. A class has high cohesion when everything in it serves one purpose and changes for the same reason.
-- **Coupling** asks how much one class knows about another. Two classes are tightly coupled when a change in one forces a change in the other.
+| | What it asks | Quick test |
+|---|---|---|
+| **Cohesion** (inside one class) | Does everything in this class belong together? | Can you describe the class in one sentence without saying "and"? |
+| **Coupling** (between classes) | How much does this class depend on the details of other classes? | When one detail changes, how many classes must be edited? |
 
-The goal is the green quadrant: high cohesion and low coupling, so that every change stays local. The original `NotificationManager` sits in the red quadrant. It mixes SMTP, Twilio, Firebase, and preference rules in one class (low cohesion), and it creates those dependencies directly, so it is welded to all of them (high coupling). After Levels 1 to 4, each class has one job, and classes talk to each other only through small interfaces such as `Sender`.
+You want **high cohesion and low coupling**, the green quadrant: each class does one job, and classes depend on each other only through small interfaces. Here is what that difference looks like for real change requests:
 
-A practical habit that reduces coupling is **"tell, don't ask"**: instead of pulling data out of an object to make a decision elsewhere, ask the object that owns the data to make the decision.
+| Change request | Before: one `NotificationManager` | After the full refactoring (section 6) |
+|---|---|---|
+| Replace Twilio with another SMS provider | Edit `NotificationManager`. It also holds the email and push code, so all three channels need retesting. | Edit only `SmsSender`. |
+| Add a "quiet hours" rule | Edit `NotificationManager` again. | Edit only `PreferencePolicy`. |
+| Add WhatsApp | Edit `NotificationManager` again. | Add a `WhatsAppSender`, and edit nothing else. |
+
+Before, every change lands in the same class. It fails the "no *and*" test (low cohesion), and it creates the SMTP, Twilio, and Firebase clients itself, so it depends on all three (high coupling). After, each change lands in one small class.
+
+**A common source of coupling: chains of getters.** Coupling often hides in code like this:
 
 ```java
-// Ask: the caller must know how users store their settings, three levels deep
+// The caller must know that a user has settings, which have notification settings, which have an SMS flag
 if (user.getSettings().getNotificationSettings().isSmsEnabled()) { ... }
-
-// Tell: the user owns the rule, and the caller only states what it wants to know
-if (user.allows(Channel.SMS)) { ... }
 ```
 
-A long chain of getters is coupling you can see. If the way settings are stored ever changes, every caller with a chain like that breaks. This guideline is also known as the *Law of Demeter*: talk to the objects you hold directly, not to the objects inside them.
+This caller depends on three levels of another object's structure. If settings are ever stored differently, every caller written like this breaks. The fix is to ask the object that owns the data to answer the question:
+
+```java
+if (user.allows(Channel.SMS)) { ... }     // only User knows how its settings are stored
+```
+
+This habit is called **"tell, don't ask."** A related rule, the *Law of Demeter*, says the same about getter chains: talk to the objects you hold, not to the objects inside them.
 
 ??? info "Go deeper (optional): the kinds of coupling, from worst to best"
     | Kind of coupling | What it looks like |
