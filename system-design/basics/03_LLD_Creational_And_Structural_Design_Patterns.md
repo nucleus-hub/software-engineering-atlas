@@ -609,9 +609,20 @@ PaymentGateway adyen  = withPolicies(new AdyenAdapter(adyenClient));
 GatewayRegistry gateways = new GatewayRegistry(Map.of(US, stripe, IN, stripe, DE, adyen));
 ```
 
-Three details are worth saying out loud. `withPolicies` builds every chain in one place, so the wrapper order is written down once instead of copied per provider. The registry copies its map and fails loudly for an unknown country, so a missing entry is caught on the first request rather than causing a `NullPointerException` deep inside checkout. And there is no Proxy here: nothing controls access or lifecycle, and adding one just to use the name would be pattern worship.
+Three things in the code above are worth pointing out:
 
-**Failure path.** A timeout from Stripe comes back from the adapter as a retryable result. `AuditingGateway` records it, and `RetryingGateway` tries again with the **same idempotency key**, so Stripe treats any duplicate as the same charge. A card decline is permanent: it is audited once and returned immediately. If an adapter ever reported a decline as success, every wrapper above it would faithfully pass on the wrong answer. The chain is only as correct as its lowest link, which is why every adapter should be tested against the same list of expected results, such as "a timeout is retryable" and "a decline is permanent".
+- `withPolicies` builds the whole decorator chain in one place. Both `stripe` and `adyen` are wrapped the same way, so the order (retry outside, audit inside) is written down once, instead of being copied for every provider.
+- `GatewayRegistry` copies the map it is given, and throws `UnsupportedCountryException` instead of returning `null` for a country it does not know. A missing country is caught on the very first request, not as a `NullPointerException` deep inside checkout.
+- There is no Proxy in this design, and that is deliberate. Nothing here needs to control *when* or *whether* the real gateway is created, so adding a proxy would only be adding a class to use the name.
+
+**Failure path.** Here is what happens when a charge does not succeed on the first try:
+
+1. Stripe times out, and `StripeAdapter` turns that into a retryable `ChargeResult`.
+2. `AuditingGateway` records the attempt, then passes the result up.
+3. `RetryingGateway` tries again, using the **same request**, so Stripe sees the same idempotency key and treats the retry as the same charge, not a new one.
+4. A declined card is different: it is a permanent failure, so it is audited once and returned immediately, with no retry.
+
+This only works if every adapter classifies failures the same way. If one adapter ever reported a decline as a success, every decorator above it would pass that wrong answer straight through. That is why every adapter should be tested against the same expected results, such as "a timeout is retryable" and "a decline is permanent".
 
 ### Change walkthrough
 
