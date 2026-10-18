@@ -368,20 +368,31 @@ The rest of your code only ever sees `PaymentGateway`. If Stripe changes its SDK
 ```java
 class RetryingGateway implements PaymentGateway {     // the same interface as the object it wraps
     private final PaymentGateway inner;               // the gateway being wrapped
-    private final RetryPolicy policy;
+
+    RetryingGateway(PaymentGateway inner) {
+        this.inner = inner;
+    }
 
     public ChargeResult charge(ChargeRequest request) {
-        return policy.execute(() -> inner.charge(request));   // call the inner gateway, retrying temporary failures
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            ChargeResult result = inner.charge(request);     // try the real gateway
+            if (!result.isTimeout()) {
+                return result;                                // approved, or declined for a real reason: stop here
+            }
+        }
+        return ChargeResult.declined("gateway timed out 3 times");   // out of attempts
     }
 }
 ```
+
+Each attempt calls the wrapped gateway. If it times out, the loop tries again; anything else (approved, or declined for a real reason) is returned straight away.
 
 Because every decorator has the same interface as the object it wraps, you can stack them, each one adding a single feature:
 
 ```java
 PaymentGateway gateway = new StripeAdapter(stripeClient);    // talks to Stripe
 gateway = new AuditingGateway(gateway, auditLog);            // + records every attempt
-gateway = new RetryingGateway(gateway, retryPolicy);         // + retries temporary failures
+gateway = new RetryingGateway(gateway);                      // + retries temporary failures
 ```
 
 Checkout receives `gateway` and has no idea how many layers it has. Each feature lives in its own small class, and adding or removing one is a one-line change.
