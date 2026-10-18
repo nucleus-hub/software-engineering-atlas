@@ -498,18 +498,17 @@ Two worked instances:
 
 ### How patterns fail in practice
 
-
-| Failure | How you spot it | Fix | Guardrail for next time |
-|---|---|---|---|
-| A factory that only ever builds one kind of object. | The factory has a single branch and has never grown. | Inline it, and use a constructor. | Add a factory only when a second variant is real or contracted. |
-| A singleton holding mutable state. | Flaky tests that depend on run order, or race conditions under load. | Make the state immutable, or create one instance at the root and inject it. | Treat any global mutable state as a design smell in review. |
-| Decorators wrapped in the wrong order. | Audit logs, metrics, or caches show the wrong number of entries. | Reorder the chain, and write a test that pins the expected behavior. | Build every chain in one place, with a comment on why the order matters. |
-| A wrapper chain too deep to follow. | Stack traces with five or more wrappers, and nobody can say what each one does. | Remove wrappers that have no real job, or merge closely related ones. | Each wrapper must name the concern it owns. |
-| An adapter that leaks vendor types. | SDK classes appear in domain code or method signatures. | Map everything to your own types inside the adapter. | A test or lint rule that forbids SDK imports outside the adapter package. |
-| An adapter that misreports errors. | Callers see success for declined or partial operations. | Map every provider outcome explicitly, including timeouts. | One shared set of tests that every adapter must pass, covering failures too. |
-| A facade that turned into a god class. | Business rules and `if` statements accumulate inside the facade. | Push each rule back into the subsystem class that owns it. | The facade's methods should read like a short, plain list of steps. |
-| A shallow prototype copy. | Changing a clone also changes the original. | Copy every mutable nested object explicitly. | A test that modifies the copy and asserts the original is unchanged. |
-| A proxy that hides cost. | Latency spikes or many small queries traced back to innocent-looking getters. | Fetch eagerly where needed, or batch the calls. | Name or document anything that may hit the network, and set timeouts on it. |
+| What went wrong | How to fix it |
+|---|---|
+| A factory that only ever builds one kind of object. You can tell because it has a single branch, and it has never grown a second one. | Inline it, and use a plain constructor instead. Only bring a factory back if a second variant genuinely arrives. |
+| A singleton holding mutable state. This shows up as flaky tests that depend on run order, or race conditions under load. | Make the state immutable, or create one instance at the composition root and pass it in, instead of reaching it through global access. |
+| Decorators wrapped in the wrong order. Audit logs, metrics, or caches end up with the wrong number of entries. | Reorder the chain, add a test that pins the correct order, and build every chain in one place so the order is only decided once. |
+| A wrapper chain too deep to follow. Stack traces run five or more layers deep, and nobody can say what each layer does. | Remove wrappers that add no real value, or merge closely related ones. Every remaining wrapper's name should say what it does. |
+| An adapter that leaks vendor types. SDK classes start appearing in your own code, outside the adapter. | Map every vendor type to your own types inside the adapter, and keep SDK imports out of the rest of the codebase. |
+| An adapter that misreports errors. Callers see success for something that was actually declined or only partly done. | Map every provider outcome explicitly, including timeouts, and test every adapter against the same list of expected results. |
+| A facade that turned into a god class. Business rules and `if` statements keep piling up inside it. | Push each rule back into the subsystem class that owns it. A facade's methods should read like a short, plain list of steps. |
+| A shallow prototype copy. Changing the copy also silently changes the original. | Copy every mutable part explicitly, and add a test that changes the copy and checks the original is unaffected. |
+| A proxy that hides cost. Latency spikes or a burst of small queries trace back to an ordinary-looking getter. | Load eagerly where it matters, batch the calls, or at least document anything that may be slow. |
 
 !!! warning "Collapse patterns that absorb nothing"
     A pattern is justified by the change it contains. If that change never arrived and is no longer expected, replace the pattern with the simpler code it was protecting. Removing a pattern is as much a design skill as adding one.
