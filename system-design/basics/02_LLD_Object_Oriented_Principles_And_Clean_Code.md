@@ -505,29 +505,6 @@ The real test of a design is how it handles change. Here is what each likely cha
 
 The last row is important. A daily summary changes the *workflow*, and the coordinating class is supposed to change for workflow reasons. No design absorbs every possible change, and saying so honestly is a stronger answer than claiming the design is open to anything.
 
-??? info "Go deeper (optional): proving substitution with contract tests"
-    The Liskov rule in section 4 said every `Sender` must classify failures the same way. A *contract test* turns that promise into something the build checks. You write the tests once, against the interface, and every implementation's test class inherits them:
-
-    ```java
-    abstract class SenderContractTest {
-        protected abstract Sender sender();            // each implementation's test supplies one
-        protected abstract void simulateTimeout();
-        protected abstract void simulateInvalidRecipient();
-
-        @Test void timeoutIsRetryable() {
-            simulateTimeout();
-            assertEquals(SendResult.RETRYABLE_FAILURE, sender().send(sampleNotification()));
-        }
-        @Test void invalidRecipientIsPermanent() {
-            simulateInvalidRecipient();
-            assertEquals(SendResult.PERMANENT_FAILURE, sender().send(sampleNotification()));
-        }
-    }
-    class SmsSenderTest extends SenderContractTest { /* simulates the SMS provider's responses */ }
-    ```
-
-    Every new sender automatically has to pass the whole suite, so substitution is verified rather than assumed. Inheritance is the right tool here, because every concrete test class truly *is* a sender contract test.
-
 ---
 
 ## 7. Design smells to recognize
