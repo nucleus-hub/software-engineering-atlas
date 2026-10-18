@@ -330,89 +330,118 @@ Now the dependency is visible, and a test can simply pass in a fake `Config`. Sp
 
 ## 4. Structural patterns
 
-![Adapter, Decorator, Facade, and Proxy each sit between a client and a target](assets/topic-03/wrapper_family.png)
+![Adapter, Decorator, Facade, and Proxy, each shown between your code and the real object](assets/topic-03/wrapper_family.png)
 
-All four main structural patterns put an object between a client and a target. They differ only in **intent**, so in an interview, always say *why* the wrapper exists, not just what it is called.
+Structural patterns are about how objects fit together. The four main ones all work the same way: they put one object *between* your code and the real object it uses. What makes them different is *why* the object in the middle is there, so in an interview, always give the reason, not just the name.
 
-### Adapter: make a foreign interface fit
+### Adapter: make a class fit the interface your code expects
 
-> Convert an existing interface into the one your code expects.
+**What it is:** an adapter sits between your code and a class whose methods do not match what your code expects, and translates every call from one to the other. It works like a travel plug adapter: neither the plug nor the socket changes, and the adapter makes them fit.
+
+**When it helps.** Checkout expects a `PaymentGateway` with a `charge(request)` method. Stripe's SDK has its own classes, its own method names, and its own errors, and you cannot change Stripe's code. So you write an adapter that implements your interface by calling Stripe:
 
 ```java
-final class StripeAdapter implements PaymentGateway {          // our contract
-    private final StripeClient stripe;                         // their SDK (simplified here)
+class StripeAdapter implements PaymentGateway {         // your interface on the outside...
+    private final StripeClient stripe;                  // ...Stripe's SDK on the inside
 
     public ChargeResult charge(ChargeRequest request) {
         try {
-            StripeCharge raw = stripe.createCharge(request.amountInMinorUnits(), request.currency());
-            return ChargeResult.approved(raw.id());            // translate data...
+            StripeCharge charge = stripe.createCharge(request.amountInCents(), request.currency());
+            return ChargeResult.approved(charge.id());          // translate Stripe's answer into yours
         } catch (StripeCardException e) {
-            return ChargeResult.declined(e.declineCode());     // ...and translate errors
+            return ChargeResult.declined(e.getMessage());       // translate Stripe's errors too
         }
     }
 }
 ```
 
-Adapter is the standard defence at a third-party boundary: vendor types stop at the adapter and never leak into domain code, so swapping providers touches one class. **Translate errors as carefully as data.** An adapter that reports a provider failure as success breaks every caller above it.
+The rest of your code only ever sees `PaymentGateway`. If Stripe changes its SDK, or you add another provider, only the adapter changes.
 
-### Decorator: add behavior, keep the interface
+**Watch out:** translate errors as carefully as successful results. If the adapter reported a declined card as a success, every class above it would trust the wrong answer.
 
-> Wrap an object to add a responsibility, without changing its interface.
+### Decorator: add a feature without changing the class
+
+**What it is:** a decorator wraps an object and adds one extra feature, such as retrying, logging, or caching, while offering exactly the same methods as the object it wraps. Think of a phone case: the phone works exactly as before, and the case adds protection.
+
+**When it helps.** Suppose payments should be retried when the provider times out. Instead of adding retry code inside `StripeAdapter`, you wrap it in a class that does only the retrying:
 
 ```java
-final class RetryingGateway implements PaymentGateway {
-    private final PaymentGateway inner;                        // same interface it implements
+class RetryingGateway implements PaymentGateway {     // the same interface as the object it wraps
+    private final PaymentGateway inner;               // the gateway being wrapped
     private final RetryPolicy policy;
 
     public ChargeResult charge(ChargeRequest request) {
-        return policy.execute(() -> inner.charge(request));
+        return policy.execute(() -> inner.charge(request));   // call the inner gateway, retrying temporary failures
     }
 }
 ```
 
-Because a decorator implements the same interface it wraps, decorators **compose**: `new RetryingGateway(new AuditingGateway(adapter))`. Each concern (retry, audit, metrics, caching) stays in its own small class and can be added or removed per wiring, instead of piling flags onto one class.
+Because every decorator has the same interface as the object it wraps, you can stack them, each one adding a single feature:
+
+```java
+PaymentGateway gateway = new StripeAdapter(stripeClient);    // talks to Stripe
+gateway = new AuditingGateway(gateway, auditLog);            // + records every attempt
+gateway = new RetryingGateway(gateway, retryPolicy);         // + retries temporary failures
+```
+
+Checkout receives `gateway` and has no idea how many layers it has. Each feature lives in its own small class, and adding or removing one is a one-line change.
 
 ![The same decorators wrapped in two orders produce different audit trails](assets/topic-03/decorator_ordering.png)
 
-**Order is part of the behavior.** With audit outside retry, audit sees one call and logs the final outcome. With retry outside audit, every attempt passes through audit and gets logged. Neither is wrong, but you must choose deliberately, and say which one you chose and why.
+**Watch out:** the order of the layers changes the behavior. In the stack above, audit sits *inside* retry, so every attempt is recorded: three attempts produce three audit entries. Swap the two lines, and audit sees only the final result. Neither order is wrong, but choose it on purpose and be ready to explain why.
 
-### Facade: one simple entry point
+### Facade: one simple entry point to many classes
 
-> Give callers one simple interface to a subsystem of several parts.
+**What it is:** a facade is one class with a simple method that calls several other classes in the right order, so that callers do not have to. It is like a waiter in a restaurant: you place one order, and the waiter deals with the kitchen, the bar, and the bill.
+
+**When it helps.** Paying for an order takes four steps: a fraud check, the tax calculation, the charge itself, and a record in the ledger. Without a facade, every caller would need to know all of those classes and call them in the right order. With a facade, checkout makes a single call, `paymentService.pay(order)`:
 
 ```java
-final class PaymentService {                     // facade over fraud, tax, gateway, ledger
+class PaymentService {                                         // the facade
     Receipt pay(Order order) {
-        fraudCheck.verify(order);
-        Money total = taxCalculator.totalWithTax(order);
+        fraudCheck.verify(order);                              // 1. stop suspicious orders
+        Money total = taxCalculator.totalWithTax(order);       // 2. work out the total
         ChargeRequest request = ChargeRequest.builder().order(order).amount(total).build();
-        ChargeResult result = gateways.forCountry(order.country()).charge(request);
-        return ledger.record(order, result);
+        ChargeResult result = gateways.forCountry(order.country()).charge(request);   // 3. charge the customer
+        return ledger.record(order, result);                   // 4. record the result
     }
 }
 ```
 
-A facade reduces how many concepts a caller must learn. It **orchestrates**; it should not **decide**. Tax rules belong in the tax calculator, not in the facade. A facade that collects business rules is a god class with a nicer name. It also does not forbid advanced callers from using the subsystem directly.
+**Watch out:** a facade should only *coordinate* the steps; it should not contain business rules. Tax rules belong in the tax calculator, not in `PaymentService`. A facade that keeps collecting rules slowly turns into one huge class that does everything.
 
 ### Proxy: control access to the real object
 
-> Stand in for another object, with the same interface, to control access to it.
+**What it is:** a proxy stands in for the real object, with exactly the same methods, and decides *when* or *whether* the real object is used. The calling code cannot tell the difference.
+
+**When it helps.** A product page shows 100 high-resolution images, but most customers only look at the first few. Loading all 100 from disk up front is slow and wasteful. A proxy loads each image only when it is shown for the first time:
 
 ```java
-final class LazyReportProxy implements Report {
-    private Report real;                         // created only on first use
+class LazyImage implements Image {                 // the proxy: the same interface as the real image
+    private final String fileName;
+    private Image real;                            // not loaded yet
 
-    public byte[] render() {
-        if (real == null) real = new ExpensiveReport();
-        return real.render();
+    LazyImage(String fileName) {
+        this.fileName = fileName;
+    }
+
+    public void show() {
+        if (real == null) {
+            real = new HighResImage(fileName);     // load from disk only the first time
+        }
+        real.show();
     }
 }
 ```
 
-The common variants are **virtual** (create the target lazily), **protection** (check permissions first), **remote** (hide a network call), and **caching**. Proxy and Decorator have identical code shapes; the difference is that a proxy *controls* its target (it may create, guard, or locate it), while a decorator *enhances* a target it was handed.
+Proxies are also used to check permissions before a call, to cache results, and to make a call to another server look like an ordinary method call.
 
-!!! warning "Proxies hide cost"
-    A proxy makes a slow or failing operation look like an ordinary method call. Hibernate's lazy-loading proxies are the classic case: a harmless-looking getter inside a loop triggers one database query per item. And Spring's `@Transactional` works through a proxy, so a method calling another `@Transactional` method **on the same object** skips the proxy, and the transaction rule silently does not apply.
+**Proxy or Decorator?** The code looks almost the same. The difference is the reason it exists: a decorator *adds a feature* to an object it was given, while a proxy *controls access* to the real object, and often creates that object itself.
+
+**Watch out:** a proxy can hide slow work behind what looks like an ordinary method call. Two well-known surprises in Java projects:
+
+- Hibernate loads related data through proxies, so a simple getter inside a loop can quietly run one database query per item.
+- Spring's `@Transactional` works through a proxy. When a method calls another `@Transactional` method *on the same object*, the call skips the proxy, and the transaction setting is silently ignored.
 
 ### The other three structural patterns
 
@@ -420,9 +449,9 @@ These come up less often, but you should recognize them:
 
 | Pattern | What it does | Typical example | Watch out for |
 |---|---|---|---|
-| **Composite** | Treats a single object and a group of objects through the same interface, so trees can be handled recursively. | A cart where a bundle's price is the sum of its items; files and folders. | Operations that only make sense for groups, like adding a child, end up on the shared interface. |
-| **Bridge** | Separates an abstraction from its implementation, so each can vary on its own. | Notification types (alert, digest) × delivery channels (email, SMS), without one class per combination. | Two hierarchies to understand; only worth it when both dimensions really vary. |
-| **Flyweight** | Shares common, immutable state between many small objects to save memory. | Characters in a text editor; `Integer.valueOf` reusing cached small values. | Shared state must be immutable, and callers must pass in the part that varies. |
+| **Composite** | Lets you treat a single item and a group of items in the same way. | A shopping cart where a bundle's price is the sum of its items; files and folders. | Some actions only make sense for groups, such as "add an item to this bundle". |
+| **Bridge** | Splits one class hierarchy into two independent ones that can be combined freely. | Notification types (alert, digest) combined with channels (email, SMS), without one class per combination. | There are two hierarchies to learn, so it is only worth it when both really change. |
+| **Flyweight** | Lets many small objects share the same data, to save memory. | The letters in a text editor share font data; `Integer.valueOf` reuses objects for small numbers. | The shared data must never change, or every object sharing it changes too. |
 
 ---
 
@@ -580,13 +609,13 @@ GatewayRegistry gateways = new GatewayRegistry(Map.of(US, stripe, IN, stripe, DE
 
 Three details are worth saying out loud. `withPolicies` builds every chain in one place, so the wrapper order is written down once instead of copied per provider. The registry copies its map and fails loudly for an unknown country, so a missing entry is caught on the first request rather than causing a `NullPointerException` deep inside checkout. And there is no Proxy here: nothing controls access or lifecycle, and adding one just to use the name would be pattern worship.
 
-**Failure path.** A timeout from Stripe comes back from the adapter as a retryable result. `AuditingGateway` records it, and `RetryingGateway` tries again with the **same idempotency key**, so Stripe treats any duplicate as the same charge. A card decline is permanent: it is audited once and returned immediately. If an adapter ever reported a decline as success, every wrapper above it would faithfully pass on the wrong answer. The chain is only as correct as its lowest link, which is why every adapter must pass the same contract tests (as in [Topic 02](02_LLD_Object_Oriented_Principles_And_Clean_Code.md)).
+**Failure path.** A timeout from Stripe comes back from the adapter as a retryable result. `AuditingGateway` records it, and `RetryingGateway` tries again with the **same idempotency key**, so Stripe treats any duplicate as the same charge. A card decline is permanent: it is audited once and returned immediately. If an adapter ever reported a decline as success, every wrapper above it would faithfully pass on the wrong answer. The chain is only as correct as its lowest link, which is why every adapter should be tested against the same list of expected results, such as "a timeout is retryable" and "a decline is permanent".
 
 ### Change walkthrough
 
 | Change request | What you edit | What you add | What stays untouched |
 |---|---|---|---|
-| Add Adyen for German customers. | One registry entry in the composition root. | An `AdyenAdapter` class that passes the contract tests. | Checkout, the facade, both decorators, and the Stripe adapter. |
+| Add Adyen for German customers. | One registry entry in the composition root. | An `AdyenAdapter` class, tested against the same expected results as the Stripe one. | Checkout, the facade, both decorators, and the Stripe adapter. |
 | Add a circuit breaker for a flaky provider. | The `withPolicies` wiring. | A `CircuitBreakingGateway` decorator. | Every adapter and the facade. |
 | Upgrade to a new Stripe SDK version. | `StripeAdapter` only. | Nothing. | Everything else. |
 | Record latency metrics per provider. | The `withPolicies` wiring. | A `MetricsGateway` decorator. | Every adapter and the facade. |

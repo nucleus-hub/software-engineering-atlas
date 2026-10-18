@@ -171,36 +171,35 @@ def builder_vs_telescoping() -> plt.Figure:
 
 def wrapper_family() -> plt.Figure:
     fig, ax = canvas(14, 7.4)
-    heading(ax, "Four Wrappers, One Shape: Tell Them Apart by Intent",
-            "Every structural pattern below sits between a client and a target")
+    heading(ax, "Four Structural Patterns: One Object in the Middle",
+            "Each one sits between your code and the real object. Why it sits there is what tells them apart")
+    for x, label in ((10, "YOUR CODE"), (32, "THE PATTERN"), (56, "THE REAL OBJECT"),
+                     (83, "USE IT WHEN")):
+        ax.text(x, 79, label, ha="center", va="center", fontsize=8, fontweight="bold", color=GREY)
     rows = [
-        (63, "Adapter", "translates calls", "The target has the\nwrong interface",
-         "interface changes", BLUE),
-        (45, "Decorator", "adds behavior", "Same interface,\nextra responsibility",
-         "interface identical", GREEN),
-        (27, "Facade", "narrows the surface", "Many parts behind\none entry point",
-         "interface simplified", AMBER),
-        (9, "Proxy", "controls access", "Same interface,\nguarded or deferred",
-         "interface identical", RED),
+        (61, "Checkout", "Adapter", "StripeAdapter", ["Stripe SDK"],
+         "a class you need has the\nwrong methods for your code", BLUE),
+        (43, "Checkout", "Decorator", "RetryingGateway", ["StripeAdapter"],
+         "you want to add a feature\nwithout changing the class", GREEN),
+        (25, "Checkout", "Facade", "PaymentService", ["Fraud check", "Tax", "Ledger"],
+         "callers would otherwise call\nmany classes, in the right order", AMBER),
+        (7, "Product page", "Proxy", "LazyImage", ["HighResImage"],
+         "you must control when, or\nwhether, the real object is used", RED),
     ]
-    for y, name, verb, purpose, note, color in rows:
-        box(ax, 4, y, 12, 13, "Client", face=WHITE, edge=NAVY)
-        box(ax, 26, y, 18, 13, name, verb, face=PALE, edge=color)
-        arrow(ax, (16.5, y + 6.5), (25.5, y + 6.5), color=GREY)
-        if name == "Facade":
-            for offset, part in enumerate(["Tax", "Stock", "Shipping"]):
-                part_y = y + 9.6 - offset * 4.8
-                box(ax, 54, part_y, 14, 3.4, part, face=MIST, edge=NAVY, radius=0.8)
-                arrow(ax, (44.5, y + 6.5), (53.5, part_y + 1.7), color=color)
+    for y, caller, name, example, targets, use_when, color in rows:
+        box(ax, 3, y, 14, 13, caller, face=WHITE, edge=NAVY)
+        box(ax, 23, y, 18, 13, name, example, face=PALE, edge=color)
+        arrow(ax, (17.5, y + 6.5), (22.5, y + 6.5), color=GREY)
+        if len(targets) == 1:
+            box(ax, 48, y, 16, 13, targets[0], face=MIST, edge=NAVY)
+            arrow(ax, (41.5, y + 6.5), (47.5, y + 6.5), color=color)
         else:
-            box(ax, 54, y, 14, 13, "Target", face=MIST, edge=NAVY)
-            arrow(ax, (44.5, y + 6.5), (53.5, y + 6.5), color=color)
-        ax.text(72, y + 10, purpose, ha="left", va="top", fontsize=9,
+            for offset, part in enumerate(targets):
+                part_y = y + 9.6 - offset * 4.8
+                box(ax, 48, part_y, 16, 3.4, part, face=MIST, edge=NAVY, radius=0.8)
+                arrow(ax, (41.5, y + 6.5), (47.5, part_y + 1.7), color=color)
+        ax.text(70, y + 6.5, use_when, ha="left", va="center", fontsize=9.5,
                 color=INK, linespacing=1.4)
-        ax.text(72, y + 1.5, note, ha="left", va="bottom", fontsize=8.5,
-                color=INK, style="italic")
-    ax.text(50, 2, "Decorator and Proxy have the same code shape; intent and lifecycle separate them",
-            ha="center", fontsize=9.5, fontweight="bold", color=NAVY)
     return fig
 
 
