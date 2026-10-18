@@ -29,11 +29,11 @@ from figure_style import (
     RED_FACE,
     WHITE,
     arrow,
+    badge,
     box,
     canvas,
     card_row,
     heading,
-    stage_row,
 )
 
 ASSETS = Path(__file__).resolve().parent.parent.parent / "basics" / "assets" / "topic-03"
@@ -54,21 +54,30 @@ def panel_title(ax: plt.Axes, x: float, text: str, color: str) -> None:
 
 
 def pattern_selection() -> plt.Figure:
-    fig, ax = canvas(14, 5.4)
-    heading(ax, "From Expected Change to the Smallest Pattern",
-            "Name the change first; the right pattern is whatever contains it with the least machinery")
-    stages = [
-        ("1", "Name", "the expected change"),
-        ("2", "Locate", "the seam it crosses"),
-        ("3", "Choose", "the smallest pattern"),
-        ("4", "Wire", "at the composition root"),
-        ("5", "Prove", "with contract tests"),
+    fig, ax = canvas(14, 5.8)
+    heading(ax, "Start From the Change, Not the Pattern",
+            "Three questions to ask before adding any design pattern")
+    steps = [
+        ("What will change?", "name a real, expected change",
+         "A second provider", "Adyen is signed for next quarter"),
+        ("Where would it spread?", "find the code it would touch",
+         "Every Stripe call", "spread through the checkout code"),
+        ("What is the smallest fix?", "keep the change in one place",
+         "One Adapter per provider", "behind a PaymentGateway interface"),
     ]
-    stage_row(ax, stages, [4, 23, 42, 61, 80], y=36, width=15, height=20, highlight=(2,))
-    ax.text(50, 22, "OUTPUT", ha="center", va="center", fontsize=8,
-            fontweight="bold", color=GREY)
-    box(ax, 18, 6, 64, 11, "Every pattern on the diagram names the change it absorbs",
-        face=MIST, edge=NAVY)
+    for index, (question, hint, answer, detail) in enumerate(steps):
+        x = 5 + index * 32
+        centre = x + 13
+        badge(ax, centre, 76, str(index + 1), size=9)
+        box(ax, x, 56, 26, 14, question, hint, face=PALE, edge=BLUE)
+        arrow(ax, (centre, 55.5), (centre, 43.5), color=GREY)
+        box(ax, x, 28, 26, 15, answer, detail, face=WHITE, edge=GREEN)
+        if index < 2:
+            arrow(ax, (x + 26.5, 63), (x + 31.5, 63), color=BLUE)
+    ax.text(50, 23.5, "Green: example answers, from the payment gateway in section 8",
+            ha="center", va="center", fontsize=8, fontweight="bold", color=GREEN)
+    box(ax, 22, 8, 56, 11, "Can't name a change? Then you don't need a pattern yet.",
+        face=AMBER_FACE, edge=AMBER)
     return fig
 
 

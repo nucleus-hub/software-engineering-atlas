@@ -4,26 +4,15 @@
 
 ---
 
-## 1. One-page visual summary
+## 1. Start from the change, not the pattern
 
-![Five-step path from an expected change to the smallest pattern](assets/topic-03/pattern_selection.png)
+A design pattern is a well-known, named solution to a common design problem. This page covers two families: **creational** patterns decide *who builds an object*, and **structural** patterns decide *how objects are wired together*. Sections 3 and 4 explain each pattern, and section 6 compares them side by side.
 
-Patterns are answers, so start from the question. Name the change you expect, find the seam where it would ripple through the code, pick the smallest pattern that contains it, wire it in one place, and prove it with a test. If you cannot name the change, you do not need the pattern yet.
+The usual beginner mistake is to start from a pattern ("let's add a Factory here"). Start from the change you expect instead, and only then pick a pattern:
 
-| Pattern | Family | Use it when | What it costs |
-|---|---|---|---|
-| **Factory Method** | Creational | A subclass must decide which product to create inside a fixed algorithm. | One subclass per variant, and creation logic spread across a hierarchy. |
-| **Abstract Factory** | Creational | Several products must always be used together as a matching family. | Adding a new product type means editing every factory. |
-| **Builder** | Creational | An object has many optional fields, or rules that span several fields. | An extra class, which is pure overhead for simple objects. |
-| **Prototype** | Creational | Copying a configured object is cheaper or simpler than building one. | Copies must be deep wherever state is mutable, or they corrupt each other. |
-| **Singleton** | Creational | A second instance would genuinely be a bug. | Hidden global state that is hard to test and hard to change. |
-| **Adapter** | Structural | An existing class has the wrong interface for your code. | One translation layer, which must translate errors as well as data. |
-| **Decorator** | Structural | You want to add optional behavior without changing the interface. | Order between decorators matters, and deep stacks are hard to debug. |
-| **Facade** | Structural | Callers need one simple entry point into a multi-part subsystem. | The facade can quietly grow into a god class. |
-| **Proxy** | Structural | Access to an object must be controlled, deferred, or made remote. | Hidden cost: a plain-looking method call may be slow or fail. |
+![Three questions before adding a pattern, answered with the payment gateway example](assets/topic-03/pattern_selection.png)
 
-!!! tip "Patterns in one sentence"
-    Name the change first; the right pattern is whichever one contains that change with the least machinery, and "no pattern" is often the right answer.
+In the example, a second payment provider is really coming, so an Adapter is worth the extra class. If you cannot name a change like that, plain code is the right answer, and you do not need a pattern yet.
 
 ---
 
