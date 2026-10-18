@@ -210,23 +210,23 @@ def composition_vs_inheritance() -> plt.Figure:
 
 
 def clean_code_guardrails() -> plt.Figure:
-    fig, ax = canvas(14, 5.2)
-    heading(ax, "DRY, KISS, and YAGNI Pull From Opposite Ends",
-            "Too little abstraction duplicates knowledge; too much buries it. Evidence picks the spot")
+    fig, ax = canvas(14, 5.8)
+    heading(ax, "DRY, KISS, and YAGNI: Not Too Little, Not Too Much",
+            "DRY stops copy-paste; KISS and YAGNI stop over-building. Aim for the middle")
     zones = [
-        (5, "Under-abstracted", "copy-pasted rules, type switches", RED, RED_FACE),
-        (36.5, "Just enough", "one owner per rule; proven seams", GREEN, GREEN_FACE),
-        (68, "Over-abstracted", "speculative interfaces, plugin frameworks", RED, RED_FACE),
+        (5, "Too little structure", "the same rule copy-pasted around", RED, RED_FACE),
+        (36.5, "Just right", "each rule in one place, nothing extra", GREEN, GREEN_FACE),
+        (68, "Too much structure", "layers nobody needs yet", RED, RED_FACE),
     ]
     for x, title, subtitle, edge, face in zones:
-        box(ax, x, 32, 27, 17, title, subtitle, face=face, edge=edge)
-    arrow(ax, (8, 64), (36, 64), color=BLUE, label="DRY: give every rule one home")
-    arrow(ax, (92, 64), (64, 64), color=AMBER, label="KISS + YAGNI: every layer must earn its place")
-    for x, note in [(18.5, "DRY misused: merging code\nthat only looks alike"),
-                    (81.5, "KISS/YAGNI misused: skipping\na cheap, obvious seam")]:
-        ax.text(x, 22, note, ha="center", va="top", fontsize=8.5, color=INK,
+        box(ax, x, 36, 27, 16, title, subtitle, face=face, edge=edge)
+    arrow(ax, (10, 58), (40, 58), color=BLUE, label="DRY: put each rule in one place")
+    arrow(ax, (90, 58), (60, 58), color=AMBER, label="KISS + YAGNI: build only what you need")
+    for x, note in [(18.5, "Overdoing DRY: merging code\nthat only looks the same"),
+                    (81.5, "Overdoing KISS/YAGNI: skipping\nsomething cheap you clearly need")]:
+        ax.text(x, 28, note, ha="center", va="top", fontsize=8.5, color=INK,
                 style="italic", linespacing=1.4)
-    ax.text(50, 22, "Rule of three: abstract on the\nthird real case, not the first guess",
+    ax.text(50, 28, "Rule of three: share code on the\nthird real copy, not the first guess",
             ha="center", va="top", fontsize=9.5, fontweight="bold", color=GREEN, linespacing=1.4)
     return fig
 

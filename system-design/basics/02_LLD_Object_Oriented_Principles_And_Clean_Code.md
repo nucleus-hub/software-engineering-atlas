@@ -57,15 +57,15 @@ class NotificationManager {
 }
 ```
 
-This class has five separate problems, and each level below fixes one of them:
+This class has five separate problems, and the sections below fix them one at a time:
 
 | Problem in `NotificationManager` | Fixed in |
 |---|---|
-| Any caller can create a notification with an empty message or an invalid channel. | Level 1: Encapsulation |
-| The class is full of email protocol steps that have nothing to do with notifying a user. | Level 2: Abstraction |
-| Adding a new channel means editing the `switch`, and every other `switch` on the channel. | Level 3: Polymorphism |
-| Adding retries tempts you into a tangle of subclasses. | Level 4: Composition over inheritance |
-| The class knows about SMTP, Twilio, Firebase, and user preferences all at once. | Level 5: Coupling and cohesion |
+| Any caller can create a notification with an empty message or an invalid channel. | Encapsulation (section 2) |
+| The class is full of email protocol steps that have nothing to do with notifying a user. | Abstraction (section 2) |
+| Adding a new channel means editing the `switch`, and every other `switch` on the channel. | Polymorphism (section 2) |
+| Adding retries tempts you into a tangle of subclasses. | Composition over inheritance (section 2) |
+| The class knows about SMTP, Twilio, Firebase, and user preferences all at once. | Coupling and cohesion (section 3) |
 
 ---
 
@@ -75,7 +75,7 @@ This class has five separate problems, and each level below fixes one of them:
 
 The four pillars build on each other. Encapsulation protects data, abstraction hides details behind a simple interface, polymorphism lets many implementations share one interface, and composition assembles small objects into bigger behavior. Together they lead to the goal shown at the bottom of the diagram: when requirements change, only a small number of classes need to change.
 
-### Level 1: Encapsulation, keeping the rules with the data
+### Encapsulation: keeping the rules with the data
 
 **Encapsulation** means an object keeps its data private and only exposes methods that keep that data valid. The rules about the data (its invariants) are enforced in exactly one place: inside the object that owns the data.
 
@@ -116,7 +116,7 @@ Now an invalid notification simply cannot exist. Any method that receives a `Not
 ??? success "Answer"
     The rule "the total always equals the sum of the item prices" lives in the callers. If any caller adds an item and forgets to update the total, the cart becomes wrong, and nothing detects it. The fix is to make the fields private and give the cart an `addItem(Item item)` method that updates both together, or, even simpler, to compute `total()` from the items whenever it is asked for.
 
-### Level 2: Abstraction, hiding the how
+### Abstraction: hiding the how
 
 **Abstraction** means callers depend on *what* an object does, not *how* it does it. The caller states its intent, and the details stay hidden behind a simple interface.
 
@@ -145,7 +145,7 @@ Notice that `send` returns a `SendResult` instead of returning nothing. A good a
 ??? success "Answer"
     Hide the steps behind an intent-based method such as `reportExporter.export(report, destination)`. The caller only expresses what it wants, and the file-handling steps live inside one exporter class. If the format later changes from CSV to Excel, only the exporter changes, and none of its callers do.
 
-### Level 3: Polymorphism, replacing the type switch
+### Polymorphism: replacing the type switch
 
 **Polymorphism** means the same method call can behave differently depending on which object receives it. It lets you replace `if` and `switch` statements that check an object's type with a single call through an interface.
 
@@ -195,7 +195,7 @@ Adding WhatsApp is now a new `WhatsAppSender` class plus one extra entry in the 
 ??? success "Answer"
     Make `Shape` an interface with an `area()` method, and let `Circle` and `Square` each implement it. The caller then simply calls `shape.area()`. A new shape, such as a triangle, becomes a new class, and the existing code does not change.
 
-### Level 4: Composition over inheritance
+### Composition over inheritance
 
 There are two ways for one class to reuse another's code:
 
@@ -247,7 +247,7 @@ If `Penguin extends Bird` and overrides `fly()` to throw an exception, any code 
 
 ---
 
-## 3. Coupling and cohesion (Level 5)
+## 3. Coupling and cohesion
 
 ![Quadrant of coupling against cohesion with the modular quadrant as the goal](assets/topic-02/coupling_cohesion.png)
 
@@ -295,7 +295,7 @@ This habit is called **"tell, don't ask."** A related rule, the *Law of Demeter*
 
 ---
 
-## 4. SOLID, one letter at a time (Level 6)
+## 4. SOLID, one letter at a time
 
 ![Five SOLID rules, each with its warning sign](assets/topic-02/solid_principles.png)
 
@@ -320,9 +320,9 @@ final class NotificationService { /* coordinates the others, shown in section 6 
 
 **Rule: add new behavior by adding new code, not by editing code that already works.**
 
-Level 3 already did this for channels. Adding WhatsApp means writing a new `WhatsAppSender` class and registering it with the other senders. `NotificationService` itself is not edited.
+Polymorphism (section 2) already did this for channels. Adding WhatsApp means writing a new `WhatsAppSender` class and registering it with the other senders. `NotificationService` itself is not edited.
 
-**Trap:** only build this flexibility where change is actually expected. New channels really have been requested, so it is worth it here. Building it "just in case" breaks YAGNI (Level 7).
+**Trap:** only build this flexibility where change is actually expected. New channels really have been requested, so it is worth it here. Building it "just in case" breaks YAGNI (section 5).
 
 ### L: Liskov Substitution
 
@@ -397,29 +397,29 @@ Look at the arrows in the picture. Before, the business code points *down* at th
 
 ---
 
-## 5. DRY, KISS, and YAGNI (Level 7)
+## 5. DRY, KISS, and YAGNI
 
-![DRY, KISS, and YAGNI pulling from opposite ends of the abstraction spectrum](assets/topic-02/clean_code_guardrails.png)
+![DRY, KISS, and YAGNI: too little structure, just right, too much structure](assets/topic-02/clean_code_guardrails.png)
 
-SOLID tells you *where* responsibilities should go. These three guidelines tell you *how much* abstraction to build. They pull in opposite directions, and good design sits in the middle.
+SOLID says *where* code should go. These three rules say *how much* to build. DRY warns against too little structure, such as the same rule copy-pasted in several places. KISS and YAGNI warn against too much, such as layers nobody needs. Good design sits in the middle.
 
 ### DRY: Don't Repeat Yourself
 
-**Every piece of knowledge should have one owner.** If the same business rule is written in several places, the copies eventually drift apart.
+**Rule: each business rule should live in exactly one place.** If the same rule is written in several places, the copies eventually drift apart.
 
-Suppose each sender builds the message text itself, so the wording "Your order #123 has shipped" exists in three classes. When marketing changes the wording, someone updates two of the three, and SMS users get the old text. Moving the wording into the single `TemplateRenderer` gives that knowledge one home.
+Suppose each sender builds its own message text, so "Your order #123 has shipped" is written in three classes. Marketing changes the wording, someone updates two of the three, and SMS users still get the old text. Moving the wording into `TemplateRenderer` gives it one home.
 
-**Trap:** DRY is about duplicated *knowledge*, not duplicated *text*. Two methods that look identical but belong to different owners, such as signup validation and identity verification, should stay separate. If you merge them, the first requirement that applies to only one of them adds a boolean flag, and then another. As Sandi Metz put it, "duplication is far cheaper than the wrong abstraction". A useful tie-breaker is the **rule of three**: tolerate a second copy, and extract a shared abstraction when a third copy appears.
+**Trap:** DRY is about the same *rule*, not code that merely *looks* the same. Two identical-looking methods with different owners, such as signup validation and identity verification, should stay separate. Merge them, and every difference that appears later adds another flag to the shared method. A useful tie-breaker is the **rule of three**: allow a second copy, and share the code when a third real copy appears.
 
 ### KISS: Keep It Simple
 
-**Every layer of complexity must buy a capability you actually need.** With only three channels, it can be tempting to build a plugin framework that discovers senders automatically and sorts them by priority. The one-line map from Level 3 already does the job, and anyone can read it in seconds.
+**Rule: choose the simplest design that does the job.** With only three channels, it can be tempting to build a plugin framework that finds senders automatically and sorts them by priority. The one-line map from the polymorphism step in section 2 already does the job, and anyone can read it in seconds.
 
-**Trap:** KISS removes complexity that the design added by accident. It does not mean ignoring complexity that is genuinely part of the problem, such as tax rules or retry behavior. Flattening real rules into something that looks simple but handles edge cases wrongly is a bug.
+**Trap:** simple does not mean ignoring complexity that is really part of the problem, such as tax rules or retry behavior. Code that looks simple but handles real cases wrongly is just a bug.
 
 ### YAGNI: You Aren't Gonna Need It
 
-**Do not build for a future that nobody has asked for.** The `Sender` interface is worth having today: it costs one small file, and it lets us test the service with a fake. Writing `TelegramSender` and `SignalSender` stubs "just in case" is not worth it, because you would be coding against guessed requirements that will probably be wrong when the real need arrives. Keep the extension point, but do not build the extensions early.
+**Rule: do not build features or flexibility that nobody has asked for yet.** The `Sender` interface is worth having today: it is one small file, and it lets us test the service with a fake. Writing `TelegramSender` and `SignalSender` "just in case" is not, because those guesses will probably be wrong by the time a real need arrives.
 
 !!! question "Practice"
     The signup flow and the identity-verification flow each contain an identical 10-line method that validates a user's name and date of birth. A teammate wants to merge them into one shared method. What should you consider?
@@ -431,7 +431,7 @@ Suppose each sender builds the message text itself, so the wording "Your order #
 
 ## 6. Putting it together: the notification service
 
-After all seven levels, the messy `NotificationManager` has become a set of small classes, each with one clear job:
+After all of these steps, the messy `NotificationManager` has become a set of small classes, each with one clear job:
 
 ![Notification service class diagram with policy above and channel adapters below a boundary](assets/topic-02/notification_architecture.png)
 
@@ -480,7 +480,7 @@ The real test of a design is how it handles change. Here is what each likely cha
 The last row is important. A daily summary changes the *workflow*, and the coordinating class is supposed to change for workflow reasons. No design absorbs every possible change, and saying so honestly is a stronger answer than claiming the design is open to anything.
 
 ??? info "Go deeper (optional): proving substitution with contract tests"
-    Level 6 said every `Sender` must classify failures the same way. A *contract test* turns that promise into something the build checks. You write the tests once, against the interface, and every implementation's test class inherits them:
+    The Liskov rule in section 4 said every `Sender` must classify failures the same way. A *contract test* turns that promise into something the build checks. You write the tests once, against the interface, and every implementation's test class inherits them:
 
     ```java
     abstract class SenderContractTest {
