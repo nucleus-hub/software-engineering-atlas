@@ -46,17 +46,68 @@ final class Checkout {
 
 ### Where objects should be created
 
-If business code should not create its dependencies with `new`, something still has to. The usual answer is one place, at application start-up near `main()`, that creates the real objects and passes them in. It is called the **composition root**. Frameworks such as Spring do this for you.
+In the example above, the problem is the line `new StripeGateway(apiKey)` *inside* `Checkout`. The fix: `Checkout` stops creating the gateway itself, and receives it through its constructor instead.
 
 ```java
-public static void main(String[] args) {
-    PaymentGateway gateway = new StripeAdapter(new StripeClient(config.stripeKey()));
-    Checkout checkout = new Checkout(gateway);          // Checkout only sees the interface
-    server.start(checkout);
+final class Checkout {
+    private final PaymentGateway gateway;          // an interface, not Stripe
+
+    Checkout(PaymentGateway gateway) {             // someone else creates it and hands it in
+        this.gateway = gateway;
+    }
+    ChargeResult pay(Order order) {
+        return gateway.charge(order.total());
+    }
 }
 ```
 
-Most of the time, this is all you need. A creational pattern is only worth it when objects must be created **later**, **many times**, or **based on information known only while the program runs**, such as the payment provider a customer picks.
+Now `Checkout` works with any payment provider that implements `PaymentGateway`, and a test can hand it a fake one.
+
+But *someone* still has to call `new`. That job moves to one place that runs when the application starts, usually `main()`. It creates the real objects, connects them, and starts the app. This place is called the **composition root**:
+
+```java
+public static void main(String[] args) {
+    PaymentGateway gateway = new StripeGateway(config.stripeKey());   // 1. create the real object
+    Checkout checkout = new Checkout(gateway);                        // 2. hand it to the class that needs it
+    server.start(checkout);                                           // 3. start the app
+}
+```
+
+#### The same thing in Spring
+
+In a Spring Boot application, you do not write that `main()` wiring yourself. You mark your classes with annotations, and Spring becomes the composition root:
+
+```java
+@Component
+class StripeGateway implements PaymentGateway {
+    StripeGateway(@Value("${stripe.api-key}") String apiKey) { ... }   // Spring reads the key from config
+}
+
+@Service
+class Checkout {
+    private final PaymentGateway gateway;
+    Checkout(PaymentGateway gateway) { this.gateway = gateway; }      // Spring passes in a StripeGateway
+}
+
+@SpringBootApplication
+public class ShopApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(ShopApplication.class, args);          // creates and connects everything
+    }
+}
+```
+
+When the application starts, Spring:
+
+1. Finds every class marked `@Component` or `@Service`.
+2. Reads each constructor to see what it needs: `Checkout` needs a `PaymentGateway`, and `StripeGateway` is one.
+3. Creates `StripeGateway` first, then creates `Checkout` and passes the gateway in.
+
+`Checkout` is the same plain class in both versions. It never knows who created its gateway, which is the whole point. By default, Spring creates just one object of each class and shares it: one instance, without the global access that makes the Singleton pattern risky.
+
+#### When you still need a creational pattern
+
+The composition root runs once, at start-up. That is enough for most objects. It cannot help when an object depends on something that happens *later*, such as the payment method a customer picks at checkout, or when a *new* object is needed every time, such as a `Pizza` for every order. Those are the cases the creational patterns below are for.
 
 ---
 
