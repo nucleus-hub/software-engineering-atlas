@@ -165,24 +165,6 @@ Adding WhatsApp is now a new `WhatsAppSender` class plus one extra entry in the 
 !!! tip "A switch is not always wrong"
     Polymorphism is the right tool when new types keep arriving and each type has its own behavior. A plain `switch` is perfectly fine for a small, fixed set of values that rarely changes, such as the days of the week. Choose based on what is likely to change.
 
-??? info "Go deeper (optional): sealed types and exhaustive switches"
-    Modern Java offers a middle ground. A `sealed` interface lists every allowed implementation, and a `switch` over it must handle every one of them, or the code does not compile:
-
-    ```java
-    sealed interface Shape permits Circle, Square {}
-    record Circle(double radius) implements Shape {}
-    record Square(double side) implements Shape {}
-
-    double area(Shape shape) {
-        return switch (shape) {                        // no default branch is needed
-            case Circle c -> Math.PI * c.radius() * c.radius();
-            case Square s -> s.side() * s.side();
-        };
-    }
-    ```
-
-    The trade-off is known as the *expression problem*. Polymorphism makes adding a new **type** cheap and a new **operation** expensive; a sealed switch is the reverse, and the compiler points out every switch that a new type must update.
-
 !!! question "Practice"
     How would you remove the type checks from this method?
 
