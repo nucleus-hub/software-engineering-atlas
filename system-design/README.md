@@ -55,14 +55,19 @@ Foundational topics for designing scalable, reliable single-region systems and
 structuring system design interviews.
 
 ### 1. System Design Interview Framework & Capacity Estimation
-- [ ] Functional vs non-functional requirements
-- [ ] Constraints, assumptions, scope control, and identifying core use cases
-- [ ] Read/write QPS, peak traffic, storage, bandwidth, and memory estimation
-- [ ] Latency, availability, durability, and consistency targets
-- [ ] High-level design, bottleneck analysis, and selecting deep dives
-- [ ] Back-of-the-envelope calculations and validating estimates
+- [x] Interview framework: the 45-minute flow from clarify to close
+- [x] Functional vs non-functional requirements, constraints, and scope control
+- [x] Clarifying questions, stated assumptions, and identifying core use cases
+- [x] Latency (p99) and availability ("nines") targets
+- [x] Read/write QPS, peak traffic, storage, bandwidth, cache memory, and server estimation
+- [x] Back-of-the-envelope shortcuts and rules of thumb for judging whether a number is big
+- [x] Turning estimates into design decisions; concurrency via Little's Law
+- [x] Minimal API contract, data model, and high-level design
+- [x] Worked example: URL shortener (practice: note-taking app)
 
 ### 2. LLD: Object-Oriented Principles & Clean Code
+- [ ] **Four pillars:** encapsulation, abstraction, polymorphism, composition over inheritance
+- [ ] Coupling and cohesion
 - [ ] **SOLID principles** (simple explanations + examples):
   - Single Responsibility
   - Open/Closed
@@ -70,11 +75,17 @@ structuring system design interviews.
   - Interface Segregation
   - Dependency Inversion
 - [ ] **Clean code fundamentals:** DRY, KISS, YAGNI
-- [ ] Encapsulation, polymorphism, composition vs inheritance
+- [ ] Design smells, and refactoring on evidence rather than taste
+- [ ] Approaching the LLD interview round
+- [ ] Worked example: refactoring one messy notification class into a notification service
 
 ### 3. LLD: Creational & Structural Design Patterns
-- [ ] **Creational:** Singleton, Factory Method, Abstract Factory, Builder, Prototype
-- [ ] **Structural:** Adapter, Decorator, Facade, Proxy
+- [ ] **Mental model:** patterns as named trade-offs, creation vs composition coupling, the composition root
+- [ ] **Creational:** constructors and static factories first, then Factory Method, Abstract Factory, Builder, Prototype, Singleton
+- [ ] **Structural:** Adapter, Decorator, Facade, Proxy (recognize Composite, Bridge, Flyweight)
+- [ ] Telling look-alike patterns apart, and patterns already in the JDK
+- [ ] Choosing a pattern, and how patterns fail in practice
+- [ ] Worked example: payment gateway
 
 ### 4. Networking & Request Lifecycle
 - [ ] DNS resolution, caching, and common failure modes
