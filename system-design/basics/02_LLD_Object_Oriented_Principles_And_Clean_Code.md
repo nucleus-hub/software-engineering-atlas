@@ -283,15 +283,6 @@ if (user.allows(Channel.SMS)) { ... }     // only User knows how its settings ar
 
 This habit is called **"tell, don't ask."** A related rule, the *Law of Demeter*, says the same about getter chains: talk to the objects you hold, not to the objects inside them.
 
-??? info "Go deeper (optional): the kinds of coupling, from worst to best"
-    | Kind of coupling | What it looks like |
-    |---|---|
-    | Content coupling | One class reaches directly into another class's private fields or internal workings. |
-    | Global coupling | Classes share mutable global state, which hides dependencies and makes test results depend on the order the tests run in. |
-    | Control coupling | A caller passes a flag that tells the method *what to do*, so the caller must understand how the method works inside. |
-    | Stamp coupling | A method receives a whole object, such as an `Order`, when it only needs one value from it, such as the order ID. |
-    | Data coupling | A method receives exactly the values it needs and nothing more. This is the goal. |
-
 !!! question "Practice"
     How would you reduce the coupling in this line?
 
