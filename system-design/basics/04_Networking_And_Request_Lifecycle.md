@@ -69,8 +69,8 @@ Engineers often call layers by number. The numbers come from an older seven-laye
 
 | Name you will hear | What it means | Why it matters in design |
 |---|---|---|
-| **Layer 4** (transport) | TCP or UDP: connections, ports, and delivery | A Layer 4 load balancer forwards connections without reading the requests inside them. It is fast, but it cannot route by URL. |
-| **Layer 7** (application) | HTTP: methods, paths, headers, and status codes | A Layer 7 load balancer reads each request, so it can route `/api` and `/app` to different servers, but it must decrypt TLS to do so. |
+| **Layer 4** (transport) | TCP or UDP: getting data to the right program (the port) | A Layer 4 load balancer looks only at the outer wrappers: the IP address and the port. It hands each connection to a server without opening it, so it never sees the URL. That makes it very fast and simple, but it cannot send `/api` and `/app` to different servers. |
+| **Layer 7** (application) | HTTP: what the request asks for (method, URL, headers) | A Layer 7 load balancer unwraps every layer, decrypting TLS on the way, and reads the HTTP request itself. Because it can see the URL, it can send `/api` and `/app` to different servers, at the cost of more work per request. |
 
 The difference between Layer 4 and Layer 7 load balancers is covered in **Basics 8 (Load Balancing & Proxying)**.
 
