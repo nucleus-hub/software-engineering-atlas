@@ -521,13 +521,15 @@ Two worked instances:
 
 ### Questions to ask before designing anything
 
-| Question | Why it matters | Assumed answer |
-|---|---|---|
-| Which providers are needed now, and which are coming? | It decides whether a provider interface is worth adding yet. | Stripe now; Adyen for Germany next quarter. |
-| Does the provider depend on the customer's country? | It decides how a gateway is chosen at runtime. | Yes, by billing country. |
-| Which failures are worth retrying, and is a charge safe to repeat? | It shapes the retry rules and the `ChargeRequest` fields. | Retry timeouts and rate limits; an idempotency key makes repeats safe. |
-| What must be audited: each attempt, or each charge? | It fixes the order of the decorators. | Each attempt, for reconciliation with the provider. |
-| Can provider SDK types appear in our domain code? | It decides where translation happens. | No: SDK types stay inside the adapters. |
+Before writing any class, pin down what the design actually needs to handle. Here are the answers this worked example assumes:
+
+| Question | Assumed answer |
+|---|---|
+| Which providers are needed now, and which are coming? | Stripe now, and Adyen for Germany next quarter, which is reason enough to put a `PaymentGateway` interface in front of both. |
+| Does the provider depend on the customer's country? | Yes, by billing country, so the gateway must be chosen at runtime. |
+| Which failures are worth retrying, and is it safe to repeat a charge? | Only timeouts and rate limits. An idempotency key makes a repeated charge safe. |
+| What must be audited: every attempt, or just every successful charge? | Every attempt, so it can be reconciled against the provider's own records. This is also what decides the decorator order later. |
+| Can the provider's SDK types appear in our own code? | No. SDK types must stay inside the adapters. |
 
 **Scope.** *In:* choosing a provider by country, building a valid charge request, charging, retrying temporary failures, auditing every attempt, and returning a clear result. *Out:* refunds, payouts, fraud models, and the checkout UI.
 
