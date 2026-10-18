@@ -119,18 +119,26 @@ Creational patterns are about creating objects. Each one below starts with what 
 
 ### Start simple: constructors and static factory methods
 
-Most objects need no pattern at all. A **constructor** is fine when there are two or three required values. A **static factory method** is a static method that creates the object for you, so it can have a helpful name, check its input, or reuse an existing object:
+Most objects need no pattern at all. A **constructor** is fine when there are two or three required values and their meaning is obvious.
+
+A **static factory method** is a static method that creates the object for you. Its big advantage is a *name*. Take a temperature: `new Temperature(25)` cannot say whether 25 is Celsius or Fahrenheit, and Java does not allow two constructors that both take one `double`. Two named methods solve it:
 
 ```java
-final class Money {
-    private Money(BigDecimal amount, Currency currency) { ... }
+final class Temperature {
+    private final double degreesCelsius;
 
-    static Money of(String amount, String currency) {          // a clear name, and validation
-        return new Money(new BigDecimal(amount), Currency.getInstance(currency));
+    private Temperature(double degreesCelsius) {   // private: callers must use the methods below
+        this.degreesCelsius = degreesCelsius;
     }
-    static Money zero(Currency currency) { return ZEROS.get(currency); }   // reuses a cached object
+    static Temperature celsius(double value)    { return new Temperature(value); }
+    static Temperature fahrenheit(double value) { return new Temperature((value - 32) * 5 / 9); }
 }
+
+Temperature today = Temperature.celsius(25);       // the call says exactly what it means
+Temperature oven  = Temperature.fahrenheit(350);
 ```
+
+You already use static factory methods every day: `List.of(1, 2, 3)`, `LocalDate.of(2025, 1, 31)`, and `Integer.valueOf(42)`, which hands back an existing cached object for small numbers instead of creating a new one.
 
 A **simple factory** goes one step further: one method that picks which class to create from its input, such as `SenderFactory.forChannel(EMAIL)` returning an `EmailSender`. It is very common, but it is *not* the Factory Method pattern below, and interviewers like to check that you know the difference.
 
