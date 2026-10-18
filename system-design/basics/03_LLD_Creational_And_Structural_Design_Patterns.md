@@ -361,9 +361,9 @@ The rest of your code only ever sees `PaymentGateway`. If Stripe changes its SDK
 
 ### Decorator: add a feature without changing the class
 
-**What it is:** a decorator wraps an object and adds one extra feature, such as retrying, logging, or caching, while offering exactly the same methods as the object it wraps. Think of a phone case: the phone works exactly as before, and the case adds protection.
+**What it is:** a decorator is a class that wraps another object and adds one extra feature to it, without changing that object's methods. Anything that uses the wrapped object cannot tell the difference, except that it now also gets the extra feature. Think of a phone case: the phone still works exactly as before, you still use the same buttons and screen, and the case just adds protection around it.
 
-**When it helps.** Suppose payments should be retried when the provider times out. Instead of adding retry code inside `StripeAdapter`, you wrap it in a class that does only the retrying:
+**When it helps.** `StripeAdapter` charges a card through one method, `charge(request)`. Now payments should be retried when Stripe times out. One option is to add a retry loop straight inside `StripeAdapter`. But then that one class has two jobs: talking to Stripe, and deciding when to retry. A decorator keeps the two apart. You write a new class, `RetryingGateway`, with the very same `charge(request)` method. Inside, it calls the real gateway and only adds the retrying around that call:
 
 ```java
 class RetryingGateway implements PaymentGateway {     // the same interface as the object it wraps
