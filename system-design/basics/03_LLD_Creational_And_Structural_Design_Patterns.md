@@ -458,11 +458,11 @@ Proxies are also used to check permissions before a call, to cache results, and 
 
 These come up less often, but you should recognize them:
 
-| Pattern | What it does | Typical example | Watch out for |
-|---|---|---|---|
-| **Composite** | Lets you treat a single item and a group of items in the same way. | A shopping cart where a bundle's price is the sum of its items; files and folders. | Some actions only make sense for groups, such as "add an item to this bundle". |
-| **Bridge** | Splits one class hierarchy into two independent ones that can be combined freely. | Notification types (alert, digest) combined with channels (email, SMS), without one class per combination. | There are two hierarchies to learn, so it is only worth it when both really change. |
-| **Flyweight** | Lets many small objects share the same data, to save memory. | The letters in a text editor share font data; `Integer.valueOf` reuses objects for small numbers. | The shared data must never change, or every object sharing it changes too. |
+| Pattern | What it does | Example |
+|---|---|---|
+| **Composite** | Lets you treat a single item and a group of items through the same interface, so your code never needs to ask "is this one item, or many?" A group can even contain smaller groups inside it. | A shopping cart where a bundle of products has a `price()` method, just like a single product does; the bundle's price simply adds up its contents. Folders work the same way: a folder's size is the sum of the files and folders inside it. |
+| **Bridge** | Splits one class hierarchy into two independent ones, so each can grow on its own instead of needing one class per combination. | A notification has a type, such as an alert or a daily digest, and a channel, such as email or SMS. Without Bridge, supporting both means a class per combination: `AlertEmail`, `AlertSms`, `DigestEmail`, `DigestSms`. With Bridge, the two vary independently, so adding a new channel does not touch the notification types. |
+| **Flyweight** | Lets many small objects share the same data instead of each keeping its own copy, to save memory. | A text editor showing a million letters does not create a million separate font objects; every letter using the same font points to one shared font object. `Integer.valueOf()` does something similar: it reuses one shared object for small numbers instead of creating a new one each time. |
 
 ---
 
