@@ -254,43 +254,77 @@ Because the constructor is private, `build()` is the only way to get a `Pizza`, 
 
 ### Prototype: copy an existing object
 
-**What it is:** create a new object by copying one that is already set up, then change only what differs.
+**What it is:** with Prototype, you create a new object by copying an existing object that is already set up, and then you change only the parts that are different.
 
-An email tool keeps a ready-made campaign template with a subject and a recipient list. Each new campaign starts as a copy of it:
+**When it helps.** Imagine an email tool where the marketing team keeps a ready-made campaign template. The template already has a subject line and a list of recipients. When the team starts a new campaign, it is easier to copy the template and adjust the copy than to set everything up again from nothing:
+
+```java
+EmailTemplate summerSale = template.copy();              // start from the ready-made template
+summerSale.addRecipient("new.customer@example.com");     // change only what is different
+```
+
+**How to copy correctly.** The copy must get its *own* recipient list. If the copy and the template share one list, changing one of them changes both:
 
 ```java
 final class EmailTemplate {
     private final String subject;
-    private final List<String> recipients;            // a list that can be changed
+    private final List<String> recipients;
 
-    EmailTemplate(String subject, List<String> recipients) { ... }
+    EmailTemplate(String subject, List<String> recipients) {
+        this.subject = subject;
+        this.recipients = recipients;
+    }
 
-    EmailTemplate copyShallow() { return new EmailTemplate(subject, recipients); }                    // BUG
-    EmailTemplate copy()        { return new EmailTemplate(subject, new ArrayList<>(recipients)); }   // correct
+    void addRecipient(String email) {
+        recipients.add(email);
+    }
+
+    EmailTemplate copy() {
+        return new EmailTemplate(subject, new ArrayList<>(recipients));   // the copy gets its own new list
+    }
 }
 ```
 
-**Watch out:** the shallow copy shares the *same* recipient list with the original, so adding a recipient to the copy silently adds it to the template too. A correct copy gives the new object its own copy of anything that can change. In Java, write a `copy()` method like this one rather than using `Cloneable`, which is awkward and easy to get wrong.
+The subject does not need copying, because a Java `String` can never be changed once it is created.
+
+**Watch out:** the most common mistake is writing `new EmailTemplate(subject, recipients)` inside `copy()`. That hands the copy the *same* list object as the template, so adding a recipient to the summer sale campaign would silently add them to the original template as well. This mistake is called a **shallow copy**. To avoid it, give the copy its own new version of anything that can change, as `copy()` does above. In Java, write your own `copy()` method like this one instead of using the built-in `Cloneable` interface, which is awkward and easy to get wrong.
 
 ### Singleton: only one instance
 
-**What it is:** a class that allows only one object of itself to exist, and gives the whole program a global way to reach it.
+**What it is:** a Singleton is a class that allows only one object of itself to exist, and that lets any part of the program reach that one object directly.
+
+**When it seems useful.** Some things should exist only once in an application, such as its configuration settings. A Singleton guarantees there is just one, and lets any class get to it without anyone handing it over:
 
 ```java
-// A Singleton: the enum guarantees exactly one instance, reachable from anywhere
-enum AppConfig {
+enum AppConfig {                        // Java creates exactly one INSTANCE, and never another
     INSTANCE;
-    private final Map<String, String> values = load();
-    String get(String key) { return values.get(key); }
-}
-String url = AppConfig.INSTANCE.get("db.url");     // any class can do this, and it never shows in its constructor
 
-// Usually better: create one object at start-up and pass it in
-Config config = Config.loadFrom(Path.of("app.yaml"));
-OrderService orders = new OrderService(config);    // the dependency is visible, and easy to fake in tests
+    private final Map<String, String> values = loadFromFile();
+
+    String get(String key) {
+        return values.get(key);
+    }
+}
+
+String databaseUrl = AppConfig.INSTANCE.get("db.url");   // any class, anywhere, can do this
 ```
 
-**Watch out:** Singleton is the most overused pattern. Because any class can reach it, you cannot see which classes depend on it, tests cannot swap it for a fake, and shared data changed from many threads causes bugs. Usually you just want *one object*, not *global access*: create it at start-up and pass it in, which is what Spring does by default. If you really must enforce a single instance, an `enum` like the one above is the simplest safe way.
+**Why it causes problems.** The danger is the "reach it from anywhere" part:
+
+- **Hidden dependencies.** When `OrderService` calls `AppConfig.INSTANCE` inside one of its methods, nothing in its constructor shows that it needs the configuration. You only find out by reading every line of the class.
+- **Hard to test.** A test cannot give `OrderService` a fake configuration, because `OrderService` always grabs the real one itself.
+- **Shared changes.** If the single object holds data that can change, many threads changing it at the same time can cause bugs that are very hard to find.
+
+**The better option.** Most of the time, you only need *one object*; you do not need *global access* to it. So create the object once at start-up, and pass it to the classes that need it, exactly like the composition root earlier on this page:
+
+```java
+Config config = Config.loadFrom(Path.of("app.yaml"));   // created once, at start-up
+OrderService orders = new OrderService(config);         // the dependency is visible in the constructor
+```
+
+Now the dependency is visible, and a test can simply pass in a fake `Config`. Spring works this way by default: it creates one object of each class and passes it to whoever needs it, so you get a single instance without global access.
+
+**Watch out:** Singleton is the most overused design pattern. Use it only when a second instance would be a real bug *and* passing the object in is not possible. If you do need one, an `enum` like `AppConfig` above is the simplest thread-safe way to write it in Java.
 
 ---
 
