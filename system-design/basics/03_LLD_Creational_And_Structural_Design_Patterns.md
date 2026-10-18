@@ -11,7 +11,7 @@ You do not need to memorize these. Come back to this table whenever a term feels
 | **Seam** | A point in the code where one implementation can be swapped for another without touching the code around it. |
 | **Composition root** | The one place in an application, usually near `main()`, where concrete classes are created and wired to the interfaces they implement. |
 | **Vendor SDK** | The client library a third party ships so your code can call their service, such as a database driver or a payment provider's client. |
-| **Registry** | An object that looks up which concrete implementation to use, usually from a small, fixed set, such as "by region" or "by payment method". |
+| **Registry** | An object that looks up which concrete implementation to use, usually from a small, fixed set, such as "by country" or "by payment method". |
 | **Wrapper** | An object that holds another object of the same interface and adds something before or after passing the call through. Adapter, Decorator, Facade, and Proxy are all wrappers with different intents. |
 
 ---
@@ -113,7 +113,7 @@ enum GlobalOrderCounter {
 }
 
 // Usually better for most classes: one instance by decision, created at the composition root and passed in
-CartRepository repository = RepositoryRegistry.forRegion(region);
+CartRepository repository = RepositoryRegistry.forCountry(country);
 CheckoutService service = new CheckoutService(repository, paymentProcessor);   // visible dependency, easy to fake in tests
 ```
 
@@ -161,7 +161,7 @@ final class LocalTestKit implements CheckoutInfrastructureKit {    // every memb
 }
 ```
 
-The guarantee is consistency: a test can never accidentally wire the real production database next to an in-memory cache, because one factory builds the whole, matching set. The cost is rigidity: adding a fourth member to the family, such as a fraud-scoring client, forces an edit to every kit. Use it only when mixing members from different families would be a real bug, such as this local-versus-production split, or a cloud provider's matching storage, queue, and secrets clients.
+The guarantee is consistency: a test can never accidentally wire the real production database next to an in-memory cache, because one factory builds the whole, matching set. The cost is rigidity: adding a fourth member to the family, such as a fraud-scoring client, forces an edit to every kit. Use it only when mixing members from different families would be a real bug, such as this local-versus-production split, or a per-country kit on this platform, whose tax calculator, payment processor, and currency must all belong to the same country: Chilean IVA charged through a South African gateway is not a configuration choice, it is an incident.
 
 ### Level 5: Prototype, copy instead of construct
 
@@ -235,7 +235,7 @@ final class StripePaymentAdapter implements PaymentProcessor {        // our int
 }
 ```
 
-Adapter is the standard defense at a third-party boundary: vendor types stop at the adapter and never leak into domain code, so switching providers touches one class. **Translate errors as carefully as data.** An adapter that treats "Stripe is rate-limiting us" as "the payment was declined" has made a real business decision inside what looks like plumbing, so that choice must be deliberate and visible, not accidental.
+Adapter is the standard defense at a third-party boundary: vendor types stop at the adapter and never leak into domain code, so switching providers touches one class. The same seam covers the platform's four countries: when Canada, Chile, or South Africa use a different payment provider, each one gets its own adapter behind the same `PaymentProcessor` interface, and `CheckoutService` never notices. **Translate errors as carefully as data.** An adapter that treats "Stripe is rate-limiting us" as "the payment was declined" has made a real business decision inside what looks like plumbing, so that choice must be deliberate and visible, not accidental.
 
 ### Level 7: Decorator, for optional behavior that stacks
 
@@ -326,7 +326,7 @@ The common variants are **virtual** (create the target lazily), **protection** (
     |---|---|---|---|
     | **Composite** | Treats a single object and a group of objects through the same interface, so trees can be handled recursively. | An `OrderBundle` (a gift set) that reports a total price equal to the sum of its items and nested bundles. | Operations that only make sense for groups, like adding a child, end up on the shared interface. |
     | **Bridge** | Separates an abstraction from its implementation, so each can vary on its own. | Discount rules (percentage, free shipping, BOGO) × notification channels for "your cart is about to expire" alerts, without one class per combination. | Two hierarchies to understand; only worth it when both dimensions really vary. |
-    | **Flyweight** | Shares common, immutable state between many small objects to save memory. | `Currency.getInstance("MXN")` in the JDK, reused inside every `Money` value instead of recreated each time. | Shared state must be immutable, and callers must pass in the part that varies. |
+    | **Flyweight** | Shares common, immutable state between many small objects to save memory. | `Currency.getInstance("MXN")` in the JDK returns one shared instance per currency code (just four on this platform: MXN, CAD, CLP, and ZAR), reused inside every `Money` value instead of recreated each time. | Shared state must be immutable, and callers must pass in the part that varies. |
 
 !!! question "Practice: Adapter, Decorator, Facade, or Proxy?"
     1. A class wraps the AWS SDK's `S3Client` behind our own `ReceiptArchiveStore` interface.
@@ -396,7 +396,7 @@ Two details are worth saying out loud. The decorator chain is built in exactly o
 |---|---|---|---|
 | Let customers pay with a saved card on file. | The wiring that picks a payment processor when a request includes a saved card. | A `SavedCardPaymentProcessor`. | `CheckoutService`, `Cart`, and the other discount rules. |
 | Add a cache in front of the cart store. | The wiring in the composition root. | `CachingCartRepository`, as shown in Level 7. | `PostgresCartRepository`, `CheckoutService`, and every rule. |
-| Store Central American customers' carts in an in-region database for data residency, as Walmart de México y Centroamérica expands online beyond Mexico. | The wiring in the composition root. | One `RepositoryRegistry` entry and a Central America `PostgresCartRepository` instance pointed at an in-region database. | `CheckoutService` and every decorator. |
+| Launch the platform in Chile, with Chilean carts stored in a database in Chile. | The wiring in the composition root. | One `RepositoryRegistry` entry and a `PostgresCartRepository` instance pointed at a database in Chile. | `CheckoutService` and every decorator. |
 | Slow down card-testing fraud with a per-card daily attempt limit. | The composition root's wiring. | `RateLimitingPaymentProcessor`, as shown in Level 9. | Every other decorator and `CheckoutService`. |
 | Let customers edit their shipping address after checkout. | `CheckoutService`, because the workflow itself changes. | An "update shipping address" method and its validation. | The discount rules, the payment processors, and the repository contract. |
 

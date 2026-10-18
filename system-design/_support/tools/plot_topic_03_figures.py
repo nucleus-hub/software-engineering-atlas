@@ -240,7 +240,7 @@ def cart_checkout_patterns() -> plt.Figure:
     arrow(ax, (18.5, 66.5), (23.5, 66.5), color=GREY)
     arrow(ax, (44.5, 66.5), (50.5, 66.5), color=GREY, label="builds")
 
-    box(ax, 24, 34, 20, 13, "RepositoryRegistry", "simple factory, by region", **creational)
+    box(ax, 24, 34, 20, 13, "RepositoryRegistry", "simple factory, by country", **creational)
     arrow(ax, (34, 59.5), (34, 47.5), color=GREY)
     ax.text(35.5, 53.5, "resolves", ha="left", va="center", fontsize=8, color=INK)
 

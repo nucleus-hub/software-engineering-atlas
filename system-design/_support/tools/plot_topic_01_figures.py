@@ -328,7 +328,8 @@ def order_queue_links(ax: plt.Axes, *, publish_label: str, publish_color: str,
 
 
 def caller_footnote(ax: plt.Axes) -> None:
-    ax.text(50, 1.5, "Arrows point from the caller to the service it calls",
+    ax.text(50, 1.5, "One deployment per country: Mexico, Canada, Chile, South Africa"
+            "     •     Arrows point from the caller to the service it calls",
             ha="center", fontsize=8.5, color=GREY, style="italic")
 
 

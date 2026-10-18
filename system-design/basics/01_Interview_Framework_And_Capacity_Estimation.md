@@ -52,8 +52,8 @@ Before drawing anything, sort what you learn about the problem into four buckets
 |---|---|---|
 | **Functional** | What must the system do for its users? | Shoppers can add, update, and remove items in a cart, see the running total, and check out to turn the cart into a paid order. |
 | **Non-functional** | How well must the system behave while doing it? | Cart reads and writes should feel instant (p99 under 150 ms) and can tolerate rare, harmless inconsistency. Checkout must be strongly consistent and safe to retry: the same checkout request submitted twice must never create two orders or charge the customer twice. |
-| **Constraint** | What boundary must the design respect? | Prices are in Mexican pesos (MXN) and include IVA, Mexico's 16% value-added tax. Charges go through an external payment gateway the team does not control. |
-| **Out of scope** | What are we deliberately not building today? | Product catalog/search, inventory availability, shipping and fulfillment, fraud/risk scoring, and post-order processing are owned by other services. Multi-currency pricing and split-tender payments are not needed for a single-country, peso-only market. |
+| **Constraint** | What boundary must the design respect? | The same services run in four countries (Mexico, Canada, Chile, and South Africa), each with its own currency, sales tax, and payment providers. Charges go through external payment gateways the team does not control. |
+| **Out of scope** | What are we deliberately not building today? | Product catalog/search, inventory availability, shipping and fulfillment, fraud/risk scoring, and post-order processing are owned by other services. Currency conversion and cross-border orders are not needed, because every order is priced and paid in exactly one country's currency. Split-tender payments are out of scope too. |
 
 Non-functional requirements are only useful when they are specific. "Checkout should be reliable" cannot guide a decision, but "a checkout request retried after a timeout must never create a second order" can, because you can test whether a design meets it.
 
@@ -73,14 +73,15 @@ Non-functional requirements are only useful when they are specific. "Checkout sh
 
 ## 3. Clarifying questions that actually change the design
 
-A clarifying question is only worth asking if the answer would change something in your design. For this page, assume the interviewer says: "this is Walmart's cart and checkout platform for the Mexico market" — Walmart de México y Centroamérica, Walmart's largest international market, operating roughly 3,000 Walmart Supercenter, Bodega Aurrera, and Sam's Club locations across a country of about 129 million people. Each question below states what its answer decides, along with the answer we will assume at that scale.
+A clarifying question is only worth asking if the answer would change something in your design. For this page, assume the interviewer says: "this is the cart, checkout, order, and payment platform for Walmart International, serving Mexico, Canada, Chile, and South Africa." Each question below states what its answer decides, along with the answer we will assume.
 
 | Question | What the answer decides | Assumed answer for cart & checkout |
 |---|---|---|
 | Who are the users, and what are the top two or three things they do? | It decides which request path is the most important one to make fast and reliable, and which one is the most important to make *correct*. | Shoppers add, update, and remove cart items constantly. Checking out is rare by comparison, but it is the one action that moves real money. |
 | What is explicitly out of scope? | It decides where you are allowed to stop designing, so you do not waste time on features nobody asked for. | Product catalog, inventory, shipping, and fraud detection are separate services we only call into. |
-| Roughly how much traffic should we expect? | It decides whether a single server and database are enough, or whether the design must scale out. | About 1.2 billion cart actions per month, but only about 10 million completed checkouts per month. |
-| How long must the data be kept? | It decides how much storage the system needs and whether storage keeps growing forever. | Abandoned carts expire after 30 days. Completed orders and payment records are kept for 5 years, the period Mexico's Código Fiscal de la Federación requires for accounting records. |
+| One country, or several? | It decides whether you size one shared global system or one deployment per country. | Four countries, each running its own copy of the services in its own region, because data-protection rules, currency, tax, and payment providers all differ by country. So we size one deployment, the largest: Mexico, with about 3,000 Walmart Supercenter, Bodega Aurrera, and Sam's Club locations serving about 129 million people. Canada, Chile, and South Africa are smaller copies of the same design. |
+| Roughly how much traffic should we expect? | It decides whether a single server and database are enough, or whether the design must scale out. | For Mexico, about 1.2 billion cart actions per month, but only about 10 million completed checkouts per month. |
+| How long must the data be kept? | It decides how much storage the system needs and whether storage keeps growing forever. | Abandoned carts expire after 30 days. Completed orders and payment records are kept for as long as each country's tax law requires; for Mexico, that is 5 years under the Código Fiscal de la Federación. |
 | How fast and how reliable must the most important action be? | It decides the latency, consistency, and safety targets the design will be measured against. | Cart operations should finish within 150 ms and can tolerate an occasional lost update. Checkout must be strongly consistent, durable, and idempotent: retrying it must never double-charge a customer. |
 
 The interviewer may not give you every number. When they do not, propose a reasonable value, say it out loud, and ask whether it sounds right. Stating an assumption clearly is always better than silently guessing.
@@ -352,7 +353,8 @@ This section collects everything from the ladder into the summary you would writ
 None of these numbers come from the original one-sentence prompt. They are estimates you state clearly so the interviewer can correct them before you build on them.
 
 ```text
-Walmart de México y Centroamérica: ~3,000 stores and clubs, ~129 million people in Mexico
+Walmart International platform: Mexico, Canada, Chile, South Africa (one deployment per country)
+Sized here: Mexico, the largest (~3,000 stores and clubs, ~129 million people)
 9 million daily active shoppers
 1.2 billion cart actions per month           (write volume: add, update, remove)
 8 cart reads per cart action                 (read/write ratio, so reads dominate)
@@ -360,7 +362,7 @@ Walmart de México y Centroamérica: ~3,000 stores and clubs, ~129 million peopl
 10× peak factor                              (El Buen Fin and Navidad; quincena is a smaller, 2–3× recurring peak)
 800 bytes per cart record, 30-day TTL
 ~1.5 KB per order + payment record, 5-year retention (Mexican tax law), 3 replicas
-All prices in MXN, IVA (16%) included
+Mexico prices in MXN, IVA (16%) included
 ```
 
 ### Derived numbers and what each one decides
@@ -397,9 +399,11 @@ The data model needs three related entities, each owned by exactly one service:
 
 ```text
 Cart:    cart_id (PK)    | user_id | items[] (product_id, qty, price_snapshot) | updated_at | expires_at   -- Cart service
-Order:   order_id (PK)   | user_id | items[] | subtotal | discount | iva | total | status | created_at  -- Order service
-Payment: payment_id (PK) | order_id | amount_mxn | status | gateway_ref | idempotency_key | created_at -- Payment service
+Order:   order_id (PK)   | user_id | items[] | subtotal | discount | tax | total | currency | status | created_at -- Order service
+Payment: payment_id (PK) | order_id | amount | currency | status | gateway_ref | idempotency_key | created_at -- Payment service
 ```
+
+The `currency` and `tax` columns are generic on purpose: the same services run in all four countries, so Mexico stores MXN with IVA while South Africa stores ZAR with VAT, in the same schema.
 
 Unlike a single-entity URL shortener, these entities have real relationships to manage: one order has many items, and one order has (usually) one payment, but may have more after a retry. Modeling those relationships well is covered in **Basics 11 (Practical Data Modeling & Query Design)**.
 
@@ -419,7 +423,7 @@ Each component in the diagram exists because of a specific number or requirement
 | **Submitted-order queue** | A durable topic. Checkout publishes the order only after payment is authorized, then returns to the customer straight away. New subscribers can be added later without touching checkout. Queues are covered in **Basics 13 (Asynchronous Processing Basics)**. |
 | **Order service** | One subscriber to the queue. It picks up each submitted order, stores it in the partitioned order store (Basics 12), and starts post-order processing, which is out of scope for this design. |
 
-Notice what is still simple in this design: there is no second region yet, and no saga orchestrator. Notice, too, the one crack it leaves open on purpose. If payment is authorized but publishing to the queue fails, the customer has paid for an order nobody will process. Closing that gap reliably, usually with a *transactional outbox* that records the order and the outgoing message together, is picked up in **Basics 13** and **Advanced 4 (Distributed Transactions & Consensus)**, along with inventory reservation and multi-service fulfillment across Walmart Mexico's logistics network.
+Notice what is still simple in this design: each country's deployment lives in a single region with no cross-region failover, and there is no saga orchestrator. Running across regions is covered in **Advanced 15 (Single Region vs Multi-Region Deployment)**. Notice, too, the one crack the design leaves open on purpose. If payment is authorized but publishing to the queue fails, the customer has paid for an order nobody will process. Closing that gap reliably, usually with a *transactional outbox* that records the order and the outgoing message together, is picked up in **Basics 13** and **Advanced 4 (Distributed Transactions & Consensus)**, along with inventory reservation and multi-service fulfillment.
 
 ??? info "Go deeper (optional): why checkout needs an idempotency key"
     A mobile network blip is enough to make a client retry a checkout request it never actually received a response for. Without protection, that retry can submit a second order and charge the card twice. The fix is an idempotency key, generated once by the client and sent with the request: checkout passes the same key on to the Payment service, which checks whether it has already processed that key and, if so, returns the original result instead of charging again. The Order service uses the `order_id` the same way, so a message delivered twice by the queue still creates only one order.
@@ -508,3 +512,4 @@ This page skipped several topics on purpose. Here is where each one is covered o
 | Consistency versus availability (CAP) | Advanced 12: Data Consistency & Clock Synchronization |
 | SLIs, SLOs, and error budgets | Advanced 14: Observability, Monitoring & Alerting |
 | Hot keys and cache stampedes | Advanced 8: Distributed Caching & High-Concurrency Failures |
+| Running the same platform in several countries: regions, tenant isolation, and data residency | Advanced 15, 19, and 20 |

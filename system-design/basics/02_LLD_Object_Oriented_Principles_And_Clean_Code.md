@@ -92,6 +92,11 @@ record Money(long cents, String currency) {
         if (currency == null || currency.length() != 3)
             throw new IllegalArgumentException("currency must be a 3-letter code, such as MXN");
     }
+    Money plus(Money other) {                          // pesos plus rand is a bug, not a sum
+        if (!currency.equals(other.currency))
+            throw new IllegalArgumentException("cannot add " + other.currency + " to " + currency);
+        return new Money(cents + other.cents, currency);
+    }
 }
 
 record CartItem(String productId, int quantity, Money unitPrice) {
@@ -102,7 +107,7 @@ record CartItem(String productId, int quantity, Money unitPrice) {
 }
 ```
 
-Now an invalid price or quantity simply cannot exist. Any method that receives a `Money` or a `CartItem` can trust it without checking it again. Wrapping an amount in its own `Money` type follows the same idea: a method that receives a `Money` never needs to re-check for negative amounts or missing currencies, and nobody can accidentally pass a raw `double` where a validated price was expected — which matters a great deal once that number is about to be charged to a real credit card.
+Now an invalid price or quantity simply cannot exist. Any method that receives a `Money` or a `CartItem` can trust it without checking it again. Wrapping an amount in its own `Money` type follows the same idea: a method that receives a `Money` never needs to re-check for negative amounts or missing currencies, and nobody can accidentally pass a raw `double` where a validated price was expected — which matters a great deal once that number is about to be charged to a real credit card. And because the same code runs in Mexico, Canada, Chile, and South Africa, `plus` refusing to mix currencies turns a silent pricing bug into a loud one.
 
 !!! warning "A common trap"
     Making every field private and then adding a public setter for each one is not encapsulation. Callers can still put the object into any state they like, so the rules still live in the callers. Only add methods that keep the object valid.
@@ -462,7 +467,7 @@ Suppose the tax rate for a region is computed separately in three places: checko
 
 ### YAGNI: You Aren't Gonna Need It
 
-**Do not build for a future that nobody has asked for.** The `CartRepository` interface is worth having today: it costs one small file, and it lets us test with an in-memory store. Building multi-currency pricing or split-tender payments "just in case" is not worth it. Basics 1 explicitly put those out of scope, and code written against guessed requirements is usually wrong by the time the real need arrives. Keep the extension points that are cheap and proven, but do not build the extensions early.
+**Do not build for a future that nobody has asked for.** The `CartRepository` interface is worth having today: it costs one small file, and it lets us test with an in-memory store. Building currency conversion or split-tender payments "just in case" is not worth it. Basics 1 explicitly put those out of scope: even though the platform serves four countries, every order is priced and paid in exactly one currency, so `Money` carrying a currency code is enough. Code written against guessed requirements is usually wrong by the time the real need arrives. Keep the extension points that are cheap and proven, but do not build the extensions early.
 
 !!! question "Practice"
     The checkout flow and the fraud-review flow each contain an identical 10-line method that validates a shipping address. A teammate wants to merge them into one shared method. What should you consider?
