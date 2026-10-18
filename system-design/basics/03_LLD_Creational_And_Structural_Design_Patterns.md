@@ -541,10 +541,12 @@ Before writing any class, pin down what the design actually needs to handle. Her
 |---|---|---|---|
 | `PaymentService.pay(order)` | Facade | Checkout stays the same when fraud, tax, or ledger steps change. | It must orchestrate only; rules stay in the subsystem classes. |
 | `ChargeRequest.builder()` | Builder | New optional fields, like metadata or a statement descriptor, need no new constructors. | `build()` must check every rule, such as a positive amount and a present idempotency key. |
-| `GatewayRegistry.forCountry(...)` | Simple factory (a registry, not Factory Method) | A new country or provider is one new registry entry. | It must fail clearly for unsupported countries instead of returning `null`. |
+| `GatewayRegistry.forCountry(...)` | Simple factory | A new country or provider is one new registry entry. | It must fail clearly for unsupported countries instead of returning `null`. |
 | `RetryingGateway` | Decorator | Retry rules change without touching any provider code. | Retry only temporary failures, and only because the idempotency key prevents double charges. |
 | `AuditingGateway` | Decorator | Audit can be added, changed, or removed per provider. | It sits **inside** retry, so every attempt is recorded. |
 | `StripeAdapter`, `AdyenAdapter` | Adapter | A provider's SDK can change or be replaced behind one class. | Every provider outcome, including errors, maps to our `ChargeResult`. |
+
+`GatewayRegistry` is a **simple factory**, not Factory Method: nothing here is a subclass choosing which object to create. It is one method, `forCountry(country)`, that picks the right gateway for its input from a map, the same way `SenderFactory.forChannel(EMAIL)` did back in section 3.
 
 ### Core code
 
