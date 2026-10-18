@@ -344,6 +344,10 @@ Structural patterns are about how objects fit together. The four main ones all w
 class StripeAdapter implements PaymentGateway {         // your interface on the outside...
     private final StripeClient stripe;                  // ...Stripe's SDK on the inside
 
+    StripeAdapter(StripeClient stripe) {
+        this.stripe = stripe;
+    }
+
     public ChargeResult charge(ChargeRequest request) {
         try {
             StripeCharge charge = stripe.createCharge(request.amountInCents(), request.currency());
@@ -550,6 +554,8 @@ Before writing any class, pin down what the design actually needs to handle. Her
 
 ### Core code
 
+`StripeAdapter` and `PaymentService` are unchanged from section 4. `AdyenAdapter` is left out because it has the same shape as `StripeAdapter`, just for a different provider. Three classes are new: `AuditingGateway`, `RetryingGateway` (the same class built in section 4's Decorator example), and `GatewayRegistry`.
+
 ```java
 interface PaymentGateway { ChargeResult charge(ChargeRequest request); }
 
@@ -562,6 +568,24 @@ final class AuditingGateway implements PaymentGateway {
         ChargeResult result = inner.charge(request);
         audit.record(request.idempotencyKey(), result);       // one entry per attempt (it sits inside retry)
         return result;
+    }
+}
+
+final class RetryingGateway implements PaymentGateway {
+    private final PaymentGateway inner;
+
+    RetryingGateway(PaymentGateway inner) {
+        this.inner = inner;
+    }
+
+    public ChargeResult charge(ChargeRequest request) {
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            ChargeResult result = inner.charge(request);
+            if (!result.isTimeout()) {
+                return result;
+            }
+        }
+        return ChargeResult.declined("gateway timed out 3 times");
     }
 }
 
@@ -578,7 +602,7 @@ final class GatewayRegistry {
 
 // Composition root: the only place that knows the concrete classes and the wrapper order
 PaymentGateway withPolicies(PaymentGateway adapter) {
-    return new RetryingGateway(new AuditingGateway(adapter, auditLog), retryPolicy);
+    return new RetryingGateway(new AuditingGateway(adapter, auditLog));   // retry outside, audit inside
 }
 PaymentGateway stripe = withPolicies(new StripeAdapter(stripeClient));
 PaymentGateway adyen  = withPolicies(new AdyenAdapter(adyenClient));
