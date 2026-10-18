@@ -83,73 +83,78 @@ def pattern_selection() -> plt.Figure:
 
 def patterns_mental_model() -> plt.Figure:
     fig, ax = canvas(14, 6.4)
-    heading(ax, "Two Families, Two Kinds of Coupling",
-            "Creational patterns decide what gets built; structural patterns decide how parts connect")
-    lanes = [
-        (52, "Creation coupling", "new Concrete() inside policy", "Creational",
-         "who picks the concrete type?", "Swap the product", "callers stay unchanged",
-         "Factory · Builder", "Prototype · Singleton", BLUE),
-        (14, "Composition coupling", "client wired to internals", "Structural",
-         "how are objects connected?", "Swap the wiring", "neither side is edited",
-         "Adapter · Decorator", "Facade · Proxy", AMBER),
+    heading(ax, "Two Families of Design Patterns",
+            "Creational patterns create objects; structural patterns connect them")
+    families = [
+        (5, "Creational patterns", "Who creates this object, and how?",
+         "Checkout creates Stripe itself:\nnew StripeGateway(apiKey)",
+         "Factory Method \u00b7 Abstract Factory\nBuilder \u00b7 Prototype \u00b7 Singleton",
+         BLUE, PALE),
+        (53, "Structural patterns", "How do these objects fit together?",
+         "Checkout calls Stripe's own\nAPI methods directly",
+         "Adapter \u00b7 Decorator\nFacade \u00b7 Proxy", AMBER, AMBER_FACE),
     ]
-    for (y, problem, problem_sub, family, family_sub, win, win_sub,
-         members, members_sub, color) in lanes:
-        box(ax, 3, y, 19, 23, problem, problem_sub, face=RED_FACE, edge=RED)
-        box(ax, 28, y, 22, 23, family, family_sub, face=PALE, edge=color)
-        box(ax, 56, y, 20, 23, win, win_sub, face=GREEN_FACE, edge=GREEN)
-        box(ax, 82, y, 16, 23, members, members_sub, face=WHITE, edge=color)
-        for start, end in ((22.5, 27.5), (50.5, 55.5), (76.5, 81.5)):
-            arrow(ax, (start, y + 11.5), (end, y + 11.5), color=GREY)
-    ax.text(50, 6, "A pattern is a named trade-off, not a design goal",
-            ha="center", fontsize=10, fontweight="bold", color=NAVY)
+    for x, title, question, problem, members, color, face in families:
+        centre = x + 21
+        box(ax, x, 6, 42, 72, "", face=face, edge=color)
+        ax.text(centre, 71, title, ha="center", va="center", fontsize=13,
+                fontweight="bold", color=NAVY)
+        ax.text(centre, 63, question, ha="center", va="center", fontsize=10.5,
+                style="italic", color=INK)
+        ax.plot([x + 6, x + 36], [57, 57], color=LINE, linewidth=1.2)
+        for y, label in ((51, "THE PROBLEM IT FIXES"), (30, "PATTERNS IN THIS FAMILY")):
+            ax.text(centre, y, label, ha="center", va="center", fontsize=8,
+                    fontweight="bold", color=GREY)
+        ax.text(centre, 42, problem, ha="center", va="center", fontsize=9.5,
+                color=INK, linespacing=1.5)
+        ax.text(centre, 20, members, ha="center", va="center", fontsize=10,
+                fontweight="bold", color=NAVY, linespacing=1.6)
     return fig
 
 
 CREATIONAL = [
-    ("FM", "Factory Method", "A subclass must\nchoose the product", "One subclass\nper variant",
-     NAVY, PALE),
-    ("AF", "Abstract Factory", "Products must\nmatch as a family", "A new product type\nedits every factory",
-     BLUE, PALE),
-    ("B", "Builder", "Many optional fields,\nor cross-field rules", "An extra class\nfor simple objects",
-     GREEN, GREEN_FACE),
-    ("P", "Prototype", "Copying is cheaper\nthan constructing", "Shallow copies share\nmutable state",
-     AMBER, AMBER_FACE),
-    ("S", "Singleton", "A second instance\nwould be a bug", "Hidden global state,\nhard to test",
-     RED, RED_FACE),
+    ("FM", "Factory Method", "Subclasses decide which\nobject gets created",
+     "Same steps, but each\nvariant needs its own object", NAVY, PALE),
+    ("AF", "Abstract Factory", "Creates a matching set\nof related objects",
+     "Mixing sets would be a bug,\nlike light and dark themes", BLUE, PALE),
+    ("B", "Builder", "Sets values one by one,\nchecks them all in build()",
+     "Many optional values,\nlike a pizza order", GREEN, GREEN_FACE),
+    ("P", "Prototype", "Makes a new object by\ncopying an existing one",
+     "A ready-made template is\neasier to copy than rebuild", AMBER, AMBER_FACE),
+    ("S", "Singleton", "Allows only one object\nof the class to exist",
+     "A second copy would be a bug\n(rare: usually pass one in)", RED, RED_FACE),
 ]
 
 
 def creational_patterns() -> plt.Figure:
     fig, ax = canvas(15, 6.6)
-    heading(ax, "Creational Patterns: Five Answers to \"Who Builds This Object?\"",
-            "Each one moves the new-ConcreteThing() decision somewhere safer, and charges for it")
-    card_row(ax, CREATIONAL, ("USE WHEN", "COST"))
+    heading(ax, "Creational Patterns: Five Ways to Create Objects",
+            "What each one does, and when it is worth using")
+    card_row(ax, CREATIONAL, ("WHAT IT DOES", "USE IT WHEN"))
     return fig
 
 
 def builder_vs_telescoping() -> plt.Figure:
     fig, ax = canvas(14, 6.4)
-    heading(ax, "Builder Replaces Constructor Guesswork with Readable Assembly",
-            "Named steps at the call site, and one validation gate before the object exists")
+    heading(ax, "Builder vs a Pile of Constructors",
+            "Named steps instead of mystery values, and every rule checked once in build()")
     ax.plot([50, 50], [6, 84], color=LINE, linewidth=1.5)
 
-    panel_title(ax, 25, "Telescoping constructors", RED)
-    signatures = ["Report(String title)", "Report(String, Format)",
-                  "Report(String, Format, boolean)", "Report(String, Format, boolean, int)"]
+    panel_title(ax, 25, "Without a builder: a pile of constructors", RED)
+    signatures = ["Pizza(Size size)", "Pizza(Size, boolean)",
+                  "Pizza(Size, boolean, Crust)", "Pizza(Size, boolean, Crust, boolean)"]
     for index, signature in enumerate(signatures):
         y = 64 - index * 11
         box(ax, 5, y, 40, 7, "", face=RED_FACE, edge=RED)
         ax.text(25, y + 3.5, signature, ha="center", va="center", fontsize=9,
                 color=INK, family="monospace")
-    ax.text(25, 18, 'new Report("Q3", PDF, true, 2)', ha="center", fontsize=10,
+    ax.text(25, 18, "new Pizza(LARGE, true, STUFFED, false)", ha="center", fontsize=10,
             fontweight="bold", color=RED, family="monospace")
-    ax.text(25, 10, "What do true and 2 mean at the call site?", ha="center",
+    ax.text(25, 10, "What do true and false mean here?", ha="center",
             fontsize=9, color=INK, style="italic")
 
-    panel_title(ax, 75, "Builder with a validated build()", GREEN)
-    steps = ["Report.builder()", '.title("Q3")', ".format(PDF)",
-             ".includeCharts(true)", ".build()"]
+    panel_title(ax, 75, "With a builder: named steps", GREEN)
+    steps = ["Pizza.builder(LARGE)", ".extraCheese()", ".crust(STUFFED)", ".build()"]
     for index, step in enumerate(steps):
         y = 66 - index * 10
         last = index == len(steps) - 1
@@ -159,7 +164,7 @@ def builder_vs_telescoping() -> plt.Figure:
                 color=INK, family="monospace")
         if not last:
             arrow(ax, (75, y - 0.6), (75, y - 3.4), color=GREY)
-    ax.text(75, 12, "build() checks every rule once, before the object exists",
+    ax.text(75, 12, "build() checks every rule once, before the pizza exists",
             ha="center", fontsize=9, color=GREEN, fontweight="bold")
     return fig
 

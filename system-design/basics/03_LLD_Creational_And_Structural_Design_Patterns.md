@@ -16,184 +16,201 @@ In the example, a second payment provider is really coming, so an Adapter is wor
 
 ---
 
-## 2. Core mental model
+## 2. Three ideas before the patterns
 
-### A pattern is a named trade-off
+### Every pattern has a cost
 
-Every pattern buys flexibility at one seam and charges indirection everywhere else. That is the same rule as for any abstraction in [Topic 02](02_LLD_Object_Oriented_Principles_And_Clean_Code.md): add the seam where variation is **demonstrated**, not imagined.
+A pattern makes one kind of change easy. In return, it adds extra classes, and an extra step that everyone reading the code has to follow. So use a pattern only when the change it helps with is actually expected: the YAGNI rule from [Basics 2](02_LLD_Object_Oriented_Principles_And_Clean_Code.md).
 
-```text
-Use a pattern  = an expected change + a seam that contains it
-Skip a pattern = one stable implementation + no pending change
-```
+Patterns are also shared vocabulary. Once two engineers know the names, "wrap the Stripe adapter in a retry decorator" describes a whole design in one sentence. That is a big part of their value in an interview.
 
-Patterns are also **vocabulary**. Saying "retry is a decorator around the adapter" tells an interviewer the interface, the wiring, and the testing strategy in seven words. That is their real value in a design round.
+### Two families of patterns
 
-### Two families, two kinds of coupling
+![Creational patterns create objects; structural patterns connect them](assets/topic-03/patterns_mental_model.png)
 
-![Creation coupling is removed by creational patterns, composition coupling by structural patterns](assets/topic-03/patterns_mental_model.png)
+- **Creational patterns** answer: *who creates this object, and how?*
+- **Structural patterns** answer: *how do these objects fit together?*
 
-**Creational patterns** remove *creation coupling*: business code that knows which concrete class to build and how to construct it. **Structural patterns** remove *composition coupling*: a client that knows how the parts behind it are connected.
+Here is the problem both families solve, in one class:
 
 ```java
-// Creation coupling: checkout knows the provider, its constructor, and its credentials
 final class Checkout {
     ChargeResult pay(Order order) {
-        StripeGateway gateway = new StripeGateway(apiKey);   // hard to swap, hard to test
-        return gateway.charge(order.total());
+        StripeGateway gateway = new StripeGateway(apiKey);   // Checkout creates Stripe itself...
+        return gateway.charge(order.total());                 // ...and calls Stripe's own API
     }
 }
 ```
 
-`Checkout` now changes whenever the provider, its constructor, or its credentials change. A factory moves the *which class* decision out of checkout; an adapter hides the provider's interface behind yours. Neither makes the algorithm better. Both shrink the blast radius of a likely change.
+`Checkout` has to know which payment provider to use, how to create it, and how its API works. Switching provider, or testing without making real payments, means editing `Checkout`. A creational pattern moves the `new StripeGateway(...)` somewhere else. A structural pattern, such as Adapter, puts your own interface in front of Stripe's, so `Checkout` never sees Stripe's API.
 
-### The composition root: where `new` belongs
+### Where objects should be created
 
-If business code should not call `new` on volatile classes, something still has to. That place is the **composition root**: one spot near `main()` (or your DI container's configuration) where concrete classes are created and wired together.
+If business code should not create its dependencies with `new`, something still has to. The usual answer is one place, at application start-up near `main()`, that creates the real objects and passes them in. It is called the **composition root**. Frameworks such as Spring do this for you.
 
 ```java
 public static void main(String[] args) {
     PaymentGateway gateway = new StripeAdapter(new StripeClient(config.stripeKey()));
-    Checkout checkout = new Checkout(gateway);          // depends only on the interface
+    Checkout checkout = new Checkout(gateway);          // Checkout only sees the interface
     server.start(checkout);
 }
 ```
 
-This idea explains half the creational patterns. Most "I need a singleton" or "I need a factory" problems disappear once objects are created once, in one place, and passed in. Reach for a creational pattern when creation must happen **later**, **repeatedly**, or **based on runtime data**, which the composition root cannot do alone.
+Most of the time, this is all you need. A creational pattern is only worth it when objects must be created **later**, **many times**, or **based on information known only while the program runs**, such as the payment provider a customer picks.
 
 ---
 
 ## 3. Creational patterns
 
-![Five creational patterns with when to use each and what it costs](assets/topic-03/creational_patterns.png)
+![Five creational patterns: what each does and when to use it](assets/topic-03/creational_patterns.png)
 
-### Start simpler: constructors and static factories
+Creational patterns are about creating objects. Each one below starts with what it does in plain words, then an example, then what it costs. (Pattern books call the object being created the *product*; this page just says "the object".)
 
-Before any GoF pattern, two plain tools cover most creation needs. A **constructor** is right when there are two or three required parameters. A **static factory method** adds a name, validation, caching, or the freedom to return a subtype:
+### Start simple: constructors and static factory methods
+
+Most objects need no pattern at all. A **constructor** is fine when there are two or three required values. A **static factory method** is a static method that creates the object for you, so it can have a helpful name, check its input, or reuse an existing object:
 
 ```java
 final class Money {
     private Money(BigDecimal amount, Currency currency) { ... }
 
-    static Money of(String amount, String currency) {          // named and validated
+    static Money of(String amount, String currency) {          // a clear name, and validation
         return new Money(new BigDecimal(amount), Currency.getInstance(currency));
     }
-    static Money zero(Currency currency) { return ZEROS.get(currency); }   // may reuse a cached instance
+    static Money zero(Currency currency) { return ZEROS.get(currency); }   // reuses a cached object
 }
 ```
 
-A **simple factory** is the next step: one method that picks a class from its input, such as `forChannel(EMAIL)`. It is not one of the GoF patterns, but it is the most common factory in real code. Do not call it Factory Method in an interview; the difference is covered next.
+A **simple factory** goes one step further: one method that picks which class to create from its input, such as `SenderFactory.forChannel(EMAIL)` returning an `EmailSender`. It is very common, but it is *not* the Factory Method pattern below, and interviewers like to check that you know the difference.
 
-### Factory Method: let a subclass choose the product
+### Factory Method: subclasses decide what to create
 
-> Define the algorithm once, and let subclasses decide which product it creates.
+**What it is:** a parent class defines the steps of a process, and leaves one step, "create the object I need", to its subclasses.
+
+A delivery company runs every delivery the same way: load the order, then travel to the address. Only the vehicle differs:
 
 ```java
-abstract class Dialog {
-    abstract Button createButton();               // the factory method
+abstract class Delivery {
+    abstract Vehicle createVehicle();             // the factory method: each subclass decides
 
-    void render() {                               // fixed algorithm
-        Button ok = createButton();
-        ok.onClick(this::close);
-        ok.draw();
+    void deliver(Order order) {                   // the same steps for every delivery
+        Vehicle vehicle = createVehicle();
+        vehicle.load(order);
+        vehicle.travelTo(order.address());
     }
 }
-final class WebDialog extends Dialog {
-    Button createButton() { return new HtmlButton(); }
-}
+final class RoadDelivery extends Delivery { Vehicle createVehicle() { return new Truck(); } }
+final class SeaDelivery  extends Delivery { Vehicle createVehicle() { return new Ship(); } }
 ```
 
-`render()` stays closed to modification while the product stays open to extension: the Open/Closed Principle applied to construction. The defining feature is **a subclass overriding a creation hook inside a larger algorithm**. A method that just switches on a parameter is a simple factory, not Factory Method.
+Adding air delivery means one new `AirDelivery` subclass. The `deliver()` steps are never edited.
 
-### Abstract Factory: products that must match
+**Watch out:** every new variant needs a new subclass. If you only need to pick a class from a value, a simple factory is simpler.
 
-> Create families of related objects that must be used together.
+### Abstract Factory: create a matching set of objects
+
+**What it is:** one factory creates *several related objects* that must always be used together, so they can never be mixed up.
+
+An app with light and dark themes needs buttons and checkboxes that match. A dark button next to a light checkbox would be a bug:
 
 ```java
-interface UiKit {                                 // one factory, a matching family
-    Button button();
-    Checkbox checkbox();
+interface ThemeFactory {
+    Button createButton();
+    Checkbox createCheckbox();
 }
-final class DarkKit implements UiKit {
-    public Button button() { return new DarkButton(); }
-    public Checkbox checkbox() { return new DarkCheckbox(); }
+final class DarkTheme implements ThemeFactory {
+    public Button createButton()     { return new DarkButton(); }
+    public Checkbox createCheckbox() { return new DarkCheckbox(); }
 }
+// LightTheme does the same with LightButton and LightCheckbox.
 ```
 
-The guarantee is consistency: a dark button can never appear beside a light checkbox, because one factory builds both. The cost is rigidity. Adding `Slider` to the family forces an edit to **every** factory. Use it only when mixing families would be a real bug, such as UI themes, or a cloud provider's matching storage, queue, and secrets clients.
+The screen receives one `ThemeFactory` and asks it for every widget, so everything on the screen matches automatically.
 
-### Builder: many options, one validation gate
+**Watch out:** adding a new kind of widget, such as a `Slider`, means editing *every* theme factory. Use it only when mixing would really be a bug.
 
-> Assemble a complex object step by step, and validate it once before it exists.
+### Builder: build a complex object step by step
 
-![Telescoping constructors compared with a validated builder](assets/topic-03/builder_vs_telescoping.png)
+**What it is:** instead of one constructor with a long list of values, you set each value with a named method, then call `build()`, which checks everything once and creates the object.
+
+Think of a pizza order. Without a builder, the class grows a pile of constructors, each adding one more value, and calls become a guessing game:
+
+![Without a builder, a pile of constructors; with a builder, named steps](assets/topic-03/builder_vs_telescoping.png)
 
 ```java
-final class Report {
-    private final String title;
-    private final Format format;
-    private final boolean charts;
+final class Pizza {
+    private final Size size;
+    private final boolean extraCheese;
+    private final Crust crust;
 
-    private Report(Builder builder) {
-        title = builder.title; format = builder.format; charts = builder.charts;
+    private Pizza(Builder builder) {
+        size = builder.size; extraCheese = builder.extraCheese; crust = builder.crust;
     }
-    static Builder builder() { return new Builder(); }
+    static Builder builder(Size size) { return new Builder(size); }   // the required value goes first
 
     static final class Builder {
-        private String title;
-        private Format format = Format.PDF;          // sensible default
-        private boolean charts;
+        private final Size size;
+        private boolean extraCheese;
+        private Crust crust = Crust.CLASSIC;                         // a sensible default
 
-        Builder title(String title) { this.title = title; return this; }
-        Builder format(Format format) { this.format = format; return this; }
-        Builder includeCharts(boolean charts) { this.charts = charts; return this; }
+        private Builder(Size size) { this.size = size; }
+        Builder extraCheese()      { this.extraCheese = true; return this; }
+        Builder crust(Crust crust) { this.crust = crust; return this; }
 
-        Report build() {                             // the single validation gate
-            if (title == null || title.isBlank()) throw new IllegalStateException("title is required");
-            return new Report(this);
+        Pizza build() {                                              // every rule is checked here, once
+            if (crust == Crust.STUFFED && size != Size.LARGE)
+                throw new IllegalStateException("stuffed crust is only available on large pizzas");
+            return new Pizza(this);
         }
     }
 }
 
-Report report = Report.builder().title("Q3").includeCharts(true).build();
+Pizza pizza = Pizza.builder(Size.LARGE).extraCheese().crust(Crust.STUFFED).build();
 ```
 
-Builder earns its place with many optional parameters, immutable targets, or rules that span fields ("charts require PDF"). Because `build()` is the only way in, a half-configured `Report` can never exist. Required parameters can go into `builder(title)` so they cannot be forgotten. For two or three required fields, a constructor or a record is clearer.
+The call reads like the order itself. Because `build()` is the only way to get a `Pizza`, an invalid pizza can never exist. Java's own `HttpRequest.newBuilder()` works the same way.
 
-### Prototype: copy instead of construct
+**Watch out:** a builder is a whole extra class. For two or three required values, a constructor or a record is clearer.
 
-> Create a new object by copying an existing, configured one.
+### Prototype: copy an existing object
+
+**What it is:** create a new object by copying one that is already set up, then change only what differs.
+
+An email tool keeps a ready-made campaign template with a subject and a recipient list. Each new campaign starts as a copy of it:
 
 ```java
-final class Board {
-    private final List<Row> rows;                    // Row is mutable
-    Board(List<Row> rows) { this.rows = rows; }
+final class EmailTemplate {
+    private final String subject;
+    private final List<String> recipients;            // a list that can be changed
 
-    Board shallowCopy() { return new Board(rows); }                              // BUG: shares rows
-    Board deepCopy()    { return new Board(rows.stream().map(Row::copy).toList()); }
+    EmailTemplate(String subject, List<String> recipients) { ... }
+
+    EmailTemplate copyShallow() { return new EmailTemplate(subject, recipients); }                    // BUG
+    EmailTemplate copy()        { return new EmailTemplate(subject, new ArrayList<>(recipients)); }   // correct
 }
 ```
 
-Prototype helps when building from scratch is expensive (parsing, I/O) or when the configuration is only known at runtime, such as cloning a template document. The classic defect is the **shallow copy**: the clone shares mutable internals with the original, so changing one silently changes the other. Note that `List.copyOf` copies the list, not its elements. In Java, prefer a copy constructor or `copy()` method over `Cloneable`, which is famously awkward.
+**Watch out:** the shallow copy shares the *same* recipient list with the original, so adding a recipient to the copy silently adds it to the template too. A correct copy gives the new object its own copy of anything that can change. In Java, write a `copy()` method like this one rather than using `Cloneable`, which is awkward and easy to get wrong.
 
-### Singleton: one instance, but think twice
+### Singleton: only one instance
 
-> Guarantee a single instance and give global access to it.
+**What it is:** a class that allows only one object of itself to exist, and gives the whole program a global way to reach it.
 
 ```java
-// Enforced singleton: the JVM guarantees one instance, and anyone can reach it
+// A Singleton: the enum guarantees exactly one instance, reachable from anywhere
 enum AppConfig {
     INSTANCE;
     private final Map<String, String> values = load();
     String get(String key) { return values.get(key); }
 }
+String url = AppConfig.INSTANCE.get("db.url");     // any class can do this, and it never shows in its constructor
 
-// Usually better: one instance by decision, created at the root and passed in
+// Usually better: create one object at start-up and pass it in
 Config config = Config.loadFrom(Path.of("app.yaml"));
-OrderService orders = new OrderService(config);      // visible dependency, easy to fake in tests
+OrderService orders = new OrderService(config);    // the dependency is visible, and easy to fake in tests
 ```
 
-Singleton is the most over-used pattern in the catalogue. Global access hides dependencies from constructors, blocks substitution in tests, and turns mutable shared state into a concurrency hazard. Spring beans are single per container by default, which gives you "one instance" **without** global access: that is usually what people actually want. If you truly must enforce one, an `enum` is the simplest thread-safe form; hand-written double-checked locking is only correct with a `volatile` field.
+**Watch out:** Singleton is the most overused pattern. Because any class can reach it, you cannot see which classes depend on it, tests cannot swap it for a fake, and shared data changed from many threads causes bugs. Usually you just want *one object*, not *global access*: create it at start-up and pass it in, which is what Spring does by default. If you really must enforce a single instance, an `enum` like the one above is the simplest safe way.
 
 ---
 
@@ -304,7 +321,7 @@ Interviewers love these comparisons, because they reveal whether you know a patt
 | Decorator vs Proxy | Both wrap an object behind the same interface. A decorator adds behavior to an object it was handed; a proxy controls access to, or the lifecycle of, its target. | Did the wrapper receive its target from outside (decorator), or does it create, guard, or locate the target itself (proxy)? |
 | Adapter vs Facade | An adapter makes one existing interface fit the one a client expects. A facade gives one simpler entry point to several classes. | Is it changing the shape of one thing, or hiding many things behind one door? |
 | Factory Method vs simple factory | Factory Method lets a subclass override a creation step inside a larger algorithm. A simple factory is one method that picks a class from its input. | Is a subclass overriding a `create` method? If not, it is a simple factory. |
-| Factory Method vs Abstract Factory | Factory Method creates one product. Abstract Factory creates a family of products that must be used together. | Does the factory have one creation method, or several related ones? |
+| Factory Method vs Abstract Factory | Factory Method creates one object, chosen by a subclass. Abstract Factory creates a matching set of objects that must be used together. | Does the factory have one creation method, or several related ones? |
 | Builder vs factory | A factory decides *which* class to create. A builder assembles *one* class step by step from many options. | Is the hard part choosing the type, or filling in the fields? |
 | Singleton vs one injected instance | A singleton enforces a single instance and gives global access to it. An injected instance is single by decision, and visible in every constructor that uses it. | Can a test replace it without touching global state? |
 
@@ -344,8 +361,8 @@ Two worked instances:
 |---|---|---|---|
 | There is one concrete type, and it is stable. | A plain constructor. | Simplicity: nothing to learn. | A small refactor later, if variation actually arrives. |
 | The caller picks from a known set of variants. | A static or simple factory. | Readable intent at the call site. | One central `switch` that grows with each variant. |
-| A subclass must choose the product inside a fixed algorithm. | Factory Method. | Adding variants without editing the algorithm. | One subclass per variant. |
-| Several products must always match each other. | Abstract Factory. | Guaranteed consistency across the family. | Every new product type touches every factory. |
+| A subclass must choose which object to create, inside steps that stay the same. | Factory Method. | Adding variants without editing the steps. | One subclass per variant. |
+| Several objects must always match each other. | Abstract Factory. | Guaranteed consistency across the set. | Every new kind of object touches every factory. |
 | The object has many optional fields, or cross-field rules. | Builder. | Readable call sites and one validation gate. | An extra class and some boilerplate. |
 | Copying a configured object beats building a new one. | Prototype. | Cheap duplication at runtime. | Careful deep copies of every mutable part. |
 | The object should exist once. | One instance created at the composition root and injected. | Testability with a single instance. | Wiring it through constructors; enforce a true Singleton only if a second instance would be a bug. |
@@ -366,7 +383,7 @@ Two worked instances:
 
 | Failure | How you spot it | Fix | Guardrail for next time |
 |---|---|---|---|
-| A factory that only ever builds one product. | The factory has a single branch and has never grown. | Inline it, and use a constructor. | Add a factory only when a second variant is real or contracted. |
+| A factory that only ever builds one kind of object. | The factory has a single branch and has never grown. | Inline it, and use a constructor. | Add a factory only when a second variant is real or contracted. |
 | A singleton holding mutable state. | Flaky tests that depend on run order, or race conditions under load. | Make the state immutable, or create one instance at the root and inject it. | Treat any global mutable state as a design smell in review. |
 | Decorators wrapped in the wrong order. | Audit logs, metrics, or caches show the wrong number of entries. | Reorder the chain, and write a test that pins the expected behavior. | Build every chain in one place, with a comment on why the order matters. |
 | A wrapper chain too deep to follow. | Stack traces with five or more wrappers, and nobody can say what each one does. | Remove wrappers that have no real job, or merge closely related ones. | Each wrapper must name the concern it owns. |
@@ -389,7 +406,7 @@ Two worked instances:
 
 | Question | Why it matters | Assumed answer |
 |---|---|---|
-| Which providers are needed now, and which are coming? | It decides whether a provider seam is backed by evidence. | Stripe now; Adyen for Germany next quarter. |
+| Which providers are needed now, and which are coming? | It decides whether a provider interface is worth adding yet. | Stripe now; Adyen for Germany next quarter. |
 | Does the provider depend on the customer's country? | It decides how a gateway is chosen at runtime. | Yes, by billing country. |
 | Which failures are worth retrying, and is a charge safe to repeat? | It shapes the retry rules and the `ChargeRequest` fields. | Retry timeouts and rate limits; an idempotency key makes repeats safe. |
 | What must be audited: each attempt, or each charge? | It fixes the order of the decorators. | Each attempt, for reconciliation with the provider. |
@@ -484,8 +501,8 @@ The last row matters. A new step in the workflow is exactly what the facade is s
 [ ] NAME the expected change before naming any pattern
 [ ] START with a constructor or static factory; add patterns only for real variation
 [ ] CREATE objects at the composition root; inject them instead of using global access
-[ ] FACTORY METHOD only when a subclass chooses the product inside a fixed algorithm
-[ ] ABSTRACT FACTORY only when products must match as a family
+[ ] FACTORY METHOD only when a subclass chooses which object to create, inside fixed steps
+[ ] ABSTRACT FACTORY only when several objects must always match, like a theme
 [ ] BUILDER for many optional fields or cross-field rules; validate once in build()
 [ ] PROTOTYPE copies deeply wherever state is mutable
 [ ] ADAPTER keeps vendor types at the edge and translates errors, not just data
