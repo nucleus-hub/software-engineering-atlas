@@ -481,23 +481,6 @@ Several patterns produce code that looks almost identical. What actually separat
 | Builder vs factory | A factory's job is choosing *which class* to create. A builder's job is assembling *one* class correctly, from many optional values, and checking the result before it exists. If the hard problem is "which type do I need?", that is a factory. If the hard problem is "this one object has too many optional settings to pass into a constructor", that is a builder. |
 | Singleton vs one injected instance | Both result in one object being used everywhere. A Singleton enforces that only one instance can ever exist, and lets any class reach it directly without being given it. An injected instance is also created only once, but it is created at the composition root and handed to every class that needs it through its constructor. The practical difference shows up in tests: a test can swap in a fake for an injected instance, but it cannot easily replace a true Singleton, because the Singleton controls its own creation. |
 
-### Patterns you already use
-
-Recognizing patterns in familiar libraries makes them easier to recall, and it makes for a strong, concrete interview answer:
-
-| Pattern | Where you have already seen it |
-|---|---|
-| Static factory | `List.of(...)`, `Integer.valueOf(...)`, and `Duration.ofSeconds(...)` all name and control creation. |
-| Factory Method | `Collection.iterator()`: each collection class decides which iterator to return. |
-| Abstract Factory | JDBC: each driver's `Connection` creates the matching `Statement` and `PreparedStatement` for its database. |
-| Builder | `HttpRequest.newBuilder()...build()` in `java.net.http`, `StringBuilder`, and Lombok's `@Builder`. |
-| Prototype | Copy constructors such as `new ArrayList<>(other)`. |
-| Singleton | `Runtime.getRuntime()`; Spring beans are single per container, but injected rather than global. |
-| Adapter | `InputStreamReader` turns a byte `InputStream` into a character `Reader`; `Arrays.asList` presents an array as a `List`. |
-| Decorator | `new BufferedInputStream(new FileInputStream(file))`: each layer adds behavior behind the same `InputStream` type. |
-| Facade | SLF4J, literally the "Simple Logging Facade for Java", in front of Logback or Log4j. |
-| Proxy | Spring's `@Transactional` and `@Cacheable` beans, Hibernate's lazy-loaded entities, and `Collections.unmodifiableList` as a protection proxy. |
-
 ---
 
 ## 6. Decision and trade-off tables
