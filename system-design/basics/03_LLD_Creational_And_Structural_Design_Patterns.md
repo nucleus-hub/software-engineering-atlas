@@ -201,46 +201,56 @@ drawSettingsScreen(new DarkTheme());              // switch every widget by chan
 
 ### Builder: build a complex object step by step
 
-**What it is:** instead of one constructor with a long list of values, you set each value with a named method, then call `build()`, which checks everything once and creates the object.
+**What it is:** a helper object that collects an object's settings one at a time, using named methods, and creates the finished object when you call `build()`.
 
-Think of a pizza order. Without a builder, the class grows a pile of constructors, each adding one more value, and calls become a guessing game:
+**The problem.** When a class has many optional settings, its constructor turns into a row of values that nobody can read:
+
+```java
+new Pizza(LARGE, true, STUFFED, false);   // what do true and false mean?
+```
+
+**The fix.** With a builder, every value has a name, and you only set what you need:
+
+```java
+Pizza pizza = Pizza.builder(LARGE)        // size is required, so it comes first
+        .extraCheese()
+        .crust(STUFFED)
+        .build();                         // checks the order, then creates the pizza
+```
 
 ![Without a builder, a pile of constructors; with a builder, named steps](assets/topic-03/builder_vs_telescoping.png)
 
+**How it works.** The builder is a small class inside `Pizza`. Each method stores one setting and returns the builder, which is what lets the calls chain. Settings you never call keep their defaults. `build()` checks the rules, and only then creates the `Pizza`:
+
 ```java
-final class Pizza {
-    private final Size size;
-    private final boolean extraCheese;
-    private final Crust crust;
-
-    private Pizza(Builder builder) {
-        size = builder.size; extraCheese = builder.extraCheese; crust = builder.crust;
-    }
-    static Builder builder(Size size) { return new Builder(size); }   // the required value goes first
-
-    static final class Builder {
+class Pizza {
+    static class Builder {
         private final Size size;
-        private boolean extraCheese;
-        private Crust crust = Crust.CLASSIC;                         // a sensible default
+        private boolean extraCheese = false;      // defaults, used if you don't choose
+        private boolean mushrooms = false;
+        private Crust crust = Crust.CLASSIC;
 
-        private Builder(Size size) { this.size = size; }
+        Builder(Size size)         { this.size = size; }
         Builder extraCheese()      { this.extraCheese = true; return this; }
+        Builder mushrooms()        { this.mushrooms = true; return this; }
         Builder crust(Crust crust) { this.crust = crust; return this; }
 
-        Pizza build() {                                              // every rule is checked here, once
+        Pizza build() {
             if (crust == Crust.STUFFED && size != Size.LARGE)
-                throw new IllegalStateException("stuffed crust is only available on large pizzas");
-            return new Pizza(this);
+                throw new IllegalStateException("stuffed crust is only for large pizzas");
+            return new Pizza(size, extraCheese, crust, mushrooms);
         }
     }
-}
 
-Pizza pizza = Pizza.builder(Size.LARGE).extraCheese().crust(Crust.STUFFED).build();
+    static Builder builder(Size size) { return new Builder(size); }
+
+    private Pizza(Size size, boolean extraCheese, Crust crust, boolean mushrooms) { ... }   // private: only build() calls it
+}
 ```
 
-The call reads like the order itself. Because `build()` is the only way to get a `Pizza`, an invalid pizza can never exist. Java's own `HttpRequest.newBuilder()` works the same way.
+Because the constructor is private, `build()` is the only way to get a `Pizza`, so an invalid pizza can never be created. In real projects, Lombok's `@Builder` annotation can generate this whole class for you, and Java's `HttpRequest.newBuilder()` works the same way.
 
-**Watch out:** a builder is a whole extra class. For two or three required values, a constructor or a record is clearer.
+**Watch out:** a builder is extra code. For two or three required values, a plain constructor or a record is clearer.
 
 ### Prototype: copy an existing object
 
