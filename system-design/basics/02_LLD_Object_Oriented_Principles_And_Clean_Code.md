@@ -71,20 +71,20 @@ This class has five separate problems, and the sections below fix them one at a 
 
 ## 2. The four pillars of object-oriented design
 
-![Object design flow from encapsulation to local evolution](assets/topic-02/oop_mental_model.png)
+![The four pillars of object-oriented design, applied to NotificationManager](assets/topic-02/oop_mental_model.png)
 
-The four pillars build on each other. Encapsulation protects data, abstraction hides details behind a simple interface, polymorphism lets many implementations share one interface, and composition assembles small objects into bigger behavior. Together they lead to the goal shown at the bottom of the diagram: when requirements change, only a small number of classes need to change.
+Each pillar below fixes one specific problem in `NotificationManager` from section 1. They build on each other: encapsulation protects an object's own data, abstraction hides *how* an object does its job behind a simple method, polymorphism lets many such methods share one interface so callers do not need to check types, and composition builds new behavior by combining small objects instead of growing a class hierarchy.
 
 ### Encapsulation: keeping the rules with the data
 
-**Encapsulation** means an object keeps its data private and only exposes methods that keep that data valid. The rules about the data (its invariants) are enforced in exactly one place: inside the object that owns the data.
+**Encapsulation** means an object protects its own data, and only allows changes that keep that data valid. The rules about the data, its invariants, live in exactly one place: inside the object that owns the data, not scattered across every piece of code that touches it.
 
-In `NotificationManager`, the fields are public, so nothing stops a caller from writing `manager.body = "";` and sending an empty message. Every caller would have to remember to validate the data, and sooner or later one of them would forget.
+In `NotificationManager`, the fields are public, so nothing stops a caller from writing `manager.body = "";` and sending an empty message. Every caller would have to remember to check the data itself, and sooner or later one of them will forget.
 
-The fix is to make the notification responsible for its own validity. It checks its data once, in the constructor, and never allows that data to change afterwards:
+The fix is to make the notification validate itself once, in its constructor, and never allow its fields to change afterward:
 
 ```java
-enum Channel { EMAIL, SMS, PUSH }                      // replaces the error-prone "EMAIL" strings
+enum Channel { EMAIL, SMS, PUSH }
 
 record Notification(String recipient, Channel channel, String body) {
     Notification {                                     // runs before the fields are set
@@ -95,7 +95,9 @@ record Notification(String recipient, Channel channel, String body) {
 }
 ```
 
-Now an invalid notification simply cannot exist. Any method that receives a `Notification` can trust it without checking it again. Replacing the `String channel` with an `enum` follows the same idea, because a typo such as `"EMIAL"` now fails at compile time instead of in production.
+Now an invalid `Notification` simply cannot exist. Any method that receives one can trust it completely, without checking it again.
+
+There are two ways to keep data valid here, and both count as encapsulation. One is to check it at runtime, which is what the constructor above does. The other, stronger way is to make invalid data impossible to write down in the first place: `channel` is a `Channel` enum instead of a plain `String`, so a typo like `"EMIAL"` fails to compile, instead of failing in production.
 
 !!! warning "A common trap"
     Making every field private and then adding a public setter for each one is not encapsulation. Callers can still put the object into any state they like, so the rules still live in the callers. Only add methods that keep the object valid.
@@ -118,9 +120,9 @@ Now an invalid notification simply cannot exist. Any method that receives a `Not
 
 ### Abstraction: hiding the how
 
-**Abstraction** means callers depend on *what* an object does, not *how* it does it. The caller states its intent, and the details stay hidden behind a simple interface.
+**Abstraction** means a caller depends on *what* an object does, not *how* it does it. The caller expresses its intent through one simple method, and every messy detail stays hidden behind that method.
 
-In `NotificationManager`, the email branch contains four SMTP steps that must run in exactly the right order. The class that decides *whom to notify* should not need to know how the email protocol works. We hide those details behind an interface:
+In `NotificationManager`, the email branch runs four SMTP steps, in an exact order, just to send one message. The code that decides *whom to notify* should not need to know anything about SMTP. Hiding those steps behind an interface fixes that:
 
 ```java
 enum SendResult { DELIVERED, RETRYABLE_FAILURE, PERMANENT_FAILURE }
@@ -137,7 +139,7 @@ final class EmailSender implements Sender {
 }
 ```
 
-Notice that `send` returns a `SendResult` instead of returning nothing. A good abstraction hides details the caller does not need, but it must not hide information the caller needs in order to make a decision. The caller needs to know whether the send worked, and whether trying again could help, so that information is part of the contract.
+A good abstraction hides the steps, but never the outcome. The caller does not need to know how the email was sent, but it does need to know whether it worked and whether trying again could help, which is why `send` returns a `SendResult` instead of nothing.
 
 !!! question "Practice"
     A caller exports a report by opening a file, writing a header row, writing every data row, flushing the stream, and closing the file. What would a better abstraction look like?
@@ -147,7 +149,7 @@ Notice that `send` returns a `SendResult` instead of returning nothing. A good a
 
 ### Polymorphism: replacing the type switch
 
-**Polymorphism** means the same method call can behave differently depending on which object receives it. It lets you replace `if` and `switch` statements that check an object's type with a single call through an interface.
+**Polymorphism** means you can call the same method name on different objects, and each one responds in its own way. The caller does not need to check, or even know, which kind of object it has. This lets you replace an `if` or `switch` on an object's type with a single call through an interface.
 
 In `NotificationManager`, every new channel means editing the `switch`. Worse, in real code the same `switch` on channel tends to appear in several places, such as sending, formatting, and cost calculation, and every one of them must be found and updated.
 

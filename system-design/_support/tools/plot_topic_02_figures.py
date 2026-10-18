@@ -82,22 +82,23 @@ def lld_interview_framework() -> plt.Figure:
     return fig
 
 
+PILLARS = [
+    ("E", "Encapsulation", "Protect data: only valid\nobjects can ever exist",
+     "Fields are public, so\nmanager.body = \"\" compiles", NAVY, PALE),
+    ("A", "Abstraction", "Hide how a job gets done\nbehind a simple method",
+     "Callers see every SMTP\nstep just to send an email", BLUE, PALE),
+    ("P", "Polymorphism", "One call works for every\nimplementation of an interface",
+     "A switch on channel must\nbe edited for each new one", GREEN, GREEN_FACE),
+    ("C", "Composition", "Build behavior by holding\nother objects, not extending them",
+     "A retrying, logging subclass\nfor every channel", AMBER, AMBER_FACE),
+]
+
+
 def oop_mental_model() -> plt.Figure:
-    fig, ax = canvas(14, 5.4)
-    heading(ax, "Object Design: Protect State, Expose Behavior, Compose Change",
-            "Good boundaries keep invariants local and variation replaceable")
-    stages = [
-        ("1", "Encapsulate", "protect invariants"),
-        ("2", "Abstract", "hide the how"),
-        ("3", "Substitute", "one contract, many impls"),
-        ("4", "Compose", "assemble capabilities"),
-        ("5", "Evolve", "change stays local"),
-    ]
-    stage_row(ax, stages, [4, 23, 42, 61, 80], y=39, width=15, height=24, highlight=(4,))
-    ax.text(50, 25, "DESIGN OUTCOME", ha="center", va="center", fontsize=8,
-            fontweight="bold", color=GREY)
-    box(ax, 23, 10, 54, 11, "A change affects the smallest reasonable set of classes",
-        face=WHITE, edge=NAVY)
+    fig, ax = canvas(15, 6.6)
+    heading(ax, "The Four Pillars, Applied to One Notification Class",
+            "Each pillar in plain words, and the problem it fixes in NotificationManager")
+    card_row(ax, PILLARS, ("WHAT IT MEANS", "PROBLEM IT FIXES"))
     return fig
 
 
