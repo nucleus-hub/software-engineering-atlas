@@ -36,7 +36,6 @@ from figure_style import (
     canvas,
     card_row,
     heading,
-    stage_row,
 )
 
 ASSETS = Path(__file__).resolve().parent.parent.parent / "basics" / "assets" / "topic-02"
@@ -63,22 +62,22 @@ def policy_boundary(ax: plt.Axes, x0: float, x1: float, y: float) -> None:
             fontsize=7.5, fontweight="bold", color=NAVY)
 
 
+INTERVIEW_STEPS = [
+    ("1", "Clarify", "Agree what it must do,\nand what is out", "Email, SMS, push;\nmore channels later"),
+    ("2", "List classes", "Name each class,\nand its one job", "Sender delivers\none notification"),
+    ("3", "Define interfaces", "Write the methods,\nand their promises", "send() returns\na SendResult"),
+    ("4", "Connect classes", "Sketch who holds,\nuses, implements whom", "The service holds\nmany Senders"),
+    ("5", "Write code", "Code the main flow,\nplus one failure", "notifyUser(), with\na retry on timeout"),
+    ("6", "Show a change", "Walk through one\nlikely new request", "Add WhatsApp:\none new class"),
+]
+
+
 def lld_interview_framework() -> plt.Figure:
-    fig, ax = canvas(14, 5.4)
-    heading(ax, "From Vague Prompt to Extensible Design",
-            "Each stage leaves an artifact the interviewer can see and challenge")
-    steps = [
-        ("01", "Clarify", "use cases + scope"),
-        ("02", "Model", "entities + roles"),
-        ("03", "Contract", "interfaces + rules"),
-        ("04", "Relate", "class diagram"),
-        ("05", "Code", "core flow"),
-        ("06", "Extend", "change + tests"),
-    ]
-    stage_row(ax, steps, [4, 20, 36, 52, 68, 84], y=39, width=12, height=24, highlight=(4, 5))
-    ax.text(50, 25, "OUTPUT", ha="center", va="center", fontsize=8, fontweight="bold", color=GREY)
-    box(ax, 21, 10, 58, 11, "A design where the next requirement is a new class, not an edit",
-        face=WHITE, edge=NAVY)
+    fig, ax = canvas(16, 6.6)
+    heading(ax, "An LLD Interview in Six Steps",
+            "What you do at each step, and how it looks for this page's notification service")
+    cards = [(*step, NAVY, PALE) for step in INTERVIEW_STEPS]
+    card_row(ax, cards, ("WHAT YOU DO", "EXAMPLE"), gap=3.2, arrows=True)
     return fig
 
 

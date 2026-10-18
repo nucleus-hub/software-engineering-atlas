@@ -572,18 +572,18 @@ These three problems increase in difficulty. Try each one on paper before openin
 
 ## 9. How this shows up in an LLD interview
 
-![Six-stage low-level design interview framework](assets/topic-02/lld_interview_framework.png)
+![The six steps of an LLD interview, each with what you do and an example from the notification service](assets/topic-02/lld_interview_framework.png)
 
-A low-level design (LLD) interview asks you to design the classes for a small system, and often to write the core code. It follows the same funnel as the system design interview in Basics 1, one level closer to the code.
+A low-level design (LLD) interview asks you to design the classes for a small system, and often to write the core code. It follows the same funnel as the system design interview in Basics 1, one level closer to the code. Here are the six steps, using this page's notification service as the example:
 
-| Stage | What you are trying to achieve |
-|---|---|
-| Clarify | Agree on the main use cases, say what is out of scope, and name one or two changes that are likely to come. |
-| Model | List the main classes, and give each one a single-sentence responsibility. |
-| Contract | Define the key interfaces and the rules each object guarantees. |
-| Relate | Draw a class diagram that shows which classes have, implement, or depend on which others. |
-| Code | Write the main flow in real code, including at least one failure case. |
-| Extend | Walk through a likely change, and show which classes it touches. Ideally that is one new class, and when it is not, say so. |
+| Step | What you do | Example from this page |
+|---|---|---|
+| 1. Clarify | Agree on what the system must do, what is out of scope, and which changes are likely. | Notify users by email, SMS, or push. More channels are likely. Delivery analytics is out of scope. |
+| 2. List classes | Name the main classes, each with a one-sentence job. | `PreferencePolicy` decides which channels a user allows. `Sender` delivers one notification. |
+| 3. Define interfaces | Write the key methods, and the promises each object keeps. | `send(notification)` returns a `SendResult`, and a timeout always comes back as `RETRYABLE_FAILURE`. |
+| 4. Connect classes | Sketch which classes hold, use, or implement which others. | The class diagram in section 6. |
+| 5. Write code | Code the main flow, including at least one failure. | `notifyUser(...)`, retrying a send that timed out. |
+| 6. Show a change | Walk through a likely change, and say which classes it touches. Ideally that is one new class, and when it is not, say so. | Adding WhatsApp is one new `WhatsAppSender`. A daily summary edits `NotificationService`. |
 
 ### Checklist
 

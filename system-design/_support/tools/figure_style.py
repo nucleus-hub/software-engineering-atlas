@@ -161,19 +161,25 @@ def card_row(
     ax: plt.Axes,
     cards: list[tuple[str, str, str, str, str, str]],
     labels: tuple[str, str],
+    *,
+    gap: float = 2.2,
+    arrows: bool = False,
 ) -> None:
     """Draw a row of tall cards: (badge, name, first text, second text, colour, face).
 
     Each card shows a coloured badge, a navy name, and two labelled sections,
     e.g. ASK/SMELL or USE WHEN/COST. Width adapts to the number of cards, so
-    this works for a row of four or five on a 15 x 6.6 canvas.
+    this works for a row of four, five, or six. Set arrows=True (with a wider
+    gap) when the cards are steps in order.
     """
-    margin, gap = 3, 2.2
+    margin = 3
     width = (100 - 2 * margin - (len(cards) - 1) * gap) / len(cards)
     step = width + gap
     for index, (badge_text, name, first, second, color, face) in enumerate(cards):
         x = margin + index * step
         centre_x = x + width / 2
+        if arrows and index < len(cards) - 1:
+            arrow(ax, (x + width + 0.3, 40), (x + step - 0.3, 40), color=color)
         box(ax, x, 8, width, 64, "", face=face, edge=color)
         badge(ax, centre_x, 79, badge_text, color=color, size=14)
         ax.text(centre_x, 64, name, ha="center", va="center", fontsize=10.5,
