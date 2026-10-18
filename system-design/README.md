@@ -66,18 +66,18 @@ structuring system design interviews.
 - [x] Worked example: URL shortener (practice: note-taking app)
 
 ### 2. LLD: Object-Oriented Principles & Clean Code
-- [ ] **Four pillars:** encapsulation, abstraction, polymorphism, composition over inheritance
-- [ ] Coupling and cohesion
-- [ ] **SOLID principles** (simple explanations + examples):
+- [x] **Four pillars:** encapsulation, abstraction, polymorphism, composition over inheritance
+- [x] Coupling and cohesion
+- [x] **SOLID principles** (simple explanations + examples):
   - Single Responsibility
   - Open/Closed
   - Liskov Substitution
   - Interface Segregation
   - Dependency Inversion
-- [ ] **Clean code fundamentals:** DRY, KISS, YAGNI
-- [ ] Design smells, and refactoring on evidence rather than taste
-- [ ] Approaching the LLD interview round
-- [ ] Worked example: refactoring one messy notification class into a notification service
+- [x] **Clean code fundamentals:** DRY, KISS, YAGNI
+- [x] Design smells, and refactoring on evidence rather than taste
+- [x] Approaching the LLD interview round
+- [x] Worked example: refactoring one messy notification class into a notification service
 
 ### 3. LLD: Creational & Structural Design Patterns
 - [ ] **Mental model:** patterns as named trade-offs, creation vs composition coupling, the composition root
