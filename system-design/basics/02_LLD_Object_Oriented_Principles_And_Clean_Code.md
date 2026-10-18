@@ -477,15 +477,12 @@ final class NotificationService {
 }
 ```
 
-The real test of a design is how it handles change. Here is what each likely change request touches:
+The real test of a design is how it handles change. Section 3 already showed that adding WhatsApp, adding quiet hours, or switching SMS provider each touch just one class. Two more change requests:
 
-| Change request | What you edit | What you add | What stays untouched |
-|---|---|---|---|
-| Add WhatsApp as a channel. | You edit only the wiring, by adding one map entry. | You add a `WhatsAppSender` class. | The service, the policies, and every other sender stay untouched. |
-| Add quiet hours from 22:00 to 07:00. | You edit `PreferencePolicy`. | You add tests for the new rule. | The service and all the senders stay untouched. |
-| Switch to a different SMS provider. | You edit only the wiring that chooses the SMS sender. | You add a new SMS sender class for the new provider. | Every other class stays untouched. |
-| Retry up to five times instead of three. | You edit the `RetryPolicy` configuration. | You do not need to add anything. | Every other class stays untouched. |
-| Send one daily summary instead of instant messages. | You edit `NotificationService`, because the workflow itself changes. | You add a scheduler class that triggers the daily summary. | The senders and their contract stay untouched. |
+| Change request | What you touch |
+|---|---|
+| Retry up to five times instead of three. | Only the `RetryPolicy` configuration. |
+| Send one daily summary instead of instant messages. | `NotificationService`, because the workflow itself changes, plus a new scheduler class. The senders stay untouched. |
 
 The last row is important. A daily summary changes the *workflow*, and the coordinating class is supposed to change for workflow reasons. No design absorbs every possible change, and saying so honestly is a stronger answer than claiming the design is open to anything.
 
@@ -493,18 +490,18 @@ The last row is important. A daily summary changes the *workflow*, and the coord
 
 ## 7. Design smells to recognize
 
-![Design smells connected to expensive change](assets/topic-02/design_smells.png)
+![Six design smells, each pointing to the principle it breaks](assets/topic-02/design_smells.png)
 
-A *smell* is a visible symptom that a design will make change expensive. Learning to spot these is the fastest way to apply the principles in real code reviews. Each smell below maps to one of the principles on this page.
+A *smell* is a visible symptom that a design will make change expensive. Each smell below points back to one principle on this page, and that principle tells you the fix.
 
-| Smell | How you notice it | Principle at stake | Usual fix |
-|---|---|---|---|
-| **God class** | One class is edited in most pull requests, often with a name ending in `Manager`. | Single Responsibility | Split it into one class per group of people that asks for changes. |
-| **Type switch** | The same `switch` or `instanceof` check on a type appears in several places. | Open/Closed | Replace the checks with an interface and one implementation per type. |
-| **Refused bequest** | A subclass overrides inherited methods just to throw an exception or do nothing. | Liskov Substitution | Stop inheriting, and compose the capabilities that the class really has. |
-| **Fat interface** | Implementations are forced to write empty or throwing versions of methods they cannot support. | Interface Segregation | Split the interface into smaller ones shaped around each kind of caller. |
-| **Concrete coupling** | Business logic creates databases or provider clients itself with `new`. | Dependency Inversion | Depend on an interface owned by the business logic, and pass the implementation in. |
-| **Shotgun surgery** | Changing one business rule means editing many files. | DRY | Move that knowledge into one owner that every other class uses. |
+| Smell (principle it breaks) | How you notice it | Usual fix |
+|---|---|---|
+| **God class** (Single Responsibility) | One class is edited in most pull requests, often with a name ending in `Manager`. | Split it into one class per group of people that asks for changes. |
+| **Type switch** (Open/Closed) | The same `switch` or `instanceof` check on a type appears in several places. | Replace the checks with an interface and one implementation per type. |
+| **Refused bequest** (Liskov Substitution) | A subclass overrides inherited methods just to throw an exception or do nothing. | Stop inheriting, and compose the capabilities that the class really has. |
+| **Fat interface** (Interface Segregation) | Implementations are forced to write empty or throwing versions of methods they cannot support. | Split the interface into smaller ones shaped around each kind of caller. |
+| **Concrete coupling** (Dependency Inversion) | Business logic creates databases or provider clients itself with `new`. | Depend on an interface owned by the business logic, and pass the implementation in. |
+| **Shotgun surgery** (DRY) | Changing one business rule means editing many files. | Move that knowledge into one owner that every other class uses. |
 
 !!! warning "Refactor because of evidence, not taste"
     "This could be cleaner" is not a strong reason to restructure code. "This rule changed three times, and we missed one copy twice" is. Name the change that hurts, and make the smallest structural change that keeps it local.
@@ -586,10 +583,7 @@ A low-level design (LLD) interview asks you to design the classes for a small sy
 | Contract | Define the key interfaces and the rules each object guarantees. |
 | Relate | Draw a class diagram that shows which classes have, implement, or depend on which others. |
 | Code | Write the main flow in real code, including at least one failure case. |
-| Extend | Walk through a likely change and show that it becomes a new class rather than an edit to existing code. |
-
-!!! tip "The LLD round in one sentence"
-    Find the changes that are likely to come, give each one a single owner behind a small interface, and show that a new requirement becomes a new class rather than an edit.
+| Extend | Walk through a likely change, and show which classes it touches. Ideally that is one new class, and when it is not, say so. |
 
 ### Checklist
 
@@ -604,14 +598,3 @@ A low-level design (LLD) interview asks you to design the classes for a small sy
 [ ] Apply DRY to knowledge, KISS to mechanisms, and YAGNI to guesses about the future.
 [ ] Show how a likely change becomes a new class, and admit which changes the design does not absorb.
 ```
-
-### What comes next
-
-| Topic you may have heard about | Where it is covered |
-|---|---|
-| Factory, Builder, Singleton, Adapter, Decorator, and other structural patterns | Basics 3: Creational & Structural Design Patterns |
-| Strategy, Observer, Template Method, and other behavioral patterns | Advanced 1: Behavioral Design Patterns |
-| Full machine-coding case studies, such as a parking lot or a ticket booking system | Advanced 2: Real-World Machine Coding Case Studies |
-| Service boundaries, modular monoliths, and microservices | Basics 5: Architecture Styles & Service Decomposition |
-| Queues that deliver notifications in the background | Basics 13: Asynchronous Processing Basics |
-| Safe retries and avoiding duplicate messages | Advanced 7: Idempotency & Retries |

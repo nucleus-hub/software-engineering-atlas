@@ -232,28 +232,27 @@ def clean_code_guardrails() -> plt.Figure:
     return fig
 
 
+SMELLS = [
+    ("God class", "one class is edited in most changes", "Single Responsibility", NAVY),
+    ("Type switch", "the same switch on type, in many places", "Open/Closed", BLUE),
+    ("Refused bequest", "a subclass throws or does nothing", "Liskov Substitution", GREEN),
+    ("Fat interface", "classes write methods they never use", "Interface Segregation", AMBER),
+    ("Concrete coupling", "business code calls new TwilioClient()", "Dependency Inversion", RED),
+    ("Shotgun surgery", "one rule change edits many files", "DRY", GREY),
+]
+
+
 def design_smells() -> plt.Figure:
-    fig, ax = canvas(14, 6.5)
-    heading(ax, "Design Smells Point to Boundary Problems",
-            "Use principles as diagnostic tools—not compliance badges")
-    box(ax, 38, 39, 24, 22, "Change is expensive", "large blast radius",
-        face=MIST, edge=NAVY)
-    smells = [
-        (4, 63, "God class", "split responsibilities", RED),
-        (4, 18, "Shotgun surgery", "centralize knowledge", AMBER),
-        (76, 63, "Fat interface", "segregate clients", BLUE),
-        (76, 18, "Concrete coupling", "invert dependency", GREEN),
-    ]
-    for x, y, title, remedy, color in smells:
-        box(ax, x, y, 20, 16, title, remedy, face=WHITE, edge=color,
-            title_color=color)
-        start = (x + 20.5, y + 8) if x < 50 else (x - 0.5, y + 8)
-        end = (37.5, 50) if x < 50 else (62.5, 50)
-        arrow(ax, start, end, color=color)
-    ax.text(50, 24, "Ask: which future change forces unrelated code to move?",
-            ha="center", fontsize=10, fontweight="bold", color=NAVY)
-    ax.text(50, 16, "Refactor only when the pressure is real and understood.",
-            ha="center", fontsize=9, color=GREY, style="italic")
+    fig, ax = canvas(13, 7.4)
+    heading(ax, "Six Design Smells, and the Principle Each One Breaks",
+            "A smell is what you notice in the code; the principle tells you how to fix it")
+    ax.text(23, 81, "WHAT YOU NOTICE", ha="center", fontsize=8.5, fontweight="bold", color=GREY)
+    ax.text(77, 81, "PRINCIPLE IT BREAKS", ha="center", fontsize=8.5, fontweight="bold", color=GREY)
+    for index, (smell, symptom, principle, color) in enumerate(SMELLS):
+        y = 67 - index * 12.2
+        box(ax, 4, y, 38, 10, smell, symptom, face=WHITE, edge=color, title_color=color)
+        box(ax, 62, y, 34, 10, principle, face=WHITE, edge=color, title_color=color)
+        arrow(ax, (42.5, y + 5), (61.5, y + 5), color=color)
     return fig
 
 
