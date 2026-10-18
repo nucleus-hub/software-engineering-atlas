@@ -33,19 +33,19 @@ You do not need to memorize these. Come back to this table whenever a term feels
 
 ![The request lifecycle for one click on a short link](assets/topic-04/request_lifecycle.png)
 
-[Basics 1](01_Interview_Framework_And_Capacity_Estimation.md) designed the URL shortener: a load balancer, a dozen stateless Link API servers, a cache, and a link store. This page follows **one click on one short link** through those boxes, and asks what happens on the wire at every step, how long each step takes, and what can go wrong.
+[Basics 1](01_Interview_Framework_And_Capacity_Estimation.md) designed the URL shortener: a load balancer, a dozen stateless Link API servers, a cache, and a link store. This page follows **one click on one short link** through those boxes, and asks what happens on the wire at every step, how long each step takes, and what can go wrong. The numbers in the table match the numbers in the picture.
 
-| Step | What happens | Where the time goes |
-|---|---|---|
-| 1. Resolve the name | The browser asks DNS for the IP address of `go.example.com`. | Zero if cached; otherwise one or more round trips to DNS servers. |
-| 2. Connect | The browser opens a TCP connection, then runs a TLS handshake with the load balancer. | Two round trips across the internet. |
-| 3. Send the request | The browser sends `GET /aB3xK9`. | One more round trip, shared with the response. |
-| 4. Forward | The load balancer forwards the request to one Link API server, over a connection that is already open. | Well under a millisecond inside the data center. |
-| 5. Look up | The Link API reads the code from the cache. | About 1 ms. |
-| 6. Fall back | Only on a cache miss, it reads the link store. | A few milliseconds. |
-| 7. Respond | The API returns `302 Found` with a `Location` header, and the browser goes to the long URL. | The return half of the round trip from step 3. |
+| Step | What happens |
+|---|---|
+| **1. Find the server's address (DNS)** | The browser only knows the name `go.example.com`, but the network needs a numeric IP address. It asks a DNS resolver, which answers with an address such as `203.0.113.10`. The browser and the operating system remember the answer, so later clicks usually skip this step. |
+| **2. Open a secure connection (TCP + TLS)** | The browser opens a TCP connection to the load balancer, then runs a TLS handshake to agree on encryption and check the site's certificate. This is only setup: nothing about the short link has been sent yet. |
+| **3. Send the request** | Over that connection, the browser sends `GET /aB3xK9`, which asks: "where does this short code point?" |
+| **4. Forward to a server** | The load balancer decrypts the request (TLS ends here), picks one of the Link API servers, and passes the request along over a connection it already has open to that server. |
+| **5. Look up the code in the cache** | The Link API server asks the cache for the long URL stored under `aB3xK9`. Popular links are almost always found here. |
+| **6. Read the link store (only on a cache miss)** | If the cache does not have the code, the server reads it from the link store, the permanent database, and saves it in the cache for the next click. |
+| **7. Send the redirect back** | The server answers `302 Found`, with the long URL in the `Location` header. The load balancer passes the answer back to the browser, which then opens the long URL. |
 
-Look at the right-hand column. Steps 1 to 3 and 7 cross the public internet, where every round trip costs tens of milliseconds. Steps 4 to 6 happen inside the data center, where a round trip costs about half a millisecond. **For a simple request, the network usually costs far more than your code.** That single fact drives most of this page.
+Steps 1, 2, 3, and 7 cross the public internet, where every round trip costs tens of milliseconds. Steps 4 to 6 stay inside the data center, where a round trip costs about half a millisecond. **For a simple request, the network usually costs far more than your code.** That single fact drives most of this page.
 
 !!! tip "The request lifecycle in one sentence"
     Count the round trips on the path, find the ones that cross long distances, and then remove them (by reusing connections), shorten them (by answering closer to the user), or bound them (with timeouts).

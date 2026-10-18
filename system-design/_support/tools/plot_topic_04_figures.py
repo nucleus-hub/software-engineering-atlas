@@ -106,53 +106,52 @@ def network_layers() -> plt.Figure:
 
 
 def request_lifecycle() -> plt.Figure:
-    fig, ax = canvas(15, 7.5)
+    fig, ax = canvas(15, 7)
     heading(ax, "One Click on a Short Link: The Request Lifecycle",
-            "Most of the time is spent crossing the internet, not running your code")
-    ax.add_patch(Rectangle((1, 6), 36, 78, facecolor=WHITE, edgecolor=LINE,
+            "Follow the numbers: each one is a step in the table below the picture")
+    ax.add_patch(Rectangle((1, 6), 38, 76, facecolor=WHITE, edgecolor=LINE,
                            linestyle="--", linewidth=1.4))
-    ax.add_patch(Rectangle((39, 6), 60, 78, facecolor="#F6F9FF", edgecolor=LINE,
+    ax.add_patch(Rectangle((41, 6), 58, 76, facecolor="#F6F9FF", edgecolor=LINE,
                            linewidth=1.4))
-    caps(ax, 19, 80, "PUBLIC INTERNET  ·  ~30 ms PER ROUND TRIP")
-    caps(ax, 69, 80, "INSIDE THE DATA CENTER  ·  ~0.5 ms PER ROUND TRIP")
+    caps(ax, 20, 78, "PUBLIC INTERNET  ·  ~30 ms PER ROUND TRIP")
+    caps(ax, 70, 78, "INSIDE THE DATA CENTER  ·  ~0.5 ms PER ROUND TRIP")
 
-    box(ax, 4, 52, 12, 14, "Browser", "user clicks", face=WHITE, edge=NAVY)
-    box(ax, 4, 14, 12, 14, "DNS resolver", "name -> IP", face=WHITE, edge=GREY,
+    def step(x: float, y: float, number: str, text: str, color: str = NAVY) -> None:
+        """A numbered badge with its label to the right, in the arrow's colour."""
+        badge(ax, x, y, number, color=color)
+        note(ax, x + 1.8, y, text, color=color, size=8.4)
+
+    box(ax, 4, 44, 12, 18, "Browser", "user clicks", face=WHITE, edge=NAVY)
+    box(ax, 4, 11, 12, 12, "DNS resolver", "name -> IP", face=WHITE, edge=GREY,
         title_color=GREY)
-    box(ax, 42, 52, 13, 14, "Load balancer", "TLS ends here")
-    box(ax, 62, 52, 12, 14, "Link API", "12 stateless", face=MIST)
-    box(ax, 82, 63, 13, 11, "Cache", "code -> URL")
-    box(ax, 82, 33, 13, 11, "Link store", "on a miss", face=WHITE, edge=NAVY)
+    box(ax, 44, 44, 13, 18, "Load balancer", "TLS ends here")
+    box(ax, 65, 44, 12, 18, "Link API", "12 servers", face=MIST)
+    box(ax, 85, 60, 12, 11, "Cache", "code -> URL")
+    box(ax, 85, 22, 12, 11, "Link store", "database", face=WHITE, edge=NAVY)
 
-    arrow(ax, (10, 51), (10, 29), color=GREY)
-    badge(ax, 12.5, 40, "1", color=GREY)
-    note(ax, 14.2, 40, "resolve the name", color=GREY, size=8.2)
+    # 1: DNS lookup, before anything else.
+    arrow(ax, (10, 43.3), (10, 23.8), color=GREY)
+    step(12.5, 33.5, "1", "find the IP address", GREY)
 
-    arrow(ax, (16.5, 62), (41.5, 62))
-    badge(ax, 19, 74, "2")
-    note(ax, 20.8, 74, "TCP + TLS handshakes", color=BLUE, size=8.2)
-    badge(ax, 19, 68, "3")
-    note(ax, 20.8, 68, "GET /aB3xK9", color=BLUE, size=8.2)
-    arrow(ax, (41.5, 55), (16.5, 55), color=GREEN)
-    badge(ax, 19, 49, "7", color=GREEN)
-    note(ax, 20.8, 49, "302 Found + Location", color=GREEN, size=8.2)
+    # 2, 3, 7: three separate trips between the browser and the load balancer.
+    for y, number, text, color, outbound in (
+        (58.5, "2", "open a secure connection (TCP + TLS)", BLUE, True),
+        (52.5, "3", "send GET /aB3xK9", BLUE, True),
+        (46.5, "7", "302 redirect back to the browser", GREEN, False),
+    ):
+        start, end = ((16.6, y), (43.4, y)) if outbound else ((43.4, y), (16.6, y))
+        arrow(ax, start, end, color=color)
+        step(18.5, y + 2.6, number, text, color)
 
-    arrow(ax, (55.5, 59), (61.5, 59))
-    badge(ax, 58.5, 64, "4")
-    arrow(ax, (74.5, 63), (81.5, 68.5))
-    badge(ax, 77.5, 70, "5")
-    arrow(ax, (74.5, 55), (81.5, 39), color=RED, dashed=True)
-    badge(ax, 76.5, 44, "6", color=RED)
-
-    legend = [
-        ("4", "forward the request over an already-open, pooled connection", BLUE),
-        ("5", "look the code up in the cache (about 1 ms)", BLUE),
-        ("6", "only on a cache miss: read the link store (a few ms)", RED),
-    ]
-    for index, (label, text, color) in enumerate(legend):
-        y = 23 - index * 7
-        badge(ax, 43, y, label, color=NAVY if color == BLUE else color)
-        note(ax, 45, y, text, size=8.6)
+    # 4, 5, 6: inside the data center.
+    arrow(ax, (57.6, 53), (64.4, 53))
+    badge(ax, 61, 57.5, "4")
+    note(ax, 61, 49.3, "forward", color=NAVY, size=8.4, ha="center")
+    arrow(ax, (77.6, 57), (84.4, 65))
+    badge(ax, 79.3, 67, "5")
+    note(ax, 77.6, 67, "look up code", color=NAVY, size=8.4, ha="right")
+    arrow(ax, (77.6, 49), (84.4, 29), color=RED, dashed=True)
+    step(82.3, 41.5, "6", "only on a\ncache miss", RED)
     return fig
 
 
