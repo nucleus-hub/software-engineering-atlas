@@ -468,7 +468,10 @@ These come up less often, but you should recognize them:
 
 ---
 
-## 5. Telling look-alike patterns apart
+## 5. Using patterns in practice
+
+### Telling look-alike patterns apart
+
 
 Several patterns produce code that looks almost identical. What actually separates them is *why* the extra class exists, not what it looks like. Interviewers like asking about these pairs, because answering well shows that you understand a pattern's purpose, not just its shape.
 
@@ -481,9 +484,8 @@ Several patterns produce code that looks almost identical. What actually separat
 | Builder vs factory | A factory's job is choosing *which class* to create. A builder's job is assembling *one* class correctly, from many optional values, and checking the result before it exists. If the hard problem is "which type do I need?", that is a factory. If the hard problem is "this one object has too many optional settings to pass into a constructor", that is a builder. |
 | Singleton vs one injected instance | Both result in one object being used everywhere. A Singleton enforces that only one instance can ever exist, and lets any class reach it directly without being given it. An injected instance is also created only once, but it is created at the composition root and handed to every class that needs it through its constructor. The practical difference shows up in tests: a test can swap in a fake for an injected instance, but it cannot easily replace a true Singleton, because the Singleton controls its own creation. |
 
----
+### Justify your choice in one sentence
 
-## 6. Justify your choice in one sentence
 
 !!! abstract "The decision template: memorize this"
     Given **expected change X**, use **pattern A** instead of **simpler option B**, because it keeps that change **inside C**. It costs **D**. Prove it with **test E**, and revisit when **F** happens.
@@ -494,9 +496,8 @@ Two worked instances:
 
 > Given **retry and audit needed on some gateways but not others**, use **Decorators** instead of **a `BaseGateway` superclass with on/off flags**, because each concern **composes independently, in a chosen order**. It costs **a deeper stack trace, and an order that must be documented**. Prove it with **a test asserting one audit entry per attempt**. Revisit if **the chain grows past three or four wrappers**.
 
----
+### How patterns fail in practice
 
-## 7. How patterns fail in practice
 
 | Failure | How you spot it | Fix | Guardrail for next time |
 |---|---|---|---|
@@ -515,7 +516,7 @@ Two worked instances:
 
 ---
 
-## 8. Worked example: payment gateway
+## 6. Worked example: payment gateway
 
 **Prompt:** "Design the classes that let checkout charge customers through payment providers that differ by country."
 
@@ -599,7 +600,7 @@ The last row matters. A new step in the workflow is exactly what the facade is s
 
 ---
 
-## 9. Anti-patterns that cost points
+## 7. Anti-patterns that cost points
 
 - Naming a pattern ("I'll use a Strategy here") without saying which change it absorbs.
 - Using a Singleton for anything that holds mutable state.
@@ -612,7 +613,7 @@ The last row matters. A new step in the workflow is exactly what the facade is s
 
 ---
 
-## 10. Final revision checklist
+## 8. Final revision checklist
 
 ```text
 [ ] NAME the expected change before naming any pattern
