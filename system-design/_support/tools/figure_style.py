@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from pathlib import Path
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -26,6 +29,33 @@ RED_FACE = "#FDEDEC"
 GREEN_FACE = "#E9F7EF"
 DEAD = "#F2F2F2"
 DPI = 200
+ASSETS_ROOT = Path(__file__).resolve().parent.parent.parent / "basics" / "assets"
+
+
+def render(figures: dict[str, Callable[[], plt.Figure]], topic: str,
+           names: list[str]) -> None:
+    """Render the named figures (all if none) into basics/assets/<topic>/."""
+    targets = names or list(figures)
+    unknown = sorted(set(targets) - set(figures))
+    if unknown:
+        raise SystemExit(f"Unknown figure(s): {', '.join(unknown)}. "
+                         f"Known: {', '.join(figures)}")
+    folder = ASSETS_ROOT / topic
+    folder.mkdir(parents=True, exist_ok=True)
+    for name in targets:
+        fig = figures[name]()
+        fig.savefig(folder / f"{name}.png", dpi=DPI, bbox_inches="tight",
+                    facecolor=WHITE)
+        plt.close(fig)
+        print(f"wrote basics/assets/{topic}/{name}.png")
+
+
+def badge(ax: plt.Axes, x: float, y: float, text: str, *, color: str = NAVY,
+          size: float = 7.5) -> None:
+    """Draw a small numbered disc that stays round on any canvas aspect ratio."""
+    ax.text(x, y, text, ha="center", va="center", fontsize=size,
+            fontweight="bold", color=WHITE, zorder=4,
+            bbox=dict(boxstyle="circle,pad=0.3", facecolor=color, edgecolor=color))
 
 
 def canvas(width: float = 14, height: float = 6) -> tuple[plt.Figure, plt.Axes]:
