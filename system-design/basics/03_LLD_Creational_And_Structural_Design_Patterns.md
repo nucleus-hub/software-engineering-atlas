@@ -496,25 +496,25 @@ Two worked instances:
 
 ### Which creational option?
 
-| Evidence | Choose | Optimizes for | Cost |
-|---|---|---|---|
-| There is one concrete type, and it is stable. | A plain constructor. | Simplicity: nothing to learn. | A small refactor later, if variation actually arrives. |
-| The caller picks from a known set of variants. | A static or simple factory. | Readable intent at the call site. | One central `switch` that grows with each variant. |
-| A subclass must choose which object to create, inside steps that stay the same. | Factory Method. | Adding variants without editing the steps. | One subclass per variant. |
-| Several objects must always match each other. | Abstract Factory. | Guaranteed consistency across the set. | Every new kind of object touches every factory. |
-| The object has many optional fields, or cross-field rules. | Builder. | Readable call sites and one validation gate. | An extra class and some boilerplate. |
-| Copying a configured object beats building a new one. | Prototype. | Cheap duplication at runtime. | Careful deep copies of every mutable part. |
-| The object should exist once. | One instance created at the composition root and injected. | Testability with a single instance. | Wiring it through constructors; enforce a true Singleton only if a second instance would be a bug. |
+| If you see this situation | Use this |
+|---|---|
+| One concrete type, and it is not expected to change. | A plain constructor. Nothing to learn, and nothing to undo if that assumption turns out wrong. |
+| The caller picks from a small, known set of options. | A static or simple factory, not Factory Method: no subclass is choosing anything here. |
+| A subclass must choose which object to create, inside steps that otherwise stay the same. | Factory Method. Costs one subclass per variant. |
+| Several objects must always match each other, like a UI theme. | Abstract Factory. Adding a new kind of object means touching every factory. |
+| The object has many optional values, or rules that span several of them. | Builder. Costs an extra class, but keeps an invalid object from ever being created. |
+| Copying an existing, ready-made object is cheaper than building a new one. | Prototype. Copy every part that can change, or the copies will share state. |
+| Only one object of this type should exist. | Create it once at the composition root and pass it in. Reach for a true Singleton only if a second instance would be a real bug. |
 
 ### Which structural option?
 
-| Problem | Choose | Does the interface change? | Guardrail |
-|---|---|---|---|
-| A class you do not control has the wrong interface. | Adapter. | Yes: it is translated into yours. | Translate errors, not just data, and keep vendor types inside the adapter. |
-| You need optional, combinable behavior around an object. | Decorator. | No: it stays identical. | Keep chains short, and document the order, because order changes behavior. |
-| Callers struggle with a subsystem of many parts. | Facade. | Yes: it is narrowed to a few calls. | It orchestrates but must not absorb business rules. |
-| Access must be controlled, deferred, or made remote. | Proxy. | No: it stays identical. | Make the hidden cost visible, through naming, docs, or timeouts. |
-| Single items and groups must be handled the same way. | Composite. | No: leaves and groups share one interface. | Keep group-only operations off the shared interface where possible. |
+| If you see this situation | Use this |
+|---|---|
+| A class you do not control has the wrong methods for your code. | Adapter. Translate errors as carefully as data, and keep the vendor's types inside it. |
+| You want to add one feature to an object without changing its class. | Decorator. Keep the stack short, and write down the order you chose, because order changes behavior. |
+| Callers would otherwise have to call several classes, in the right order. | Facade. It should coordinate those classes, not contain their rules. |
+| You need to control when, or whether, the real object is used. | Proxy. Make sure the hidden cost, such as a slow first call, is visible somewhere, such as in its name or its docs. |
+| A single item and a group of items need to be used the same way. | Composite. Keep operations that only make sense for a group off the shared interface where you can. |
 
 ---
 
