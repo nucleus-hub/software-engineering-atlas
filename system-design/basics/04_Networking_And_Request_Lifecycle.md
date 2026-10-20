@@ -78,236 +78,255 @@ The sections below form a ladder, walking down the request from the first round 
 
 ### Level 0: Round trips and distance
 
-Light in optical fiber travels at about 200,000 km per second, roughly two thirds of its speed in a vacuum. Over a round trip, that gives a rule worth memorizing:
+**In one line:** every message takes time to travel, and the farther it goes, the longer it takes.
+
+A **round trip** is a message going out plus its reply coming back. Signals in optical fiber travel at about 200,000 km per second, which gives a rule worth memorizing:
 
 ```text
 Minimum round trip ≈ 1 ms for every 100 km between the two machines
 ```
 
-Real routes are not straight lines and pass through routers along the way, so real round trips are typically 1.5 to 2 times this minimum. No amount of server tuning can beat physics; only moving the conversation closer to the user helps.
+Real cables do not run in straight lines, so real round trips are usually 1.5 to 2 times that minimum. No server tuning can beat physics. The only fix is to talk to something closer.
 
-| Path | Distance | Minimum round trip | Typical round trip |
-|---|---:|---:|---:|
-| Two servers in the same data center | Under 1 km | Microseconds | About 0.5 ms |
-| Two data centers in the same region | About 50 km | 0.5 ms | 1–2 ms |
-| New York to San Francisco | About 4,100 km | 41 ms | 60–70 ms |
-| New York to London | About 5,600 km | 56 ms | 70–80 ms |
-| Mumbai to US East | About 13,000 km | 130 ms | 190–230 ms |
+| Path | Distance | Typical round trip |
+|---|---:|---:|
+| Two servers in the same data center | Under 1 km | About 0.5 ms |
+| Two data centers in the same region | About 50 km | 1–2 ms |
+| New York to San Francisco | About 4,100 km | 60–70 ms |
+| New York to London | About 5,600 km | 70–80 ms |
+| Mumbai to US East | About 13,000 km | 190–230 ms |
 
-For comparison, here is how long the work inside a data center usually takes:
+Work inside a data center is much faster:
 
 | Operation | Typical time |
 |---|---:|
-| Read a value from local memory | About 100 nanoseconds (0.0001 ms) |
-| Read 4 KB from a local SSD | About 0.1 ms |
-| Get a value from a cache server such as Redis, including the network hop | 0.5–1 ms |
+| Read a value from memory | About 0.0001 ms |
+| Read 4 KB from an SSD | About 0.1 ms |
+| Get a value from a cache server such as Redis | 0.5–1 ms |
 | Run a simple indexed database query | 1–5 ms |
 
-**What this tells us:** one round trip across a continent costs about as much as 50 cache lookups. When a design needs several round trips between the user and the data center, those round trips will dominate the latency, so the cheapest optimizations are the ones that remove them.
+**What this tells us:** one round trip across a continent costs as much as about 50 cache lookups. When a request needs several trips between the user and the data center, those trips dominate the wait, so removing them is usually the cheapest speed-up.
 
 !!! question "Practice"
     1. A user in Frankfurt uses the note-taking app in US East, about 6,500 km away. What is the minimum round trip, and what is a realistic one?
-    2. Opening a note takes four round trips between the user and the server, plus 10 ms of server work. Roughly how long does the user wait?
+    2. Opening a note takes four round trips plus 10 ms of server work. Roughly how long does the user wait?
 
 ??? success "Answer"
     1. Minimum: 6,500 / 100 = **65 ms**. Realistic: about **100–130 ms**.
-    2. With 100 ms round trips, 4 × 100 + 10 = **about 410 ms**. The server work is under 3% of the wait, so speeding up the code barely helps. Removing round trips, or serving European users from somewhere closer, would.
+    2. With 100 ms round trips: 4 × 100 + 10 = **about 410 ms**. The server work is under 3% of that, so faster code barely helps. Fewer round trips, or a server closer to Europe, would.
 
 ### Level 1: DNS, turning a name into an address
 
+**In one line:** DNS turns a name like `go.example.com` into an IP address, and caches the answer so the full lookup is rare.
+
 ![DNS resolution walk from browser to recursive resolver to root, TLD, and authoritative servers](assets/topic-04/dns_resolution.png)
 
-Before the browser can connect, it needs an IP address. It asks a **recursive resolver**, usually run by the user's internet provider or a public service such as `8.8.8.8`. If the resolver has no cached answer, it walks the DNS hierarchy: the root servers point it to the `.com` servers, which point it to the **authoritative** servers for `example.com`, which hold the real answer.
+The browser asks a **recursive resolver**, usually run by the internet provider or a public service such as `8.8.8.8`. If the resolver does not already know the answer, it asks three kinds of servers in turn:
 
-A full walk takes several round trips, so every answer is cached at every level (browser, operating system, and resolver) for the record's **TTL**. In practice, most lookups are answered from a cache in a millisecond or two, and the full walk is rare.
+1. A **root** server, which replies "ask the `.com` servers".
+2. A **`.com`** server, which replies "ask `example.com`'s own servers".
+3. The **authoritative** server for `example.com`, which gives the real answer: `203.0.113.10`.
 
-The TTL is a trade-off between speed and agility:
+That walk costs several round trips, so the answer is saved in the browser, the operating system, and the resolver, for as long as the record's **TTL** allows. Most lookups are answered from one of these caches in a millisecond or two.
+
+**Choosing a TTL** is a trade-off between speed and flexibility:
 
 | | Short TTL (30–60 seconds) | Long TTL (hours) |
 |---|---|---|
-| Changing an IP address | Takes effect within a minute | Some users keep the old address for hours |
-| Load on DNS servers | Higher, with more lookups | Lower |
-| Typical use | Records you may need to change quickly, such as during a failover | Stable records that rarely change |
+| A change reaches everyone | Within about a minute | Only after hours |
+| Load on DNS servers | Higher | Lower |
+| Good for | Records you may need to change quickly, such as during a failover | Records that rarely change |
 
-Because DNS sits at the very start of every request, its failures look like the whole site is down:
+**What goes wrong.** DNS sits at the very start of every request, so its failures look like the whole site is down:
 
-| Failure | What users see | How teams handle it |
+| Problem | What users see | What teams do |
 |---|---|---|
-| A changed record is still cached with the old IP | Some users reach the old servers for up to one TTL | Lower the TTL a day *before* a planned migration, then change the record. |
-| The DNS provider has an outage | New visitors cannot resolve the name at all; visitors with cached answers keep working | Use two independent DNS providers for critical domains. |
-| Clients cache answers longer than the TTL | Traffic keeps going to a removed server after the change | Know your clients' caching rules (see the box below), and keep old servers running for a while after a change. |
+| The old IP is still cached after a change | Some users reach the old servers for up to one TTL | Lower the TTL a day *before* a planned move, then change the record. |
+| The DNS provider has an outage | New visitors cannot find the site; visitors with a cached answer keep working | Use two independent DNS providers for critical domains. |
+| A client caches longer than the TTL | Traffic keeps going to a removed server | Know your clients' caching rules, and keep old servers running for a while. |
 
-??? info "Go deeper (optional): the JVM has its own DNS cache"
-    Java keeps its own cache of DNS answers, controlled by the security property `networkaddress.cache.ttl`. In current OpenJDK builds the default is 30 seconds, but older setups that installed a security manager cached successful lookups **forever**. A long-running service could then keep calling an IP address that was retired months ago. If a dependency moves IP addresses behind a stable name, which is common with cloud load balancers, check this setting. Failed lookups are cached separately, by `networkaddress.cache.negative.ttl`, which defaults to 10 seconds.
-
-**What this tells us:** for the URL shortener, DNS adds nothing on most clicks, because the answer is cached. It matters on a user's first visit, and it decides how quickly traffic can be moved during a migration or failover.
+**What this tells us:** for the URL shortener, DNS costs nothing on most clicks, because the answer is cached. It matters on a user's first visit, and it decides how fast traffic can be moved during a migration or failover.
 
 !!! question "Practice: the note-taking app"
-    The note-taking app is moving to a new load balancer with a new IP address next Tuesday. Its DNS record currently has a TTL of 24 hours. What should the team do, and when?
+    The note-taking app moves to a new load balancer, with a new IP address, next Tuesday. Its DNS record has a TTL of 24 hours. What should the team do, and when?
 
 ??? success "Answer"
-    At least 24 hours before the move, lower the TTL to about 60 seconds, so every cached copy of the old long-lived record has expired by Tuesday. On Tuesday, change the record; within about a minute, almost all users will use the new address. Keep the old load balancer running for a day or two to catch clients that ignore TTLs, then raise the TTL again.
+    At least 24 hours before the move, lower the TTL to about 60 seconds, so every cached copy of the old 24-hour record has expired by Tuesday. On Tuesday, change the record; almost all users switch within a minute. Keep the old load balancer running for a day or two for clients that ignore TTLs, then raise the TTL again.
 
 ### Level 2: TCP vs UDP
 
-Once the browser has an IP address, it needs a way to send data to one program on that machine. That is the transport layer's job, and there are two main choices.
+**In one line:** TCP delivers everything, in order, but needs a handshake and can stall; UDP sends immediately, but packets may be lost.
+
+With an IP address in hand, the browser still needs a way to send data to one program on that machine. That is the transport layer's job, and there are two choices:
 
 | | TCP | UDP |
 |---|---|---|
-| Setup | A handshake (SYN, SYN-ACK, ACK) costs one round trip before data flows | None; the first packet already carries data |
-| Delivery | Every byte arrives, in order, or the connection reports an error | Packets may be lost, duplicated, or arrive out of order |
-| When a packet is lost | Later data waits until the lost packet is resent | Nothing waits; the application decides what to do |
-| Typical uses | Web traffic (HTTP/1.1 and HTTP/2), databases, most service-to-service calls | DNS lookups, video calls, online games, and QUIC, which carries HTTP/3 |
+| Before sending data | A handshake (SYN, SYN-ACK, ACK): one round trip | Nothing; the first packet already carries data |
+| Delivery | Every byte arrives, in order, or you get an error | Packets may be lost, duplicated, or arrive out of order |
+| A packet is lost | Everything after it waits until it is resent | Nothing waits; the application decides what to do |
+| Used for | Web traffic (HTTP/1.1 and HTTP/2), databases, most calls between services | DNS lookups, video calls, games, and QUIC (which carries HTTP/3) |
 
-TCP's guarantee has a cost that matters later on this page. Because it delivers bytes strictly in order, **one lost packet makes everything behind it wait** until that packet is resent, even data that has already arrived. This is called **head-of-line blocking**.
+TCP's guarantee has a catch. Because it delivers bytes strictly in order, **one lost packet makes everything behind it wait**, even data that has already arrived. This is called **head-of-line blocking**, and it comes back in Level 6. A new TCP connection also starts sending slowly and speeds up over a few round trips (called **slow start**), so large responses are slower on a fresh connection.
 
-UDP is the right choice when a late packet is worthless anyway. In a video call, a frame that arrives 300 ms late is no use; it is better to skip it than to freeze the call while waiting for it.
-
-??? info "Go deeper (optional): why the first request on a new connection is slower"
-    TCP does not know how fast the network is, so a new connection starts cautiously, sending about 10 packets (around 14 KB) before waiting for an acknowledgment, and then doubles that each round trip. This is called **slow start**. A 100 KB response on a brand-new connection therefore needs a few extra round trips, while the same response on a connection that has been in use for a while does not. It is one more reason to reuse connections, and to keep the most important responses small.
+UDP suits data that is useless when late. In a video call, a frame that arrives 300 ms late is better skipped than waited for.
 
 !!! question "Practice"
-    Which transport would you choose for each of these, and why?
+    Which transport would you choose for each, and why?
     1. Syncing note edits between the app and the server.
-    2. Showing other users' cursor positions while they edit the same note, updated 20 times per second.
+    2. Showing other users' cursors while they edit the same note, 20 updates per second.
 
 ??? success "Answer"
-    1. **TCP**, usually through HTTP. Every edit must arrive, and in order; a lost or reordered edit would corrupt the note.
-    2. **UDP could fit**, because a lost cursor position is replaced by a newer one 50 ms later, and waiting for a resend only shows a stale position. In practice, many teams still send cursors over an existing WebSocket connection (which runs on TCP), because it is simpler and good enough at this rate. Saying both, with the reason, is a strong answer. WebSockets are covered in **Basics 7 (API Design & Service Communication)**.
+    1. **TCP**, usually through HTTP. Every edit must arrive, in order, or the note is corrupted.
+    2. **UDP could fit**: a lost cursor position is replaced 50 ms later, so waiting for a resend only shows a stale cursor. In practice, many teams still send cursors over an existing WebSocket (which runs on TCP), because it is simpler and good enough at this rate. Giving both options, with the reason, is a strong answer. WebSockets are covered in **Basics 7 (API Design & Service Communication)**.
 
 ### Level 3: TLS, HTTPS, and where encryption ends
 
+**In one line:** TLS encrypts the connection and proves the server is genuine; the design decision is where the traffic gets decrypted.
+
 TLS adds three guarantees on top of TCP:
 
-1. **Confidentiality:** nobody on the path, such as a café's Wi-Fi network, can read the data.
-2. **Integrity:** nobody can change the data in transit without the change being detected.
-3. **Authentication:** the server proves it owns `go.example.com` by presenting a **certificate** signed by an authority the browser trusts.
+- **Private:** nobody on the way, such as a café's Wi-Fi network, can read the data.
+- **Untampered:** any change made in transit is detected.
+- **Authentic:** the server proves it owns `go.example.com` with a **certificate** signed by an authority the browser trusts.
 
-The modern version, TLS 1.3, needs **one round trip** for its handshake. The older TLS 1.2 needs two. TLS 1.3 also supports *0-RTT resumption*, which lets a returning client send data in its very first packet, but that data can be replayed by an attacker, so it is only safe for requests that can be repeated harmlessly, such as `GET`.
+The current version, TLS 1.3, needs **one round trip** to set up; the older TLS 1.2 needs two. TLS 1.3 can even let a returning visitor send data in its very first packet (called *0-RTT*), but an attacker can replay that data, so it is only safe for harmless requests such as `GET`.
 
-The design question is **where TLS ends**, which means where the traffic is decrypted:
+**Where should TLS end?** The point where traffic is decrypted is called **TLS termination**, and there are three common choices:
 
 | Option | How it works | Trade-off |
 |---|---|---|
-| **Terminate at the load balancer** | The load balancer decrypts; traffic to the servers is plain HTTP inside the private network. | Simplest and most common. Certificates live in one place, and the load balancer can read and route requests. Traffic inside the network is not encrypted. |
-| **Terminate and re-encrypt** | The load balancer decrypts, routes, and opens a new TLS connection to the server. | Encrypted everywhere, at the cost of more certificates and slightly more CPU. Often required in regulated industries. |
-| **Pass through** | The load balancer forwards encrypted bytes without decrypting them, and each server terminates TLS. | The load balancer cannot read requests, so it can only route by IP address and port (Layer 4). |
-
-When services inside the network also prove their identity to each other with certificates, it is called **mutual TLS (mTLS)**. It is common in "zero-trust" networks and is usually handled by a service mesh rather than by application code.
+| **Terminate at the load balancer** | The load balancer decrypts; servers receive plain HTTP inside the private network. | The simplest and most common. Certificates live in one place, and the load balancer can route by URL. Traffic inside the network is not encrypted. |
+| **Terminate and re-encrypt** | The load balancer decrypts, routes, then opens a new TLS connection to the server. | Encrypted all the way, at the cost of more certificates and a little more CPU. Often required in regulated industries. When services also check each other's certificates, it is called **mutual TLS (mTLS)**. |
+| **Pass through** | The load balancer forwards the encrypted bytes untouched; each server decrypts. | The load balancer cannot read requests, so it can only route by IP address and port (Layer 4). |
 
 !!! warning "The most common TLS outage"
-    It is not a clever attack. It is an **expired certificate**: at the moment it expires, every HTTPS request fails. Certificates often last only 90 days, so renewal must be automated, and expiry dates must be monitored with alerts weeks in advance.
+    It is not a clever attack. It is an **expired certificate**: the moment it expires, every HTTPS request fails. Certificates often last only 90 days, so automate renewal, and alert on expiry dates weeks in advance.
 
 **What this tells us:** for the URL shortener, terminating TLS at the load balancer is the right default. The servers stay simple, certificates live in one place, and the load balancer can still route by path.
 
 !!! question "Practice: the note-taking app"
-    The note-taking app wants its load balancer to send `/api/attachments/*` requests to a separate fleet of servers built for large files. Which TLS option rules this out, and why?
+    The note-taking app wants its load balancer to send `/api/attachments/*` requests to a separate fleet built for large files. Which TLS option rules this out, and why?
 
 ??? success "Answer"
-    **Pass-through.** Routing by path requires reading the HTTP request, and in pass-through mode the load balancer only sees encrypted bytes. Terminating at the load balancer, or terminating and re-encrypting, both work.
+    **Pass-through.** Routing by path means reading the HTTP request, but in pass-through mode the load balancer only sees encrypted bytes. The other two options both work.
 
 ### Level 4: The price of a new connection
 
+**In one line:** a brand-new HTTPS connection costs three round trips before the answer arrives; a reused one costs just one.
+
 ![A new connection's round trips: TCP, TLS 1.3, then HTTP](assets/topic-04/connection_setup.png)
 
-Now add up the handshakes. Before the browser receives the first byte of the answer on a brand-new connection, it has paid:
+Add up the handshakes from Levels 2 and 3:
 
 ```text
-Cold HTTPS request (TLS 1.3) = DNS (if not cached) + 1 RTT (TCP) + 1 RTT (TLS) + 1 RTT (HTTP)
-                             = 3 round trips, plus any DNS lookup
-Warm request (connection reused) = 1 round trip
+New connection (TLS 1.3)  = DNS lookup (if not cached) + 1 round trip (TCP) + 1 (TLS) + 1 (HTTP)
+                          = 3 round trips, plus any DNS lookup
+Reused connection         = 1 round trip
 ```
 
-With the URL shortener's users about 30 ms from the data center, a cold redirect spends about 90 ms on round trips, while a warm one spends about 30 ms. The server's own work is about 3 ms in both cases.
+The URL shortener's users are about 30 ms from the data center. The server's own work takes about 3 ms either way:
 
-| Connection type | Round trips before the answer | At 30 ms per round trip |
+| Connection type | Round trips before the answer | At 30 ms each |
 |---|---:|---:|
-| Cold, TLS 1.2 | 4 | About 120 ms |
-| Cold, TLS 1.3 | 3 | About 90 ms |
-| Cold, HTTP/3 (QUIC, TCP and TLS combined) | 2 | About 60 ms |
-| Warm, reusing an open connection | 1 | About 30 ms |
+| New, TLS 1.2 | 4 | About 120 ms |
+| New, TLS 1.3 | 3 | About 90 ms |
+| New, HTTP/3 (QUIC combines TCP and TLS) | 2 | About 60 ms |
+| Reused (already open) | 1 | About 30 ms |
 
-**What this tells us:** the biggest latency win is not faster code; it is **not paying for handshakes again**. That is why keep-alive and connection pools (Level 7) matter so much, and why ending TLS at an edge server close to the user (section 4) is so effective.
+**What this tells us:** the biggest latency win is not faster code; it is **not paying for handshakes again**. That is why keep-alive and connection pools (Level 7) matter so much, and why ending TLS at an edge server near the user (section 4) works so well.
 
 !!! question "Practice"
-    A user in Sydney is about 160 ms round trip from the note-taking app. How long do the handshakes alone take on a cold TLS 1.3 connection, compared with a warm one?
+    A user in Sydney is about 160 ms (round trip) from the note-taking app. How long do the round trips take on a new TLS 1.3 connection, compared with a reused one?
 
 ??? success "Answer"
-    Cold: 3 × 160 = **480 ms** before the answer arrives. Warm: **160 ms**. Almost half a second of handshakes, on every new connection, is why global products terminate TLS at edge locations near their users.
+    New: 3 × 160 = **480 ms** before the answer arrives. Reused: **160 ms**. Nearly half a second of handshakes on every new connection is why global products terminate TLS at edge locations near their users.
 
 ### Level 5: HTTP, the request itself
 
-Once a connection exists, HTTP gives the bytes meaning. An interviewer will expect you to choose methods and status codes deliberately, because they change how clients, caches, and retries behave.
+**In one line:** the method and status code you choose change how browsers, caches, and retries treat a request.
 
-**Methods.** Two properties matter: whether a method is **safe** (it changes nothing) and whether it is **idempotent** (repeating it has the same effect as doing it once). Idempotent requests can be retried after a timeout without fear; others cannot.
+**Methods.** Two properties matter:
+
+- **Safe:** the request changes nothing on the server.
+- **Idempotent:** doing it twice has the same effect as doing it once, so it can be retried safely after a timeout.
 
 | Method | Typical use | Safe? | Idempotent? |
 |---|---|---|---|
 | `GET` | Read something, such as a redirect lookup | Yes | Yes |
-| `PUT` | Replace a resource with the given version | No | Yes |
+| `PUT` | Replace a resource with a new version | No | Yes |
 | `DELETE` | Remove a resource | No | Yes |
 | `POST` | Create something, such as a new short link | No | **No**: repeating it may create two links |
 | `PATCH` | Change part of a resource | No | Not guaranteed |
 
-**Status codes that change a design.** The first digit says who is at fault: 2xx means success, 3xx means "look elsewhere", 4xx means the client made a mistake, and 5xx means the server failed.
+**Status codes.** The first digit says what happened: 2xx success, 3xx "look elsewhere", 4xx the client made a mistake, 5xx the server failed. These are the ones that shape a design:
 
 | Code | Meaning | When it matters |
 |---|---|---|
-| `301 Moved Permanently` | The resource lives at the new URL forever | Browsers cache it, so repeat clicks never reach your servers again. |
+| `301 Moved Permanently` | The resource lives at the new URL forever | Browsers cache it, so repeat clicks never reach your servers. |
 | `302 Found` | The resource is at another URL for now | Not cached by default, so every click reaches your servers. |
 | `404 Not Found` | No such resource | An unknown short code. |
-| `429 Too Many Requests` | The client is sending too fast | Rate limiting, usually with a `Retry-After` header saying when to try again. |
-| `502 Bad Gateway` | A proxy could not get a valid response from the server behind it | Often a crashed server or a refused connection. |
-| `503 Service Unavailable` | The server is overloaded or deliberately refusing work | Shedding load, usually with `Retry-After`. |
-| `504 Gateway Timeout` | A proxy gave up waiting for the server behind it | The server was too slow. Level 8 explains how to avoid it. |
+| `429 Too Many Requests` | The client is sending too fast | Rate limiting, usually with `Retry-After` saying when to try again. |
+| `502 Bad Gateway` | A proxy got no valid response from the server behind it | Often a crashed server or a refused connection. |
+| `503 Service Unavailable` | The server is overloaded or refusing work on purpose | Shedding load, usually with `Retry-After`. |
+| `504 Gateway Timeout` | A proxy gave up waiting for the server behind it | The server was too slow. Level 8 shows how to avoid it. |
 
 !!! tip "A classic interview question: 301 or 302 for a URL shortener?"
-    A `301` is cached by the browser, so it removes repeat traffic, but you then lose every repeat click from your analytics and can never change where that link points for those users. A `302` sends every click to your servers, which costs capacity but keeps analytics complete and links editable. Basics 1 records every click, so the URL shortener uses **302**. Name the trade-off and the requirement that decides it; that is the answer.
+    A `301` is cached by the browser, which removes repeat traffic, but you lose every repeat click from your analytics, and you can never change where that link points for those users. A `302` sends every click to your servers: more load, but complete analytics and editable links. Basics 1 records every click, so the URL shortener uses **302**. Name the trade-off and the requirement that decides it; that is the answer.
 
-**Headers worth knowing.** `Host` says which site the request is for, so one server can host many. `Location` carries the redirect target. `Cache-Control` says who may cache a response and for how long. `Retry-After` says when a client should try again.
+**Headers worth knowing:**
 
-The full rules of API design, including resource naming, pagination, and versioning, are covered in **Basics 6 (API Correctness, Security & Resource Design)**.
+- `Host`: which site the request is for, so one server can host many.
+- `Location`: where a redirect points.
+- `Cache-Control`: who may cache a response, and for how long.
+- `Retry-After`: when a client should try again.
+
+The full rules of API design, such as resource naming, pagination, and versioning, are in **Basics 6 (API Correctness, Security & Resource Design)**.
 
 !!! question "Practice: the note-taking app"
-    1. A mobile client sends `POST /notes` to save a new note, and the connection drops before the response arrives. Is it safe for the client to resend it automatically?
-    2. Which status code should the server return while it is overloaded and deliberately rejecting some requests?
+    1. A phone sends `POST /notes` to save a new note, and the connection drops before the response arrives. Is it safe to resend automatically?
+    2. Which status code should the server return while it is overloaded and rejecting some requests on purpose?
 
 ??? success "Answer"
-    1. **Not as it stands.** `POST` is not idempotent, and the server may have saved the note before the connection dropped, so a blind resend could create a duplicate note. The standard fix is for the client to send a unique **idempotency key** with the request, so the server can recognize a resend and return the original result. This is covered in **Advanced 7 (Idempotency & Retries)**.
+    1. **Not as it stands.** `POST` is not idempotent, and the server may have saved the note before the connection dropped, so a blind resend could create a duplicate. The fix is for the client to send a unique **idempotency key**, so the server recognizes a resend and returns the original result. See **Advanced 7 (Idempotency & Retries)**.
     2. **`503 Service Unavailable`**, with a `Retry-After` header so well-behaved clients back off instead of retrying immediately.
 
 ### Level 6: HTTP/1.1 vs HTTP/2 vs HTTP/3
 
-![HTTP/1.1, HTTP/2, and HTTP/3 under one lost packet](assets/topic-04/http_versions.png)
+**In one line:** all three versions mean the same thing; they differ in how requests share a connection, and in what one lost packet does.
 
-The meaning of HTTP (methods, status codes, headers) is the same in all three versions. What changed is how requests share a connection, and what happens when a packet is lost.
+![HTTP/1.1, HTTP/2, and HTTP/3 under one lost packet](assets/topic-04/http_versions.png)
 
 | | HTTP/1.1 (1997) | HTTP/2 (2015) | HTTP/3 (2022) |
 |---|---|---|---|
 | Runs on | TCP | TCP | QUIC, over UDP |
-| Requests per connection | One at a time | Many at once, interleaved as **streams** | Many at once, as independent streams |
-| Headers | Plain text, repeated on every request | Compressed | Compressed |
-| One lost packet | Delays the request in flight | Stalls **every** stream, because TCP delivers in order | Stalls only the stream it belongs to |
-| New connection cost | TCP + TLS: 2 round trips | TCP + TLS: 2 round trips | 1 round trip, as QUIC combines them |
+| Requests per connection | One at a time | Many at once, as interleaved **streams** | Many at once, as independent streams |
+| One lost packet | Delays the request in flight | Stalls **every** stream, because TCP delivers in order | Stalls only its own stream |
+| New connection cost | 2 round trips (TCP + TLS) | 2 round trips (TCP + TLS) | 1 round trip (combined) |
 | Typical use today | Simple clients and older systems | Most browser traffic, and gRPC between services | Browsers and mobile apps on unreliable networks |
 
-Two points are worth saying in an interview. First, HTTP/2 fixed HTTP/1.1's one-request-at-a-time problem, but it moved the head-of-line blocking down into TCP, where one lost packet stalls all streams. HTTP/3 fixed that by building its own reliable streams on top of UDP. Second, QUIC identifies a connection by an ID rather than by IP address, so a phone that switches from Wi-Fi to mobile data keeps its connection instead of starting over.
+Two points are worth saying in an interview:
 
-**What this tells us:** the URL shortener sends one small request per click, so the version matters less than reusing the connection. HTTP/3 helps most for users on lossy mobile networks, and it is usually switched on at the edge or the load balancer, with no change to application code.
+- **HTTP/2 moved the bottleneck rather than removing it.** It lets many requests share one connection, but they all share one TCP stream, so one lost packet stalls them all. HTTP/3 fixes this by building its own independent streams on top of UDP.
+- **HTTP/3 survives network changes.** QUIC identifies a connection by an ID, not by IP address, so a phone switching from Wi-Fi to mobile data keeps its connection instead of starting over.
+
+**What this tells us:** each click on the URL shortener sends one small request, so reusing the connection matters more than the HTTP version. HTTP/3 helps most for users on patchy mobile networks, and it is usually switched on at the edge or the load balancer, with no change to application code.
 
 !!! question "Practice"
-    The note-taking app's mobile users often edit notes on trains, where packet loss is high. The app makes many small requests in parallel over HTTP/2. Why might they see worse latency than expected, and what would help?
+    The note-taking app's users often edit notes on trains, where packets are often lost. The app sends many small requests in parallel over HTTP/2. Why might it feel slow, and what would help?
 
 ??? success "Answer"
-    All their parallel requests share one TCP connection. With high packet loss, every lost packet stalls every request until it is resent, so one bad moment delays everything. HTTP/3 keeps the streams independent, so a lost packet only delays its own request, and its connection survives switching between networks. Enabling HTTP/3 at the edge would help.
+    All the parallel requests share one TCP connection, so every lost packet stalls all of them until it is resent. HTTP/3 keeps the streams independent, so a lost packet only delays its own request, and the connection survives switching networks. Enabling HTTP/3 at the edge would help.
 
 ### Level 7: Keep-alive and connection pools
 
-Level 4 showed that handshakes are expensive. **Keep-alive** avoids paying for them again by leaving a connection open after a response, so the next request can reuse it. A **connection pool** takes this further: a program keeps a set of open connections to each dependency and lends one to each request.
+**In one line:** reuse open connections instead of paying for handshakes again, and keep pools small, with a short wait limit.
 
-The URL shortener uses pools in two places. The load balancer keeps open connections to each Link API server, and each Link API server keeps pools of connections to the cache and the link store. Without them, every redirect would pay a TCP handshake (and possibly TLS) to the cache and the database before doing any work.
+- **Keep-alive** leaves a connection open after a response, so the next request can reuse it.
+- A **connection pool** keeps a few open connections to each dependency, and lends one to each request.
 
-In Java, the built-in `HttpClient` pools connections for you, as long as you reuse one client:
+The URL shortener uses both. The load balancer keeps connections open to every Link API server, and each server keeps pools of connections to the cache and the link store. Without them, every redirect would pay for new handshakes before doing any work.
+
+In Java, the built-in `HttpClient` pools connections for you, as long as you create one client and reuse it:
 
 ```java
 // Create ONE client at startup and share it; it keeps a pool of open connections inside.
@@ -324,7 +343,7 @@ HttpRequest request = HttpRequest.newBuilder(URI.create("https://profile.interna
 HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 ```
 
-Database pools are configured the same way. In Spring Boot, HikariCP is the default:
+Database pools work the same way. In Spring Boot, the default pool is HikariCP:
 
 ```yaml
 spring:
@@ -335,47 +354,49 @@ spring:
       max-lifetime: 1500000        # replace connections after 25 minutes, before anything in between drops them
 ```
 
-**How big should a pool be?** Little's Law from Basics 1 answers it: connections in use = requests per second × seconds each request holds a connection.
+**How big should a pool be?** Use Little's Law from Basics 1: connections in use = requests per second × seconds each request holds a connection.
 
 ```text
 Each Link API server handles 8,000 / 12 ≈ 670 redirects per second at peak.
 Each cache lookup holds a connection for about 1 ms.
-Cache connections in use ≈ 670 × 0.001 ≈ 0.7, so a pool of a few connections is plenty.
+Connections in use ≈ 670 × 0.001 ≈ 0.7, so a pool of a few connections is plenty.
 ```
 
-Now imagine the cache slows down to 200 ms per lookup. The same formula gives 670 × 0.2 ≈ **134** connections needed, far more than the pool holds. Requests start queuing for a connection, queuing adds latency, and the problem spreads to everything waiting behind them. This is why the pool's `connection-timeout` must be short: **failing fast is better than queuing forever**.
+Now suppose the cache slows to 200 ms per lookup. The same formula gives 670 × 0.2 ≈ **134** connections, far more than the pool holds. Requests queue for a connection, the queue adds delay, and the slowdown spreads. That is why the pool's `connection-timeout` must be short: **failing fast beats queuing forever**.
 
 !!! warning "Two classic pooling bugs"
-    - **Opening a new connection per request.** Besides the handshake cost, every closed TCP connection lingers for about 60 seconds in a state called `TIME_WAIT`. A server that opens 500 new connections per second to one destination keeps about 30,000 of them lingering, which can use up all the available local ports and make new connections fail.
-    - **Pool idle time longer than the network's.** Load balancers, firewalls, and NAT gateways silently drop connections that are idle for too long (60 seconds is a common default for cloud load balancers). If the pool keeps idle connections longer than that, it lends out dead ones, and requests fail at random. Set the pool's idle and lifetime limits shorter than every device in between.
+    - **A new connection for every request.** On top of the handshake cost, each closed TCP connection lingers for about 60 seconds (in a state called `TIME_WAIT`). Opening 500 new connections per second to one destination keeps about 30,000 lingering, which can use up the available local ports, so new connections start failing.
+    - **Pooled connections that idle too long.** Load balancers, firewalls, and NAT gateways silently drop idle connections, often after 60 seconds. A pool that keeps idle connections longer than that lends out dead ones, and requests fail at random. Set the pool's idle and lifetime limits below every device in between.
 
-**What this tells us:** pools turn three round trips into zero for every internal call, but they also become a queue when a dependency slows down. Size them from Little's Law, and give them short acquisition timeouts.
+**What this tells us:** pools cut every internal call's handshakes from three round trips to zero. But a pool also becomes a queue when a dependency slows down, so size it with Little's Law and give it a short wait limit.
 
 !!! question "Practice: the note-taking app"
-    Each note-taking app server handles about 350 requests per second at peak. Each request runs one database query that holds a connection for 8 ms. How many database connections does one server need at peak? What happens if the database slows to 100 ms per query?
+    Each note-taking app server handles about 350 requests per second at peak, and each request holds a database connection for 8 ms. How many connections does one server need? What happens if the database slows to 100 ms per query?
 
 ??? success "Answer"
-    Normal: 350 × 0.008 ≈ **3 connections** in use, so a pool of about 10 leaves plenty of headroom.
-    Slow database: 350 × 0.1 = **35 connections** needed. A pool of 10 is exhausted, so requests wait for connections. With a short `connection-timeout`, the extra requests fail quickly and the server stays healthy; with a long one, they pile up and the whole server becomes slow. Raising the pool size is usually the wrong fix, because 19 servers × 35 connections would overload the already-slow database even more.
+    Normally: 350 × 0.008 ≈ **3 connections**, so a pool of about 10 leaves plenty of headroom.
+    Slow database: 350 × 0.1 = **35 connections**. The pool of 10 runs out, and requests wait. With a short `connection-timeout`, extra requests fail fast and the server stays healthy; with a long one, they pile up and the whole server slows down. Growing the pool is usually the wrong fix: 19 servers × 35 connections would hit the already-slow database even harder.
 
 ### Level 8: Timeout budgets
 
+**In one line:** give every network call a timeout, and make each one shorter than the time its caller is willing to wait.
+
 ![Nested timeout budget: inner timeouts end before the caller gives up](assets/topic-04/timeout_budget.png)
 
-Every network call can hang forever: a server can crash mid-response, or a packet can vanish without a trace. Without a timeout, the calling thread waits forever, holding its memory and its pooled connections. So **every network call needs a timeout**, and there are several kinds:
+A network call can hang forever: a server can crash mid-response, or a packet can vanish. Without a timeout, the waiting thread stays stuck, holding its memory and its pooled connection. There are four kinds of timeout:
 
 | Timeout | What it limits | Typical value inside a data center |
 |---|---|---|
-| **Connect timeout** | How long to wait for the TCP (and TLS) handshake | 100–500 ms; a healthy host answers in about a millisecond |
-| **Read or response timeout** | How long to wait for the response after sending the request | Set from the dependency's normal p99 latency, plus a margin |
-| **Pool acquisition timeout** | How long to wait for a free connection from the pool | Tens of milliseconds; waiting longer only builds a queue |
-| **Overall deadline** | The total time the whole request is allowed to take, across all its calls | Set from the latency target that callers depend on |
+| **Connect timeout** | Setting up the TCP (and TLS) connection | 100–500 ms; a healthy host answers in about a millisecond |
+| **Read (response) timeout** | Waiting for the response after sending the request | The dependency's normal p99 latency, plus a margin |
+| **Pool wait timeout** | Waiting for a free connection from the pool | Tens of milliseconds; waiting longer only builds a queue |
+| **Overall deadline** | The whole request, across all its calls | Set from the latency target your callers depend on |
 
-The timeouts must fit together as a **budget**, following one rule: **each inner timeout ends before the timeout of whatever is waiting for it.** In the picture, the load balancer waits 500 ms for the Link API, and the Link API gives itself a 300 ms deadline, so it always answers, or fails cleanly with its own error, before the load balancer gives up.
+**The rule: each inner timeout must end before the timeout of whatever is waiting for it.** In the top half of the picture, the load balancer waits 500 ms and the Link API gives itself 300 ms, so the API always answers, or fails cleanly, before the load balancer gives up.
 
-The bottom half of the picture shows what goes wrong when the rule is broken. The database call has a 30-second timeout, but the load balancer gives up after 500 ms and sends the user a `504`. The user has already received an error, yet the API thread and its database connection stay busy for another 29.5 seconds, doing work that nobody will ever receive. Under load, these abandoned calls fill every pool, and the service collapses.
+The bottom half shows what happens when the rule is broken. The database call may wait 30 seconds, but the load balancer gives up after 500 ms and sends the user a `504`. The user already has an error, yet the API thread and its database connection stay busy for another 29.5 seconds, doing work nobody will receive. Under load, these abandoned calls fill every pool, and the service falls over.
 
-The simplest way to follow the rule is to pass the **deadline** down instead of choosing each timeout separately, so every call uses at most the time that is left:
+The simplest way to follow the rule is to **pass the deadline down**, so every call uses at most the time that is left:
 
 ```java
 LinkTarget resolve(String code, Instant deadline) {
@@ -392,20 +413,20 @@ LinkTarget resolve(String code, Instant deadline) {
 }
 ```
 
-gRPC does this automatically: a deadline set by the first caller travels with the request to every service it calls.
+gRPC does this automatically: the first caller's deadline travels with the request to every service it calls.
 
 !!! warning "Retries multiply load"
-    A timeout is often followed by a retry. If three layers of services each retry three times, one user request can become 3 × 3 × 3 = 27 requests to the bottom layer, exactly when it is already struggling. Retry at one layer only, use backoff, and retry only idempotent requests. This is covered in **Advanced 7 (Idempotency & Retries)**.
+    A timeout is often followed by a retry. If three layers of services each retry three times, one user request becomes 3 × 3 × 3 = 27 requests at the bottom layer, exactly when it is already struggling. Retry at one layer only, wait longer between attempts, and only retry idempotent requests. See **Advanced 7 (Idempotency & Retries)**.
 
-**What this tells us:** for the URL shortener, the budget is 500 ms at the load balancer, a 300 ms deadline in the API, about 20 ms for the cache, and about 100 ms for the link store. A slow cache costs at most 20 ms, after which the API falls back to the store, and nothing ever waits longer than its caller.
+**What this tells us:** the URL shortener's budget is 500 ms at the load balancer, a 300 ms deadline in the API, about 20 ms for the cache, and about 100 ms for the link store. A slow cache costs at most 20 ms before the API falls back to the store, and nothing ever waits longer than its caller.
 
 !!! question "Practice: the note-taking app"
-    Saving a note calls the database (normally 10 ms, p99 40 ms) and then a search indexer (normally 30 ms, but it sometimes hangs). The load balancer times out at 1 second. Propose the timeouts, and spot the bigger design problem.
+    Saving a note calls the database (normally 10 ms, p99 40 ms), then a search indexer (normally 30 ms, but it sometimes hangs). The load balancer times out at 1 second. Propose the timeouts, and spot the bigger design problem.
 
 ??? success "Answer"
-    A reasonable budget: a 700 ms request deadline in the API, about 150 ms for the database (several times its p99), and about 200 ms for the indexer, all below the load balancer's 1 second.
+    A reasonable budget: a 700 ms deadline in the API, about 150 ms for the database (several times its p99), and about 200 ms for the indexer, all inside the load balancer's 1 second.
 
-    The bigger problem is that a dependency that sometimes hangs sits on the critical path of saving. The user does not need the search index updated before seeing "saved". Save the note, answer the user, and update the index in the background through a queue. Removing a call from the request path beats tuning its timeout. Queues are covered in **Basics 13 (Asynchronous Processing Basics)**.
+    The bigger problem: a dependency that sometimes hangs sits in the middle of saving, and the user does not need the search index updated before seeing "saved". Save the note, reply to the user, and update the index in the background through a queue. Removing a call from the request path beats tuning its timeout. Queues are covered in **Basics 13 (Asynchronous Processing Basics)**.
 
 ---
 
