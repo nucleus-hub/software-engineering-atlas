@@ -82,7 +82,7 @@ def network_layers() -> plt.Figure:
     layers = [
         # tag, name, protocol, job, example, edge colour, face colour, wrapper label
         ("L7", "Application", "HTTP", "Says what the request means",
-         "GET /aB3xK9  ->  302 Found", BLUE, PALE, "HTTP request"),
+         "GET /summer-sale  ->  302 Found", BLUE, PALE, "HTTP request"),
         ("*", "Security", "TLS", "Keeps it secret; proves the server is real",
          "certificate for go.example.com checked", NAVY, MIST,
          "TLS: everything inside is encrypted"),
@@ -115,7 +115,7 @@ def network_layers() -> plt.Figure:
                                linewidth=2))
         ax.text(x + 1.3, y + height - 2.6, label, va="center", fontsize=8.4,
                 fontweight="bold", color=edge)
-    note(ax, 76, 43, "GET /aB3xK9", size=10.5, color=NAVY, ha="center")
+    note(ax, 76, 43, "GET /summer-sale", size=10.5, color=NAVY, ha="center")
     note(ax, 76, 37, "Host: go.example.com", size=8.6, color=GREY, ha="center")
 
     note(ax, 26, 6.5, "* TLS has no clean OSI layer number, so people just call it TLS.",
@@ -157,7 +157,7 @@ def request_lifecycle() -> plt.Figure:
     # 2, 3, 7: three separate trips between the browser and the load balancer.
     for y, number, text, color, outbound in (
         (58.5, "2", "open a secure connection (TCP + TLS)", BLUE, True),
-        (52.5, "3", "send GET /aB3xK9", BLUE, True),
+        (52.5, "3", "send GET /summer-sale", BLUE, True),
         (46.5, "7", "302 redirect back to the browser", GREEN, False),
     ):
         start, end = ((16.6, y), (43.4, y)) if outbound else ((43.4, y), (16.6, y))
@@ -228,9 +228,9 @@ def connection_setup() -> plt.Figure:
         (69, "SYN-ACK", False, SKY),
         (62, "ACK + ClientHello", True, NAVY),
         (57, "ServerHello, certificate, Finished", False, NAVY),
-        (50, "Finished + GET /aB3xK9", True, GREEN),
+        (50, "Finished + GET /summer-sale", True, GREEN),
         (45, "302 Found", False, GREEN),
-        (30, "GET /x7Pq2 (same connection)", True, GREEN),
+        (30, "GET /spring-sale (same connection)", True, GREEN),
         (25, "302 Found", False, GREEN),
     ]
     for y, label, outbound, color in messages:

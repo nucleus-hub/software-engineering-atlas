@@ -39,9 +39,9 @@ You do not need to memorize these. Come back to this table whenever a term feels
 |---|---|
 | **1. Find the server's address (DNS)** | The browser only knows the name `go.example.com`, but the network needs a numeric IP address. It asks a DNS resolver, which answers with an address such as `203.0.113.10`. The browser and the operating system remember the answer, so later clicks usually skip this step. |
 | **2. Open a secure connection (TCP + TLS)** | The browser opens a TCP connection to the load balancer, then runs a TLS handshake to agree on encryption and check the site's certificate. This is only setup: nothing about the short link has been sent yet. |
-| **3. Send the request** | Over that connection, the browser sends `GET /aB3xK9`, which asks: "where does this short code point?" |
+| **3. Send the request** | Over that connection, the browser sends `GET /summer-sale`, which asks: "where does this short code point?" |
 | **4. Forward to a server** | The load balancer decrypts the request. This is called **TLS termination**: the browser's encrypted connection ends at the load balancer, so the servers behind it do not have to handle encryption (Level 3 compares the options). It then picks one of the Link API servers and passes the request along over a connection it already has open to that server. |
-| **5. Look up the code in the cache** | The Link API server asks the cache for the long URL stored under `aB3xK9`. Popular links are almost always found here. |
+| **5. Look up the code in the cache** | The Link API server asks the cache for the long URL stored under `summer-sale`. Popular links are almost always found here. |
 | **6. Read the link store (only on a cache miss)** | If the cache does not have the code, the server reads it from the link store, the permanent database, and saves it in the cache for the next click. |
 | **7. Send the redirect back** | The server answers `302 Found`, with the long URL in the `Location` header. The load balancer passes the answer back to the browser, which then opens the long URL. |
 
@@ -58,7 +58,7 @@ Steps 1, 2, 3, and 7 cross the public internet, where every round trip costs ten
 
 Networking is built in **layers**, and each layer does exactly one job:
 
-- **HTTP** says what the request means: "where does short code `aB3xK9` point?"
+- **HTTP** says what the request means: "where does the short code `summer-sale` point?"
 - **TLS** keeps it secret, and proves the server really is `go.example.com`.
 - **TCP** (or UDP) delivers it to the right program on the server.
 - **IP** moves the packets from one machine to the next until they arrive.
@@ -443,13 +443,13 @@ The most important row is the **read timeout**. "I do not know whether it worked
 
 ![One redirect: cold vs warm latency, and the effect of ending TLS at a nearby edge](assets/topic-04/latency_budget.png)
 
-Here is one click on `go.example.com/aB3xK9`, from a user about 30 ms (one round trip) from the data center.
+Here is one click on `go.example.com/summer-sale`, from a user about 30 ms (one round trip) from the data center.
 
 **The cold path: first click from a new user.**
 
 1. **DNS (about 30 ms).** The browser and OS have no cached answer, so the resolver asks the authoritative servers.
 2. **TCP (30 ms) and TLS 1.3 (30 ms).** Two round trips to set up the encrypted connection with the load balancer.
-3. **HTTP (30 ms).** The browser sends `GET /aB3xK9`, and the round trip completes when the response returns.
+3. **HTTP (30 ms).** The browser sends `GET /summer-sale`, and the round trip completes when the response returns.
 4. **Server (about 3 ms).** The load balancer forwards over a pooled connection, the Link API finds the code in the cache, and it returns `302 Found`.
 
 Total: **about 123 ms**, of which the server's work is 3 ms.
