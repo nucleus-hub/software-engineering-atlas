@@ -271,63 +271,84 @@ def connection_setup() -> plt.Figure:
 
 
 def http_versions() -> plt.Figure:
-    fig, ax = canvas(15, 7.5)
-    heading(ax, "HTTP/1.1 vs HTTP/2 vs HTTP/3",
-            "Three requests (A, B, C) to one server, and what one lost packet does")
+    fig, ax = canvas(15, 8)
+    heading(ax, "HTTP/1.1 vs HTTP/2 vs HTTP/3: One Lost Packet",
+            "The browser fetches three files at once, and one packet of B is lost on the way")
     colors = {"A": BLUE, "B": GREEN, "C": AMBER}
-    caps(ax, 46, 82, "ONE CONNECTION, OVER TIME  →")
-    caps(ax, 87, 82, "WHAT TO REMEMBER")
+    step, width, left = 4.0, 3.4, 19.5
 
-    def lane(y: float, height: float = 6) -> None:
-        ax.add_patch(Rectangle((20, y), 52, height, facecolor=WHITE, edgecolor=LINE,
+    def lost(x: float, y: float, height: float) -> None:
+        """An empty slot with a red X: the packet that never arrived."""
+        ax.add_patch(Rectangle((x, y), width, height, facecolor=WHITE, edgecolor=RED,
+                               linewidth=1.4, linestyle="--"))
+        cx, cy = x + width / 2, y + height / 2
+        half_y = height * 0.3                 # the X always fits inside its slot
+        half_x = half_y / 1.9                 # and stays square on this aspect ratio
+        for sign in (1, -1):
+            ax.plot([cx - half_x, cx + half_x], [cy - sign * half_y, cy + sign * half_y],
+                    color=RED, linewidth=2.4, solid_capstyle="round")
+
+    def packets(sequence: str, y: float, height: float, lost_at: int,
+                held_back: set[int]) -> None:
+        for index, name in enumerate(sequence):
+            x = left + index * step
+            if index == lost_at:
+                lost(x, y, height)
+            elif index in held_back:
+                bar(ax, x, y, width, height, DEAD, name, text_color=GREY)
+            elif name != " ":
+                bar(ax, x, y, width, height, colors[name], name)
+
+    def lane(y: float, height: float) -> None:
+        ax.add_patch(Rectangle((19, y), 49, height, facecolor=WHITE, edgecolor=LINE,
                                linewidth=1.2))
 
-    def lost(x: float, y: float, size: float = 1.1) -> None:
-        """Draw a red X marking a lost packet (two strokes, no glyph needed)."""
-        dy = size * 15 / 7.5          # keep the X square on this aspect ratio
-        for sign in (1, -1):
-            ax.plot([x - size, x + size], [y - sign * dy, y + sign * dy],
-                    color=RED, linewidth=2.6, solid_capstyle="round")
+    def result(y: float, title: str, body: str) -> None:
+        note(ax, 71, y, title, size=9.2, color=NAVY)
+        note(ax, 71, y - 7.4, body, size=8.2, color=GREY)
 
-    # HTTP/1.1: one request at a time.
-    box(ax, 2, 64, 13, 11, "HTTP/1.1", "1997", face=WHITE, edge=GREY)
-    lane(66.5)
-    for index, name in enumerate("ABC"):
-        bar(ax, 21 + index * 16.5, 67, 15.5, 5, colors[name], f"request {name}")
-    note(ax, 76, 72.5, "One request at a time per connection.")
-    note(ax, 76, 67.5, "A slow A delays B and C, so browsers\nopen about 6 connections per host.",
-         size=8.2, color=GREY)
+    # Key, then column headings.
+    key_y = 78
+    for x, name, label in ((19.5, "A", "A = the page"), (33, "B", "B = the stylesheet"),
+                           (50, "C", "C = an image")):
+        bar(ax, x, key_y - 1.6, 2.4, 3.2, colors[name])
+        note(ax, x + 3.2, key_y, label, size=8.4)
+    lost(66, key_y - 1.8, 3.6)
+    note(ax, 70.2, key_y, "lost packet", size=8.4, color=RED)
+    bar(ax, 81.5, key_y - 1.6, 2.4, 3.2, DEAD)
+    note(ax, 84.7, key_y, "arrived, but held back", size=8.4, color=GREY)
+    caps(ax, 43.5, 71, "ONE CONNECTION, OVER TIME  →")
+    caps(ax, 84, 71, "RESULT")
 
-    # HTTP/2: frames interleaved on one TCP connection; one loss stalls all.
-    box(ax, 2, 38, 13, 11, "HTTP/2", "2015, over TCP", face=PALE, edge=BLUE)
-    lane(40.5)
-    sequence = "ABCABCABCABC"
-    for index, name in enumerate(sequence):
-        stalled = index > 3
-        bar(ax, 21 + index * 4.25, 41, 3.9, 5, DEAD if stalled else colors[name],
-            name, text_color=GREY if stalled else WHITE)
-    lost(21 + 4 * 4.25 + 1.95, 49.5)
-    note(ax, 76, 46.5, "Many streams share one TCP connection.")
-    note(ax, 76, 41.5, "TCP delivers bytes in order, so one lost\npacket stalls every stream.",
-         size=8.2, color=GREY)
+    # HTTP/1.1: one request at a time, so everything queues behind the gap.
+    box(ax, 2, 55.5, 13, 12, "HTTP/1.1", "over TCP", face=WHITE, edge=GREY)
+    lane(57.5, 8)
+    packets("AAAABBBBCCCC", 58.8, 5.4, lost_at=5, held_back=set(range(6, 12)))
+    result(64.5, "One request at a time.",
+           "B cannot start until A finishes, and C waits\nfor B. Browsers open about 6 connections\n"
+           "per site to work around this.")
 
-    # HTTP/3: QUIC streams recover independently.
-    box(ax, 2, 12, 13, 11, "HTTP/3", "2022, QUIC over UDP", face=MIST, edge=NAVY)
+    # HTTP/2: requests take turns on one TCP connection; TCP's ordering stalls them all.
+    box(ax, 2, 33.5, 13, 12, "HTTP/2", "over TCP", face=PALE, edge=BLUE)
+    lane(35.5, 8)
+    packets("ABCABCABCABC", 36.8, 5.4, lost_at=4, held_back=set(range(5, 12)))
+    result(42.5, "Requests take turns on one connection.",
+           "Nothing queues, but TCP delivers bytes in\norder, so one lost B packet holds back\n"
+           "A and C as well.")
+
+    # HTTP/3: one QUIC connection, but each request is an independent stream.
+    box(ax, 2, 11.5, 13, 12, "HTTP/3", "over QUIC (UDP)", face=MIST, edge=NAVY)
+    ax.add_patch(Rectangle((18.5, 7.8), 50, 19.4, facecolor="#F6F9FF", edgecolor=NAVY,
+                           linewidth=1.2, linestyle="--"))
     for row, name in enumerate("ABC"):
-        y = 22 - row * 6
+        y = 21.2 - row * 6
         lane(y, 5)
-        for index in range(4):
-            stalled = name == "B" and index > 0
-            bar(ax, 21 + index * 12.5, y + 0.5, 11.8, 4,
-                DEAD if stalled else colors[name], name,
-                text_color=GREY if stalled else WHITE)
-    lost(21 + 12.5 + 2.2, 18.5, size=0.7)
-    note(ax, 76, 20, "Each stream recovers on its own.")
-    note(ax, 76, 13.5, "Only B waits. QUIC also combines the\ntransport and TLS handshakes, and\n"
-         "survives a Wi-Fi to mobile switch.", size=8.2, color=GREY)
-    ax.add_patch(Rectangle((52, 2), 2.5, 2.5, facecolor=DEAD, edgecolor=LINE))
-    note(ax, 55.5, 3.3, "waiting for the lost packet to be resent", size=8, color=GREY)
-    lost(48.5, 3.3, size=0.7)
+        sequence = "".join(name if index % 3 == row else " " for index in range(12))
+        held = {7, 10} if name == "B" else set()
+        packets(sequence, y + 0.6, 3.8, lost_at=4 if name == "B" else -1, held_back=held)
+    result(20.5, "Each request is its own stream.",
+           "The lost B packet holds back only B;\nA and C finish on time. QUIC also connects\n"
+           "in one round trip less.")
     return fig
 
 

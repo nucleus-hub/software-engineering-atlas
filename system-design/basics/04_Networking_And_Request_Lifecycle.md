@@ -386,20 +386,22 @@ The full rules of API design, such as resource naming, pagination, and versionin
 
 **In one line:** all three versions mean the same thing; they differ in how requests share a connection, and in what one lost packet does.
 
-![HTTP/1.1, HTTP/2, and HTTP/3 under one lost packet](assets/topic-04/http_versions.png)
+All three versions speak the same language: the same methods, status codes, and headers, so `GET /summer-sale` means exactly the same thing in each. What changed over the years is **how requests travel over the connection**. That matters most when a page needs many files at once, on a network that is losing packets.
+
+![HTTP/1.1, HTTP/2, and HTTP/3 when one packet is lost](assets/topic-04/http_versions.png)
+
+The picture shows the same situation for each version: the browser fetches three files at once (A, B, and C), and one packet of B is lost on the way. The table explains each row:
 
 | | HTTP/1.1 (1997) | HTTP/2 (2015) | HTTP/3 (2022) |
 |---|---|---|---|
-| Runs on | TCP | TCP | QUIC, over UDP |
-| Requests per connection | One at a time | Many at once, as interleaved **streams** | Many at once, as independent streams |
-| One lost packet | Delays the request in flight | Stalls **every** stream, because TCP delivers in order | Stalls only its own stream |
-| New connection cost | 2 round trips (TCP + TLS) | 2 round trips (TCP + TLS) | 1 round trip (combined) |
-| Typical use today | Simple clients and older systems | Most browser traffic, and gRPC between services | Browsers and mobile apps on unreliable networks |
+| **Runs on** | TCP, usually with TLS on top. | TCP, with TLS on top. | QUIC, a newer transport built on UDP, with TLS built in. |
+| **How requests share a connection** | One at a time. A second request must wait until the first response has finished, so browsers open about 6 connections per site to fetch files in parallel. | Many at once. Each request becomes a **stream**, and the streams take turns sending small pieces over a single connection. | Many at once, as streams, like HTTP/2. The difference is that QUIC keeps track of each stream separately. |
+| **When one packet is lost** | The request it belongs to waits for the resend, and so does every request queued behind it on that connection. | Every stream waits, even those whose data has already arrived, because TCP hands bytes over strictly in order. | Only the stream that lost the packet waits; the others carry on. |
+| **Setting up a new connection** | 2 round trips: a TCP handshake, then a TLS 1.3 handshake. | The same 2 round trips as HTTP/1.1. | 1 round trip, because QUIC sets up the connection and the encryption together. |
+| **When the network changes** | A phone moving from Wi-Fi to mobile data gets a new IP address, so the connection breaks and must be set up again. | The same as HTTP/1.1. | The connection survives, because QUIC identifies it by a connection ID instead of by IP address. |
+| **Typical use today** | Simple clients, scripts, and older systems. | Most browser traffic, and gRPC calls between services. | Browsers and mobile apps, especially on unreliable networks. Usually switched on at the CDN or load balancer. |
 
-Two points are worth saying in an interview:
-
-- **HTTP/2 moved the bottleneck rather than removing it.** It lets many requests share one connection, but they all share one TCP stream, so one lost packet stalls them all. HTTP/3 fixes this by building its own independent streams on top of UDP.
-- **HTTP/3 survives network changes.** QUIC identifies a connection by an ID, not by IP address, so a phone switching from Wi-Fi to mobile data keeps its connection instead of starting over.
+**The point worth making in an interview:** HTTP/2 moved the bottleneck rather than removing it. It fixed HTTP/1.1's one-at-a-time queue, but its streams still share TCP's single, strictly ordered stream of bytes, so one lost packet stalls them all. HTTP/3 fixes that by moving off TCP onto QUIC.
 
 **What this tells us:** each click on the URL shortener sends one small request, so reusing the connection matters more than the HTTP version. HTTP/3 helps most for users on patchy mobile networks, and it is usually switched on at the edge or the load balancer, with no change to application code.
 
