@@ -47,7 +47,7 @@ You do not need to memorize these. Come back to this table whenever a term feels
 
 Steps 1, 2, 3, and 7 cross the public internet, where every round trip costs tens of milliseconds. Steps 4 to 6 stay inside the data center, where a round trip costs about half a millisecond. **For a simple request, the network usually costs far more than your code.** That single fact drives most of this page.
 
-!!! tip "The request lifecycle in one sentence"
+!!! tip "How to make a request faster"
     Count the round trips on the path, find the ones that cross long distances, and then remove them (by reusing connections), shorten them (by answering closer to the user), or bound them (with timeouts).
 
 ---
@@ -78,9 +78,7 @@ The sections below follow the request from its first round trip to the timeouts 
 
 ### Round trips and distance
 
-**In one line:** every message takes time to travel, and the farther it goes, the longer it takes.
-
-A **round trip** is a message going out plus its reply coming back. Signals in optical fiber travel at about 200,000 km per second, which gives a rule worth memorizing:
+Every message on a network takes time to travel, and the farther it goes, the longer it takes. A **round trip** is a message going out plus its reply coming back. Signals in optical fiber travel at about 200,000 km per second, which gives a rule worth memorizing:
 
 ```text
 Minimum round trip ≈ 1 ms for every 100 km between the two machines
@@ -117,7 +115,7 @@ Work inside a data center is much faster:
 
 ### DNS, turning a name into an address
 
-**In one line:** DNS turns a name like `go.example.com` into an IP address, and caches the answer so the full lookup is rare.
+Computers find each other by IP address, but people use names like `go.example.com`. DNS works like the internet's phone book: it turns the name into an address, and caches the answer so the full lookup rarely has to happen.
 
 ![DNS resolution walk from browser to recursive resolver to root, TLD, and authoritative servers](assets/topic-04/dns_resolution.png)
 
@@ -166,8 +164,6 @@ The resolver then hands the answer back to the browser (step 8). Each question i
     At least 24 hours before the move, lower the TTL to about 60 seconds, so every cached copy of the old 24-hour record has expired by Tuesday. On Tuesday, change the record; almost all users switch within a minute. Keep the old load balancer running for a day or two for clients that ignore TTLs, then raise the TTL again.
 
 ### TCP vs UDP
-
-**In one line:** TCP delivers everything, in order, but needs a handshake and can stall; UDP sends immediately, but packets may be lost.
 
 An IP address only gets a packet to the right **machine**. But one machine runs many programs at once, such as a web server, a database, and a DNS server, so the packet must also reach the right **program**. That is the transport layer's first job, and it uses a **port number** to do it: a web server using HTTPS listens on port 443, and a DNS server listens on port 53. An address plus a port, such as `203.0.113.10:443`, points to exactly one program on one machine.
 
@@ -223,8 +219,6 @@ This is called **head-of-line blocking**, and it is the reason HTTP/3 exists (se
     2. **UDP could fit**: a lost cursor position is replaced 50 ms later, so waiting for a resend only shows a stale cursor. In practice, many teams still send cursors over an existing WebSocket (which runs on TCP), because it is simpler and good enough at this rate. Giving both options, with the reason, is a strong answer. WebSockets are covered in **Basics 7 (API Design & Service Communication)**.
 
 ### TLS, HTTPS, and where encryption ends
-
-**In one line:** TLS encrypts the connection and proves the server is genuine; the design decision is where the traffic gets decrypted.
 
 **HTTPS is simply HTTP sent inside a TLS connection.** TLS adds three guarantees on top of TCP:
 
@@ -292,8 +286,6 @@ A **certificate** is a website's ID card. It states the site's name, its public 
 
 ### The price of a new connection
 
-**In one line:** a brand-new HTTPS connection costs three round trips before the answer arrives; a reused one costs just one.
-
 Before the browser can ask for `/summer-sale`, it has to set up a connection, and each setup step is a full round trip. The steps cannot overlap, because each one needs the reply to the step before it.
 
 ![A new connection's round trips: TCP, TLS 1.3, then HTTP](assets/topic-04/connection_setup.png)
@@ -333,7 +325,7 @@ Because the setup is counted in round trips, **distance multiplies it**. For a u
 
 ### HTTP, the request itself
 
-**In one line:** the method and status code you choose change how browsers, caches, and retries treat a request.
+Once the connection is ready, the browser sends the HTTP request itself. The method in the request and the status code in the reply are more than labels: they decide how browsers, caches, and retries treat the request.
 
 **Methods.** Two properties matter:
 
@@ -384,8 +376,6 @@ The full rules of API design, such as resource naming, pagination, and versionin
 
 ### HTTP/1.1 vs HTTP/2 vs HTTP/3
 
-**In one line:** all three versions mean the same thing; they differ in how requests share a connection, and in what one lost packet does.
-
 All three versions speak the same language: the same methods, status codes, and headers, so `GET /summer-sale` means exactly the same thing in each. What changed over the years is **how requests travel over the connection**. That matters most when a page needs many files at once, on a network that is losing packets.
 
 ![HTTP/1.1, HTTP/2, and HTTP/3 when one packet is lost](assets/topic-04/http_versions.png)
@@ -413,7 +403,7 @@ The picture shows the same situation for each version: the browser fetches three
 
 ### Keep-alive and connection pools
 
-**In one line:** reuse open connections instead of paying for handshakes again, and keep pools small, with a short wait limit.
+The [section on new connections](#the-price-of-a-new-connection) showed that setting up a connection costs far more than using one. The obvious fix is to set connections up once and reuse them, and two techniques do exactly that:
 
 - **Keep-alive** leaves a connection open after a response, so the next request can reuse it.
 - A **connection pool** keeps a few open connections to each dependency, and lends one to each request.
@@ -473,7 +463,7 @@ Now suppose the cache slows to 200 ms per lookup. The same formula gives 670 × 
 
 ### Timeout budgets
 
-**In one line:** give every network call a timeout, and make each one shorter than the time its caller is willing to wait.
+Every network call needs a limit on how long it will wait, called a **timeout**. The skill is choosing each one so that it ends before the caller's own timeout does.
 
 ![Nested timeout budget: inner timeouts end before the caller gives up](assets/topic-04/timeout_budget.png)
 
