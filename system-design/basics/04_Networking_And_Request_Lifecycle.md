@@ -121,13 +121,19 @@ Work inside a data center is much faster:
 
 ![DNS resolution walk from browser to recursive resolver to root, TLD, and authoritative servers](assets/topic-04/dns_resolution.png)
 
-The browser asks a **recursive resolver**, usually run by the internet provider or a public service such as `8.8.8.8`. If the resolver does not already know the answer, it asks three kinds of servers in turn:
+To find the IP address of `go.example.com`, the browser checks the closest answer first, and only looks further when it has to:
 
-1. A **root** server, which replies "ask the `.com` servers".
-2. A **`.com`** server, which replies "ask `example.com`'s own servers".
-3. The **authoritative** server for `example.com`, which gives the real answer: `203.0.113.10`.
+- **Browser cache:** has this browser looked up the name recently?
+- **Operating system cache:** has any program on this machine looked it up recently?
+- **Recursive resolver** (step 1 in the picture): a DNS server, usually run by the internet provider or a public service such as `8.8.8.8`, that does the full lookup for you and caches answers for all its users. It is called *recursive* because it keeps asking until it has the final answer.
 
-That walk costs several round trips, so the answer is saved in the browser, the operating system, and the resolver, for as long as the record's **TTL** allows. Most lookups are answered from one of these caches in a millisecond or two.
+No single server knows every name on the internet. Instead, DNS is a hierarchy, and each level only knows who is responsible for the level below it. When the resolver has nothing cached, it walks down that hierarchy:
+
+1. **Root servers** (steps 2–3). The resolver asks "where is `go.example.com`?" The root does not know, but replies "ask the `.com` servers". There are 13 root server addresses, each copied to many locations around the world.
+2. **`.com` servers** (steps 4–5), run by the `.com` registry. They do not know the address either, but reply "ask `ns1.example.com`" by returning `example.com`'s NS records.
+3. **The authoritative server for `example.com`** (steps 6–7), usually run by your DNS provider. It is the only server that holds the actual record, so it gives the final answer: `203.0.113.10`, valid for 300 seconds (its TTL).
+
+The resolver then hands the answer back to the browser (step 8). Each question is a small UDP message, but a full walk can still take 50–150 ms. So every answer, including the referrals from the root and `.com` servers, is cached for as long as its TTL allows. In practice the resolver almost always remembers where the `.com` servers are, and often where `example.com`'s servers are, so most lookups are answered from a cache in a millisecond or two.
 
 **Record types.** The authoritative server stores **records**, and each type answers a different question. The answer in step 3 is an `A` record. These are the ones worth knowing:
 
