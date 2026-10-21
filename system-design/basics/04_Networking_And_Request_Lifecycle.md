@@ -135,23 +135,11 @@ That walk costs several round trips, so the answer is saved in the browser, the 
 |---|---|---|---|
 | **A** | Which IPv4 address does this name have? | `go.example.com` → `203.0.113.10` | The basic answer. With several A records, clients spread across the addresses, the simplest form of DNS load balancing (Basics 8). |
 | **AAAA** | Which IPv6 address does this name have? | `go.example.com` → `2001:db8::10` | The same as A, for IPv6. Most sites publish both. |
-| **CNAME** | Which *other name* is this name an alias for? | `go.example.com` → `go-lb.example.net` | Points your name at a provider's name, such as a CDN or cloud load balancer, so the provider can change its IP addresses without you. Compared with ALIAS below. |
-| **ALIAS** (or ANAME) | Like CNAME, but your DNS provider follows the alias for you | `example.com` → `203.0.113.10` (looked up from `go-lb.example.net`) | Lets the bare domain point at a cloud load balancer, which CNAME cannot do. Compared with CNAME below. |
-| **NS** | Which servers hold the DNS answers for this domain? | `example.com` → `ns1.example.com` | How resolvers find your DNS servers in the first place. Explained below. |
+| **CNAME** | Which *other name* should I look up instead? | `go.example.com` → `go-lb.example.net` | The answer is just another name, so the user's resolver must look that up too: one extra lookup. Lets a provider, such as a cloud load balancer, change its IP addresses without you. Not allowed on the bare domain (`example.com`), because a name with a CNAME can hold no other records, and the bare domain needs NS and MX records. |
+| **ALIAS** (or ANAME) | Which IP address does this name have? Your DNS provider follows the alias for you. | `example.com` → `203.0.113.10` (the provider looked up `go-lb.example.net`) | Unlike a CNAME, the user gets an ordinary IP address back, with no extra lookup, so it works on the bare domain. Not a standard record type: a DNS provider feature, also called "CNAME flattening". |
+| **NS** | Which servers should I ask about this domain? | `example.com` → `ns1.example.com` | The `.com` servers do not know your IP address; they only store these NS records, which point to the servers that do (step 2 of the picture). Moving to a new DNS provider means changing them, and resolvers keep the old ones for a day or two. |
 | **MX** | Which servers receive email for this domain? | `example.com` → `mail.example.com` | Not on the request path, but a classic mistake to break while migrating DNS. |
 | **TXT** | Any text the domain owner wants to publish | `example.com` → `"site-verification=4f9a2c"` | Used to prove you own a domain, for example to get a TLS certificate, and for email security settings. |
-
-**CNAME vs ALIAS.** Both let your name follow a provider's name, such as a cloud load balancer `go-lb.example.net` whose IP addresses change. The difference is *who* follows it:
-
-| | CNAME | ALIAS |
-|---|---|---|
-| What the DNS answer says | "This name is really `go-lb.example.net`; look that up instead." | "`203.0.113.10`": an ordinary address. The DNS provider looked up `go-lb.example.net` itself. |
-| Who does the second lookup | The user's resolver, which costs one extra lookup | Your DNS provider, behind the scenes |
-| Allowed on the bare domain (`example.com`)? | **No.** A name with a CNAME can hold no other records, and the bare domain must also hold NS and MX records. | **Yes.** To the outside world it is just an A record. |
-| Standard? | Yes; every DNS provider supports it | No; a provider feature, also called ANAME or "CNAME flattening" |
-| Use it for | Subdomains, such as `go.example.com` | The bare domain, `example.com` |
-
-**NS records, in plain words.** The `.com` servers do not know your IP address. They only know *which servers to ask* for it, and those servers are listed in your NS records. When you register `example.com` and host its DNS with a provider, the registrar publishes NS records pointing at that provider's servers. That is step 2 of the picture: the `.com` server replies with `example.com`'s NS records ("ask `ns1.example.com`"), and the resolver asks that server for the A record. Switching to a new DNS provider means changing your NS records. Resolvers may keep the old ones for a day or two, so both providers must serve the same records during the move.
 
 **Choosing a TTL** is a trade-off between speed and flexibility:
 
