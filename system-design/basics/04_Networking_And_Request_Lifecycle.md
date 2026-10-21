@@ -69,8 +69,8 @@ Engineers often call layers by number. The numbers come from an older seven-laye
 
 | Name you will hear | What it means | Why it matters in design |
 |---|---|---|
-| **Layer 4** (transport) | TCP or UDP: getting data to the right program (the port) | A Layer 4 load balancer looks only at the outer wrappers: the IP address and the port. It hands each connection to a server without opening it, so it never sees the URL. That makes it very fast and simple, but it cannot send `/api` and `/app` to different servers. |
-| **Layer 7** (application) | HTTP: what the request asks for (method, URL, headers) | A Layer 7 load balancer unwraps every layer, decrypting TLS on the way, and reads the HTTP request itself. Because it can see the URL, it can send `/api` and `/app` to different servers, at the cost of more work per request. |
+| **Layer 4** (transport) | TCP or UDP: getting data to the right program (the port) | **What it sees:** only the outer wrappers, such as `198.51.100.7:53712 → 203.0.113.10:443` (who is connecting, to which machine and port). **What it cannot see:** everything inside is still encrypted bytes, so `/summer-sale` is invisible. **So:** it hands each connection to a server without opening it. That is very fast and simple, but it cannot send `/api` and `/app` to different servers. |
+| **Layer 7** (application) | HTTP: what the request asks for (method, URL, headers) | **What it sees:** after decrypting TLS, the whole request: `GET /summer-sale`, `Host: go.example.com`, and headers such as `Cookie` and `User-Agent`. **So:** it can route by URL, host, or header, for example sending `/api` to one group of servers and `/app` to another. The cost is more work per request, because it must decrypt and read every one. |
 
 The difference between Layer 4 and Layer 7 load balancers is covered in **Basics 8 (Load Balancing & Proxying)**.
 
