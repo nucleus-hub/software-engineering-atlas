@@ -353,47 +353,68 @@ def http_versions() -> plt.Figure:
 
 
 def timeout_budget() -> plt.Figure:
-    fig, ax = canvas(15, 7.5)
+    fig, ax = canvas(15, 8)
     heading(ax, "Timeout Budgets: Inner Timeouts Must End First",
-            "Every call gets a timeout, and each one is shorter than its caller's")
-    origin, scale = 30, 60 / 600     # 600 ms of time across 60 units
+            "Each call must finish, or give up, before whoever is waiting for it gives up")
+    origin, scale = 28, 60 / 600     # 600 ms of time across 60 units
+
+    def x_at(ms: float) -> float:
+        return origin + ms * scale
 
     def span(start_ms: float, length_ms: float, y: float, color: str, label: str,
              *, text_color: str = WHITE) -> None:
-        bar(ax, origin + start_ms * scale, y, length_ms * scale, 5, color, label,
-            text_color=text_color)
+        bar(ax, x_at(start_ms), y, length_ms * scale, 5, color, label, text_color=text_color)
 
-    caps(ax, 4, 80, "GOOD", color=GREEN, ha="left")
-    rows = [(73, "Load balancer -> API"), (65, "API request deadline"), (57, "Calls inside the API")]
-    for y, label in rows:
+    def row_label(y: float, label: str) -> None:
         note(ax, origin - 1.5, y + 2.5, label, ha="right", size=8.8)
+
+    def ruler(y: float) -> None:
+        ax.plot([origin, x_at(600)], [y, y], color=GREY, linewidth=1)
+        for ms in range(0, 601, 100):
+            ax.plot([x_at(ms), x_at(ms)], [y - 0.8, y + 0.8], color=GREY, linewidth=1)
+            ax.text(x_at(ms), y - 2.6, f"{ms} ms", ha="center", fontsize=7.2, color=GREY)
+
+    def gives_up(ms: float, bottom: float, top: float, color: str, label: str) -> None:
+        ax.plot([x_at(ms), x_at(ms)], [bottom, top], color=color, linewidth=1.6,
+                linestyle="--")
+        note(ax, x_at(ms) + 0.6, top + 0.2, label, size=8, color=color)
+
+    # GOOD: every inner timeout ends before its caller's.
+    caps(ax, 3, 83, "GOOD: EVERY INNER TIMEOUT ENDS FIRST", color=GREEN, ha="left")
+    row_label(73, "Load balancer waits")
+    row_label(66, "API request deadline")
+    row_label(59, "Calls inside the API")
     span(0, 500, 73, NAVY, "500 ms")
-    span(0, 300, 65, BLUE, "300 ms")
-    span(0, 20, 57, AMBER, "")
-    span(20, 100, 57, GREEN, "DB 100 ms")
-    span(120, 100, 57, SKY, "retry 100 ms")
-    span(220, 80, 57, DEAD, "spare", text_color=GREY)
-    note(ax, origin + 0.2, 54.5, "cache 20 ms", size=7.6, color=AMBER)
-    note(ax, 93, 65, "The API answers\n(or fails cleanly)\nbefore the load\nbalancer gives up.",
-         size=8.4, color=GREEN)
+    span(0, 300, 66, BLUE, "300 ms")
+    span(0, 20, 59, AMBER, "")
+    span(20, 100, 59, GREEN, "database 100 ms")
+    ax.add_patch(Rectangle((x_at(120), 59), 180 * scale, 5, facecolor=WHITE,
+                           edgecolor=BLUE, linewidth=1.2, linestyle="--"))
+    note(ax, x_at(210), 61.5, "unused budget", size=8, color=GREY, ha="center")
+    note(ax, x_at(0), 57.2, "cache: up to 20 ms", size=7.8, color=AMBER)
+    gives_up(300, 58, 79.5, BLUE, "API must answer by 300 ms")
+    gives_up(500, 58, 79.5, NAVY, "load balancer gives up at 500 ms")
+    ruler(53.5)
 
-    ax.plot([3, 97], [47, 47], color=LINE, linewidth=1)
+    ax.plot([3, 97], [47.5, 47.5], color=LINE, linewidth=1)
 
-    caps(ax, 4, 41, "BAD", color=RED, ha="left")
-    note(ax, origin - 1.5, 36.5, "Load balancer -> API", ha="right", size=8.8)
-    note(ax, origin - 1.5, 28.5, "API database call", ha="right", size=8.8)
+    # BAD: the database call outlasts the load balancer.
+    caps(ax, 3, 44, "BAD: AN INNER TIMEOUT OUTLASTS ITS CALLER", color=RED, ha="left")
+    row_label(34, "Load balancer waits")
+    row_label(27, "API database call")
     span(0, 500, 34, NAVY, "500 ms")
-    bar(ax, origin, 26, 62, 5, RED_FACE)
-    ax.text(origin + 31, 28.5, "DB call with a 30-second timeout  →", ha="center",
-            va="center", fontsize=8, fontweight="bold", color=RED)
-    ax.plot([origin + 50, origin + 50], [22, 42], color=RED, linewidth=1.6, linestyle="--")
-    note(ax, origin + 50.8, 21, "504 sent to the user at 500 ms", size=8, color=RED)
-    note(ax, 50, 12, "The user already has an error, but the API thread and its database "
-         "connection stay busy for 30 seconds.\nUnder load, these abandoned calls fill "
-         "every pool and take the whole service down.", ha="center", size=8.8)
-
-    for ms in (0, 100, 200, 300, 400, 500, 600):
-        ax.text(origin + ms * scale, 50.5, f"{ms}", ha="center", fontsize=7, color=GREY)
+    span(0, 500, 27, RED_FACE, "waiting for the database (timeout: 30 seconds)",
+         text_color=RED)
+    span(500, 100, 27, RED, "wasted")
+    ax.add_patch(FancyArrowPatch((x_at(600), 29.5), (96, 29.5), arrowstyle="-|>",
+                                 mutation_scale=12, linewidth=1.6, color=RED))
+    note(ax, 96, 25, "up to 30 s", size=8, color=RED, ha="right")
+    gives_up(500, 26, 40.5, RED, "user gets a 504 at 500 ms")
+    ruler(21.5)
+    note(ax, 50, 10.5, "After 500 ms the user already has an error, but the API thread and its "
+         "database connection stay busy\nfor up to 30 seconds. Under load, these abandoned "
+         "calls fill every pool and take the whole service down.",
+         ha="center", size=8.8)
     return fig
 
 

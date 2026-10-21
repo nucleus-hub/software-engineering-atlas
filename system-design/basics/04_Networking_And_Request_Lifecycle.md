@@ -471,24 +471,31 @@ Connections in use ≈ 670 × 0.001 ≈ 0.7, so a pool of a few connections is p
 
 ### Timeout budgets
 
-Every network call needs a limit on how long it will wait, called a **timeout**. The skill is choosing each one so that it ends before the caller's own timeout does.
+Every network call needs a limit on how long it will wait, called a **timeout**. Without one, a single stuck call can wait forever: a server can crash halfway through a response, or a packet can vanish, and the waiting thread stays stuck, holding on to its memory and its pooled connection.
 
-![Nested timeout budget: inner timeouts end before the caller gives up](assets/topic-04/timeout_budget.png)
+A timeout on each call is not enough, though; the timeouts also have to **fit together**. Think of promising your manager an answer within 5 minutes. If you then ask a colleague and agree to wait up to 10 minutes for them, you will break your promise. You have to give your colleague *less* time than you have yourself. Services work the same way: **each inner call must finish, or give up, before whoever is waiting for it gives up.**
 
-A network call can hang forever: a server can crash mid-response, or a packet can vanish. Without a timeout, the waiting thread stays stuck, holding its memory and its pooled connection. There are four kinds of timeout:
+![Timeout budget: in the good case inner timeouts end first; in the bad case a 30-second database timeout outlasts the load balancer](assets/topic-04/timeout_budget.png)
 
-| Timeout | What it limits | Typical value inside a data center |
+**Reading the picture:**
+
+- **The top half follows the rule.** The load balancer waits up to 500 ms for the Link API, and the API gives itself a deadline of 300 ms, well inside that. Within those 300 ms, the cache gets up to 20 ms and the database up to 100 ms, and the rest is spare. Whatever happens, the API answers, or fails cleanly with a clear error, before the load balancer gives up.
+- **The bottom half breaks it.** The database call is allowed to wait 30 seconds, but the load balancer gives up after 500 ms and sends the user a `504 Gateway Timeout`. The user already has an error, yet the API thread and its database connection stay busy for up to another 29.5 seconds, doing work nobody will ever receive. Under load, these abandoned calls fill every pool, and the service falls over.
+
+**Four kinds of timeout.** A single call can get stuck at several different points, and each point has its own timeout:
+
+| Timeout | What it limits | A sensible value inside a data center |
 |---|---|---|
-| **Connect timeout** | Setting up the TCP (and TLS) connection | 100–500 ms; a healthy host answers in about a millisecond |
-| **Read (response) timeout** | Waiting for the response after sending the request | The dependency's normal p99 latency, plus a margin |
-| **Pool wait timeout** | Waiting for a free connection from the pool | Tens of milliseconds; waiting longer only builds a queue |
-| **Overall deadline** | The whole request, across all its calls | Set from the latency target your callers depend on |
+| **Connect timeout** | How long to wait while setting up the TCP (and TLS) connection to the other machine. | 100–500 ms. A healthy host answers in about a millisecond, so a slow connect usually means the host is down or unreachable. |
+| **Read (response) timeout** | How long to wait for the response, after the request has been sent. | A little above the dependency's normal p99 latency (the time that 99% of its responses beat). Waiting longer rarely helps. |
+| **Pool wait timeout** | How long to wait for a free connection from the [connection pool](#keep-alive-and-connection-pools). | Tens of milliseconds. If no connection is free by then, waiting longer only builds a queue. |
+| **Overall deadline** | The total time for the whole request, across every call it makes. | Set from the latency your own callers expect, and always shorter than their timeout. |
 
-**The rule: each inner timeout must end before the timeout of whatever is waiting for it.** In the top half of the picture, the load balancer waits 500 ms and the Link API gives itself 300 ms, so the API always answers, or fails cleanly, before the load balancer gives up.
+**Pass the deadline down.** The simplest way to follow the rule is to work out one deadline when the request arrives, and let every call use only the time that is still left. In the code below, the Link API received the request with a deadline of "now + 300 ms":
 
-The bottom half shows what happens when the rule is broken. The database call may wait 30 seconds, but the load balancer gives up after 500 ms and sends the user a `504`. The user already has an error, yet the API thread and its database connection stay busy for another 29.5 seconds, doing work nobody will receive. Under load, these abandoned calls fill every pool, and the service falls over.
-
-The simplest way to follow the rule is to **pass the deadline down**, so every call uses at most the time that is left:
+1. The cache gets at most 20 ms, so a slow cache cannot eat the whole budget.
+2. On a cache miss, the code checks how much time is left. If it is less than 10 ms, there is no point trying the database, so it fails straight away.
+3. Otherwise, the database gets 100 ms, or whatever time is left if that is less, so it can never run past the deadline.
 
 ```java
 LinkTarget resolve(String code, Instant deadline) {
@@ -505,10 +512,10 @@ LinkTarget resolve(String code, Instant deadline) {
 }
 ```
 
-gRPC does this automatically: the first caller's deadline travels with the request to every service it calls.
+gRPC does this automatically: the first caller's deadline travels with the request to every service it calls, so each one knows how much time is left.
 
 !!! warning "Retries multiply load"
-    A timeout is often followed by a retry. If three layers of services each retry three times, one user request becomes 3 × 3 × 3 = 27 requests at the bottom layer, exactly when it is already struggling. Retry at one layer only, wait longer between attempts, and only retry idempotent requests. See **Advanced 7 (Idempotency & Retries)**.
+    A timeout is often followed by a retry. That is fine at one layer, but dangerous at several. If three layers of services each retry three times, one user request can become 3 × 3 × 3 = **27** requests at the bottom layer, arriving exactly when that layer is already struggling. So retry at one layer only, wait a little longer before each new attempt, and only retry requests that are idempotent. See **Advanced 7 (Idempotency & Retries)**.
 
 **What this tells us:** the URL shortener's budget is 500 ms at the load balancer, a 300 ms deadline in the API, about 20 ms for the cache, and about 100 ms for the link store. A slow cache costs at most 20 ms before the API falls back to the store, and nothing ever waits longer than its caller.
 
