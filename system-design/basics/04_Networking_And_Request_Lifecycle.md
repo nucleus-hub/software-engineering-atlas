@@ -141,13 +141,7 @@ That walk costs several round trips, so the answer is saved in the browser, the 
 | **MX** | Which servers receive email for this domain? | `example.com` → `mail.example.com` | Not on the request path, but a classic mistake to break while migrating DNS. |
 | **TXT** | Any text the domain owner wants to publish | `example.com` → `"site-verification=4f9a2c"` | Used to prove you own a domain, for example to get a TLS certificate, and for email security settings. |
 
-**Choosing a TTL** is a trade-off between speed and flexibility:
-
-| | Short TTL (30–60 seconds) | Long TTL (hours) |
-|---|---|---|
-| A change reaches everyone | Within about a minute | Only after hours |
-| Load on DNS servers | Higher | Lower |
-| Good for | Records you may need to change quickly, such as during a failover | Records that rarely change |
+**Choosing a TTL** is a trade-off between flexibility and load. A short TTL (30–60 seconds) means a change reaches everyone within about a minute, which suits records you may need to change quickly, such as during a failover, but it sends more lookups to your DNS servers. A long TTL (hours) cuts that load and suits records that rarely change, but a change can take hours to reach every user.
 
 **What goes wrong.** DNS sits at the very start of every request, so its failures look like the whole site is down:
 
