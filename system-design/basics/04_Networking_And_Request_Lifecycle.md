@@ -403,14 +403,22 @@ The picture shows the same situation for each version: the browser fetches three
 
 ### Keep-alive and connection pools
 
-The [section on new connections](#the-price-of-a-new-connection) showed that setting up a connection costs far more than using one. The obvious fix is to set connections up once and reuse them, and two techniques do exactly that:
+The [section on new connections](#the-price-of-a-new-connection) showed that setting up a connection costs far more than using one. The obvious fix is to set connections up once and reuse them. Two techniques do that, and they work together:
 
-- **Keep-alive** leaves a connection open after a response, so the next request can reuse it.
-- A **connection pool** keeps a few open connections to each dependency, and lends one to each request.
+- **Keep-alive** means *not closing* a connection after a response. The same connection stays open, so the next request between the same two machines skips the handshakes.
+- A **connection pool** is a small set of kept-alive connections that a server shares between its requests. A server handles many requests at the same time, and one connection usually carries one request at a time, so the server keeps several connections ready and lends one to each request that needs it.
 
-The URL shortener uses both. The load balancer keeps connections open to every Link API server, and each server keeps pools of connections to the cache and the link store. Without them, every redirect would pay for new handshakes before doing any work.
+A pool works like a stack of library books. A request **borrows** a connection, uses it, and **returns** it, so the next request can use it straight away, with no handshakes. If every connection is out, the next request **waits** for one to come back, for a limited time:
 
-In Java, the built-in `HttpClient` pools connections for you, as long as you create one client and reuse it:
+```text
+Request 1  -> borrows connection 1 -> asks the cache -> returns connection 1
+Request 2  -> borrows connection 2 -> asks the cache -> returns connection 2
+Request 3  -> no free connection   -> waits up to 50 ms for one to come back, then fails
+```
+
+The URL shortener uses both techniques. The load balancer keeps connections open to every Link API server, and each server keeps a pool of connections to the cache and another to the link store. Without them, every redirect would pay for new handshakes before doing any real work.
+
+In Java, the built-in `HttpClient` keeps a pool inside it. The pool only helps if you **create one client and reuse it**; creating a new client for every request creates a new, empty pool every time, so every request pays for handshakes again:
 
 ```java
 // Create ONE client at startup and share it; it keeps a pool of open connections inside.
@@ -427,7 +435,7 @@ HttpRequest request = HttpRequest.newBuilder(URI.create("https://profile.interna
 HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 ```
 
-Database pools work the same way. In Spring Boot, the default pool is HikariCP:
+Database connections are pooled the same way. In Spring Boot, the default pool is HikariCP, and three settings matter most:
 
 ```yaml
 spring:
@@ -438,21 +446,21 @@ spring:
       max-lifetime: 1500000        # replace connections after 25 minutes, before anything in between drops them
 ```
 
-**How big should a pool be?** Use Little's Law from Basics 1: connections in use = requests per second × seconds each request holds a connection.
+**How big should a pool be?** Think of a café. If 10 customers arrive every minute and each stays for 3 minutes, about 30 seats are taken at any moment. Connections work the same way, and the rule has a name, **Little's Law** (from Basics 1): connections in use = requests per second × how long each request holds a connection.
 
 ```text
 Each Link API server handles 8,000 / 12 ≈ 670 redirects per second at peak.
-Each cache lookup holds a connection for about 1 ms.
+Each cache lookup holds a connection for about 1 ms (0.001 seconds).
 Connections in use ≈ 670 × 0.001 ≈ 0.7, so a pool of a few connections is plenty.
 ```
 
-Now suppose the cache slows to 200 ms per lookup. The same formula gives 670 × 0.2 ≈ **134** connections, far more than the pool holds. Requests queue for a connection, the queue adds delay, and the slowdown spreads. That is why the pool's `connection-timeout` must be short: **failing fast beats queuing forever**.
+**The same rule explains what happens when a dependency slows down.** Suppose the cache slows from 1 ms to 200 ms per lookup. Now each request holds its connection 200 times longer, so the server needs 670 × 0.2 ≈ **134** connections busy at once, far more than the pool holds. Most requests end up waiting for a connection, the waiting adds delay, and the slowdown spreads to every caller. That is why `connection-timeout` must be short: a request that fails after 50 ms frees its thread, while one that waits forever holds on to it. **Failing fast beats queuing forever.**
 
 !!! warning "Two classic pooling bugs"
-    - **A new connection for every request.** On top of the handshake cost, each closed TCP connection lingers for about 60 seconds (in a state called `TIME_WAIT`). Opening 500 new connections per second to one destination keeps about 30,000 lingering, which can use up the available local ports, so new connections start failing.
-    - **Pooled connections that idle too long.** Load balancers, firewalls, and NAT gateways silently drop idle connections, often after 60 seconds. A pool that keeps idle connections longer than that lends out dead ones, and requests fail at random. Set the pool's idle and lifetime limits below every device in between.
+    - **Opening a new connection for every request.** Besides paying for handshakes every time, each closed TCP connection lingers on the machine for about 60 seconds (in a state called `TIME_WAIT`). At 500 new connections per second to one destination, about 30,000 are lingering at any moment. That can use up the available local ports, and then new connections start failing.
+    - **Keeping idle connections longer than the network allows.** Load balancers, firewalls, and NAT gateways quietly drop connections that have been idle for a while, often 60 seconds. A pool that keeps idle connections longer than that will sometimes lend out a connection that is already dead, and the request fails for no obvious reason. Set the pool's idle and lifetime limits below the limit of every device in between.
 
-**What this tells us:** pools cut every internal call's handshakes from three round trips to zero. But a pool also becomes a queue when a dependency slows down, so size it with Little's Law and give it a short wait limit.
+**What this tells us:** pools cut the setup cost of every internal call from three round trips to zero. But a pool is also a queue: when a dependency slows down, requests line up for connections. So size the pool with Little's Law, and give it a short wait limit.
 
 !!! question "Practice: the note-taking app"
     Each note-taking app server handles about 350 requests per second at peak, and each request holds a database connection for 8 ms. How many connections does one server need? What happens if the database slows to 100 ms per query?
