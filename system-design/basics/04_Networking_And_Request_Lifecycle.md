@@ -246,18 +246,28 @@ Over HTTPS, they see only:
     a few kilobytes of scrambled bytes   the path, headers, and cookie are all hidden
 ```
 
-**How the connection is set up.** Before any data is sent, the browser and the server run a short exchange called the **TLS handshake**. It has two jobs: agree on a secret key that only the two of them know, and prove that the server really is `go.example.com`. In TLS 1.3, the current version, it takes one round trip:
+**How the connection is set up.** Before any data is sent, the browser and the server run a short exchange called the **TLS handshake**. It has two jobs: agree on a secret key that only the two of them know, and prove that the server really is `go.example.com`.
+
+Three kinds of key are involved, and it helps to keep them apart. Each *key pair* is a private key, which is kept secret, plus a matching public key, which can be shared:
+
+| Key | Who has it | Sent over the network? | Used for |
+|---|---|---|---|
+| **Temporary key pair**, made fresh for this one connection | Browser and server each make their own | Only the public half | Working out the session key, then thrown away |
+| **Certificate key pair**, long-term | The public key is in the certificate; the private key stays on the server | Only the public key, inside the certificate | Proving the server's identity, by signing the handshake |
+| **Session key**, shared | Both sides calculate it | Never | Encrypting the actual data, such as `GET /summer-sale` |
+
+In TLS 1.3, the current version, the handshake takes one round trip:
 
 | Step | What happens | Why it matters |
 |---|---|---|
-| **1. The browser says hello** | It lists the encryption methods it supports, and sends its half of the secret key. | Both sides need to agree on *how* to encrypt, and start building a shared key. |
-| **2. The server says hello back** | It picks one method, sends its half of the key, and sends its **certificate**. | This completes the shared key, and shows who the server claims to be. |
-| **3. The browser checks the certificate** | Is it for `go.example.com`? Has it expired? Was it issued by an authority the browser trusts? | If any answer is wrong, the browser shows a warning and stops. This is what stops an impostor. |
-| **4. Both sides work out the same key** | Each side combines its own secret with the half it received, and gets the same key. | From here on, `GET /summer-sale` and everything after it is encrypted. |
+| **1. The browser says hello** | It lists the encryption methods it supports, and sends its **temporary public key**. | Both sides need to agree on *how* to encrypt, and start building the session key. |
+| **2. The server says hello back** | It picks one method, and sends its **temporary public key**, its **certificate**, and a signature made with the **certificate's private key**. | This completes the material for the session key, and proves who the server is. |
+| **3. The browser checks the certificate** | Is it for `go.example.com`? Has it expired? Was it issued by an authority the browser trusts? Does the signature match the **public key in the certificate**? | If any answer is wrong, the browser shows a warning and stops. This is what stops an impostor. |
+| **4. Both sides work out the session key** | Each side combines its own **temporary private key** with the other side's **temporary public key**. The maths gives both sides the same result. | From here on, `GET /summer-sale` and everything after it is encrypted with the **session key**. |
 
-How can an eavesdropper see both halves and still not get the key? Each side keeps a random secret to itself and only ever sends a value *made from* that secret. Turning the two values into the key requires one of the secrets, and those never travel over the network.
+An eavesdropper sees both temporary public keys, but working out the session key needs one of the temporary private keys, and those never leave their machines.
 
-A **certificate** is a website's ID card. It states the site's name and an expiry date, and it is signed by a **certificate authority (CA)**: an organization that has checked that the owner really controls the domain. Browsers come with a built-in list of trusted CAs, which is how they can trust a site they have never visited. A stolen copy of the certificate is useless, because during the handshake the server must also prove it holds the matching **private key**, which never leaves the real server.
+A **certificate** is a website's ID card. It states the site's name, its public key, and an expiry date, and it is signed by a **certificate authority (CA)**: an organization that has checked that the owner really controls the domain. Browsers come with a built-in list of trusted CAs, which is how they can trust a site they have never visited. A stolen copy of the certificate is useless, because only the real server has the matching private key needed to sign the handshake.
 
 **Versions.** The older TLS 1.2, still widely used, needs two round trips for the handshake instead of one. TLS 1.3 also has a shortcut for returning visitors, called *0-RTT*, which sends the request inside the very first message. An attacker could record that message and send it again, so 0-RTT is only used for requests that are harmless to repeat, such as `GET`.
 
