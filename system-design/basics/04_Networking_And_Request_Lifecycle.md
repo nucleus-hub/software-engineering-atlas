@@ -282,26 +282,36 @@ The older TLS 1.2 needs two round trips instead of one. TLS 1.3 can even let a r
 
 **In one line:** a brand-new HTTPS connection costs three round trips before the answer arrives; a reused one costs just one.
 
+Before the browser can ask for `/summer-sale`, it has to set up a connection, and each setup step is a full round trip. The steps cannot overlap, because each one needs the reply to the step before it.
+
 ![A new connection's round trips: TCP, TLS 1.3, then HTTP](assets/topic-04/connection_setup.png)
 
-Add up the handshakes from the [TCP](#tcp-vs-udp) and [TLS](#tls-https-and-where-encryption-ends) sections:
+**Reading the picture, one round trip at a time.** This is a user about 30 ms from the data center, on a new connection with TLS 1.3:
 
-```text
-New connection (TLS 1.3)  = DNS lookup (if not cached) + 1 round trip (TCP) + 1 (TLS) + 1 (HTTP)
-                          = 3 round trips, plus any DNS lookup
-Reused connection         = 1 round trip
-```
+1. **Round trip 1: TCP (30 ms).** The browser sends *SYN* and waits for *SYN-ACK*. Until that reply arrives, it does not even know the server is there, so it cannot send anything else.
+2. **Round trip 2: TLS (30 ms).** Along with the final *ACK*, the browser sends its TLS hello, and the server replies with its certificate. The browser still cannot send the request, because the encryption key only exists once both halves of the key exchange have arrived.
+3. **Round trip 3: HTTP (30 ms, plus about 3 ms of server work).** Now the browser finally sends `GET /summer-sale`, encrypted, and the `302` comes back.
 
-The URL shortener's users are about 30 ms from the data center. The server's own work takes about 3 ms either way:
+That is about **93 ms**, and only 3 ms of it is the server doing useful work. The other 60 ms is pure setup. On a user's first visit, a DNS lookup comes before all of this, too.
 
-| Connection type | Round trips before the answer | At 30 ms each |
-|---|---:|---:|
-| New, TLS 1.2 | 4 | About 120 ms |
-| New, TLS 1.3 | 3 | About 90 ms |
-| New, HTTP/3 (QUIC combines TCP and TLS) | 2 | About 60 ms |
-| Reused (already open) | 1 | About 30 ms |
+**What "reused" means.** After the `302`, the connection does not have to close. With *keep-alive*, it stays open, so the next request (`GET /spring-sale` at the bottom of the picture) skips straight to the HTTP round trip: the TCP connection is already set up, and the TLS key is already agreed.
 
-**What this tells us:** the biggest latency win is not faster code; it is **not paying for handshakes again**. That is why [keep-alive and connection pools](#keep-alive-and-connection-pools) matter so much, and why ending TLS at an edge server near the user (section 4) works so well.
+| Connection type | What has to happen before the answer | Round trips | At 30 ms each |
+|---|---|---:|---:|
+| New, TLS 1.2 | TCP handshake, then a TLS handshake that needs two round trips, then the request | 4 | About 120 ms |
+| New, TLS 1.3 | TCP handshake, then a one-round-trip TLS handshake, then the request | 3 | About 90 ms |
+| New, HTTP/3 | QUIC sets up the connection and the encryption together in one round trip, then the request | 2 | About 60 ms |
+| Reused (already open) | Only the request; the connection and the key already exist | 1 | About 30 ms |
+
+Because the setup is counted in round trips, **distance multiplies it**. For a user in London, about 75 ms from US East, the same new connection costs about 225 ms instead of 75 ms.
+
+**Three ways to pay less:**
+
+- **Reuse connections**, so the setup is paid once and shared by many requests. See [keep-alive and connection pools](#keep-alive-and-connection-pools).
+- **Shorten each round trip** by ending TCP and TLS at an edge server close to the user, so each handshake costs a few milliseconds instead of tens (section 4).
+- **Need fewer round trips per connection**, by using TLS 1.3 instead of TLS 1.2, and HTTP/3 where clients support it.
+
+**What this tells us:** the biggest latency win is usually not faster code; it is **not paying for setup again**. For the URL shortener, a returning user on a kept-alive connection gets the redirect in one round trip instead of three.
 
 !!! question "Practice"
     A user in Sydney is about 160 ms (round trip) from the note-taking app. How long do the round trips take on a new TLS 1.3 connection, compared with a reused one?
