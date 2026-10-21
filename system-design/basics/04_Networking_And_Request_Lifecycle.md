@@ -225,21 +225,46 @@ This is called **head-of-line blocking**, and it is the reason HTTP/3 exists (se
 
 **In one line:** TLS encrypts the connection and proves the server is genuine; the design decision is where the traffic gets decrypted.
 
-TLS adds three guarantees on top of TCP:
+**HTTPS is simply HTTP sent inside a TLS connection.** TLS adds three guarantees on top of TCP:
 
 - **Private:** nobody on the way, such as a café's Wi-Fi network, can read the data.
 - **Untampered:** any change made in transit is detected.
-- **Authentic:** the server proves it owns `go.example.com` with a **certificate** signed by an authority the browser trusts.
+- **Authentic:** the server proves it really is `go.example.com`, so nobody can pretend to be it.
 
-The current version, TLS 1.3, needs **one round trip** to set up; the older TLS 1.2 needs two. TLS 1.3 can even let a returning visitor send data in its very first packet (called *0-RTT*), but an attacker can replay that data, so it is only safe for harmless requests such as `GET`.
+**An example: what someone on café Wi-Fi can see.** Imagine a stranger on the same public Wi-Fi, recording every packet while you click the short link:
 
-**Where should TLS end?** The point where traffic is decrypted is called **TLS termination**, and there are three common choices:
+```text
+Over plain HTTP, they can read everything:
+    GET /summer-sale HTTP/1.1
+    Host: go.example.com
+    Cookie: session=8f3a91c2...          enough to log in as you
+
+Over HTTPS, they see only:
+    198.51.100.7  ->  203.0.113.10, port 443
+    the site name go.example.com         sent unencrypted at the start of the handshake
+    a few kilobytes of scrambled bytes   the path, headers, and cookie are all hidden
+```
+
+**How the connection is set up.** TLS 1.3, the current version, needs one round trip:
+
+1. **The browser says hello.** It lists the encryption methods it supports, and sends its half of a *key exchange*.
+2. **The server replies.** It picks a method, sends its half of the key exchange, its **certificate**, and a signature proving it holds the certificate's private key.
+3. **The browser checks the certificate.** Is it for `go.example.com`? Is it still valid? Is it signed by a certificate authority (CA) the browser already trusts? If any answer is no, the browser shows a warning and stops.
+4. **Both sides now share a secret key**, calculated from the two halves of the key exchange. Someone who recorded every message still cannot work it out. Everything from here on, starting with `GET /summer-sale`, is encrypted with that key.
+
+A **certificate** works like an ID card for a website. It contains the site's name, its public key, an expiry date, and the signature of the CA that issued it. Browsers and operating systems ship with a built-in list of trusted CAs, which is how a browser can trust a site it has never seen before.
+
+The older TLS 1.2 needs two round trips instead of one. TLS 1.3 can even let a returning visitor send data in its very first packet (called *0-RTT*), but an attacker can replay that data, so it is only safe for harmless requests such as `GET`.
+
+**Where should TLS end?** The point where traffic is decrypted is called **TLS termination**. Whoever decrypts the traffic needs the certificate, and is the only one that can read the request:
+
+![Three TLS termination options: at the load balancer, terminate and re-encrypt, and pass-through](assets/topic-04/tls_termination.png)
 
 | Option | How it works | Trade-off |
 |---|---|---|
-| **Terminate at the load balancer** | The load balancer decrypts; servers receive plain HTTP inside the private network. | The simplest and most common. Certificates live in one place, and the load balancer can route by URL. Traffic inside the network is not encrypted. |
-| **Terminate and re-encrypt** | The load balancer decrypts, routes, then opens a new TLS connection to the server. | Encrypted all the way, at the cost of more certificates and a little more CPU. Often required in regulated industries. When services also check each other's certificates, it is called **mutual TLS (mTLS)**. |
-| **Pass through** | The load balancer forwards the encrypted bytes untouched; each server decrypts. | The load balancer cannot read requests, so it can only route by IP address and port (Layer 4). |
+| **1. Terminate at the load balancer** | The load balancer decrypts; servers receive plain HTTP inside the private network. | The simplest and most common. Certificates live in one place, and the load balancer can route by URL. Traffic inside the network is not encrypted. |
+| **2. Terminate and re-encrypt** | The load balancer decrypts, routes, then opens a new TLS connection to the server. | Encrypted all the way, at the cost of more certificates and a little more CPU. Often required in regulated industries. When services also check each other's certificates, it is called **mutual TLS (mTLS)**. |
+| **3. Pass through** | The load balancer forwards the encrypted bytes untouched; each server decrypts. | The load balancer cannot read requests, so it can only route by IP address and port (Layer 4). |
 
 !!! warning "The most common TLS outage"
     It is not a clever attack. It is an **expired certificate**: the moment it expires, every HTTPS request fails. Certificates often last only 90 days, so automate renewal, and alert on expiry dates weeks in advance.

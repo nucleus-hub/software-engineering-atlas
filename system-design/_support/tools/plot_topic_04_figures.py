@@ -413,10 +413,53 @@ def latency_budget() -> plt.Figure:
     return fig
 
 
+def tls_termination() -> plt.Figure:
+    fig, ax = canvas(15, 7.5)
+    heading(ax, "Where Does TLS End? Three Common Options",
+            "Solid navy links are encrypted; dashed amber links are plain, readable HTTP")
+    lanes = [
+        # number, option, when, (LB note, server note), LB->server encrypted?, LB can read?
+        ("1", "Terminate at the\nload balancer", "the usual default",
+         ("holds certificate", "no certificate"), False, True),
+        ("2", "Terminate and\nre-encrypt", "encrypted everywhere",
+         ("holds certificate", "internal certificate"), True, True),
+        ("3", "Pass through", "servers hold the keys",
+         ("no certificate", "holds certificate"), True, False),
+    ]
+
+    def link(x1: float, x2: float, y: float, encrypted: bool) -> None:
+        color = NAVY if encrypted else AMBER
+        ax.plot([x1, x2], [y, y], color=color, linewidth=4 if encrypted else 3,
+                linestyle="-" if encrypted else (0, (4, 2.5)), solid_capstyle="round")
+        note(ax, (x1 + x2) / 2, y + 2.6, "encrypted" if encrypted else "plain HTTP",
+             color=color, size=8.2, ha="center")
+
+    for index, (number, option, when, (lb_note, server_note), inner_encrypted,
+                lb_reads) in enumerate(lanes):
+        y = 62 - index * 24
+        middle = y + 5
+        badge(ax, 3.5, middle, number)
+        note(ax, 5.5, middle + 1.5, option, size=9.4, color=NAVY)
+        note(ax, 5.5, middle - 4.3, when, size=8.2, color=GREY)
+        box(ax, 25, y, 12, 10, "Browser", face=WHITE, edge=NAVY)
+        box(ax, 50, y, 14, 10, "Load balancer", lb_note)
+        box(ax, 81, y, 14, 10, "Link API", server_note, face=MIST)
+        link(37.6, 49.4, middle, encrypted=True)
+        link(64.6, 80.4, middle, encrypted=inner_encrypted)
+        if lb_reads:
+            note(ax, 57, y - 3.4, "can read: GET /summer-sale", color=GREEN, size=8.2,
+                 ha="center")
+        else:
+            note(ax, 57, y - 3.4, "sees only: IP address + port 443", color=GREY, size=8.2,
+                 ha="center")
+    return fig
+
+
 FIGURES = {
     "network_layers": network_layers,
     "request_lifecycle": request_lifecycle,
     "dns_resolution": dns_resolution,
+    "tls_termination": tls_termination,
     "connection_setup": connection_setup,
     "http_versions": http_versions,
     "timeout_budget": timeout_budget,
