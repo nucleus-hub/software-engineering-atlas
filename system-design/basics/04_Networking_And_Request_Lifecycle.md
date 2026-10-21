@@ -337,16 +337,18 @@ Because the setup is counted in round trips, **distance multiplies it**. For a u
 
 **Methods.** Two properties matter:
 
-- **Safe:** the request changes nothing on the server.
-- **Idempotent:** doing it twice has the same effect as doing it once, so it can be retried safely after a timeout.
+- **Safe:** the request only reads; it asks the server to change nothing.
+- **Idempotent:** sending the same request twice leaves the server in the same state as sending it once, so a client can retry it after a timeout. The *response* may differ: a second `DELETE` may return `404` instead of `204`, and that is fine.
 
-| Method | Typical use | Safe? | Idempotent? |
+| Method | Typical use | Safe? | Idempotent? (as HTTP defines it) |
 |---|---|---|---|
 | `GET` | Read something, such as a redirect lookup | Yes | Yes |
 | `PUT` | Replace a resource with a new version | No | Yes |
 | `DELETE` | Remove a resource | No | Yes |
 | `POST` | Create something, such as a new short link | No | **No**: repeating it may create two links |
 | `PATCH` | Change part of a resource | No | Not guaranteed |
+
+These are **promises in the HTTP standard, not something HTTP enforces**. The API provider has to make them true. A `PUT /links/summer-sale` handler that also sends a notification email on every call is no longer idempotent: when a client, proxy, or library retries it after a timeout, which they are allowed to do for `PUT`, the user gets two emails. It works the other way too: a provider can make a `POST` safe to retry, as the practice question below shows.
 
 **Status codes.** The first digit says what happened: 2xx success, 3xx "look elsewhere", 4xx the client made a mistake, 5xx the server failed. These are the ones that shape a design:
 
