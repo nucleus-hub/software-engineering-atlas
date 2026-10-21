@@ -169,7 +169,18 @@ The resolver then hands the answer back to the browser (step 8). Each question i
 
 **In one line:** TCP delivers everything, in order, but needs a handshake and can stall; UDP sends immediately, but packets may be lost.
 
-With an IP address in hand, the browser still needs a way to send data to one program on that machine. That is the transport layer's job, and there are two choices:
+IP gets packets to the right *machine*. The transport layer gets them to the right *program* on that machine, using a **port** number: HTTPS listens on port 443, DNS on port 53. It also decides what to do about an awkward fact: data travels as separate packets of about 1,500 bytes each, and the network sometimes **loses** them, **reorders** them, or **delivers them twice**.
+
+There are two choices, and a simple way to picture them:
+
+- **TCP is like a phone call.** You connect first, both sides confirm they can hear each other, and if a word is missed you ask "sorry, say that again?" Nothing is lost, and everything is heard in order.
+- **UDP is like sending postcards.** No setup: you just send. Most arrive, but some may get lost or arrive out of order, and nobody tells you.
+
+**How TCP keeps its promise:**
+
+1. **Handshake.** Before any data, the two sides exchange three messages: *SYN* ("can we talk?"), *SYN-ACK* ("yes, can you hear me?"), and *ACK* ("yes"). That costs one round trip.
+2. **Numbering and acknowledging.** Every byte gets a sequence number, and the receiver confirms what has arrived. Anything not confirmed in time is sent again.
+3. **Putting things back in order.** The receiver reassembles the bytes, so the program only ever sees a complete, in-order stream, or an error if the connection fails.
 
 | | TCP | UDP |
 |---|---|---|
@@ -178,9 +189,28 @@ With an IP address in hand, the browser still needs a way to send data to one pr
 | A packet is lost | Everything after it waits until it is resent | Nothing waits; the application decides what to do |
 | Used for | Web traffic (HTTP/1.1 and HTTP/2), databases, most calls between services | DNS lookups, video calls, games, and QUIC (which carries HTTP/3) |
 
-TCP's guarantee has a catch. Because it delivers bytes strictly in order, **one lost packet makes everything behind it wait**, even data that has already arrived. This is called **head-of-line blocking**, and it comes back in the [HTTP versions section](#http11-vs-http2-vs-http3). A new TCP connection also starts sending slowly and speeds up over a few round trips (called **slow start**), so large responses are slower on a fresh connection.
+**TCP's catch: one lost packet makes everything behind it wait.** Because TCP hands data over strictly in order, packets that arrive after a gap are held back until the missing one is resent:
 
-UDP suits data that is useless when late. In a video call, a frame that arrives 300 ms late is better skipped than waited for.
+```text
+Sent:      [1] [2] [3] [4] [5]
+Arrived:   [1]     [3] [4] [5]         packet 2 was lost
+
+TCP:   the program gets 1, then waits about one round trip for 2 to be resent,
+       then gets 2, 3, 4, 5 together
+UDP:   the program gets 1, 3, 4, 5 immediately, and decides for itself what to do about 2
+```
+
+This is called **head-of-line blocking**, and it is the reason HTTP/3 exists (see the [HTTP versions section](#http11-vs-http2-vs-http3)).
+
+**TCP also starts slowly.** A new connection does not know how fast the network is, so it begins by sending about 14 KB, then doubles that every round trip as long as nothing is lost. This is called **slow start**. A 100 KB response on a brand-new connection needs about three round trips, while a connection that has been in use for a while can send it in one. It is one more reason to reuse connections.
+
+**When UDP is the better choice.** UDP suits data that is useless when late, or so small that a handshake would cost more than the message:
+
+- **Video calls and games:** a video frame that arrives 300 ms late is better skipped than waited for.
+- **DNS:** a lookup is one small question and one small answer. A TCP handshake would double its cost, and if the answer is lost, the client simply asks again.
+- **QUIC:** the protocol under HTTP/3 builds its own reliable delivery on top of UDP, designed so that one lost packet does not stall everything else.
+
+**What this tells us:** each click on the URL shortener uses both. The DNS lookup travels over UDP; the redirect itself travels over TCP (or QUIC for HTTP/3). So the TCP handshake and slow start are part of the cost of every new connection, which is why reusing connections matters so much.
 
 !!! question "Practice"
     Which transport would you choose for each, and why?
