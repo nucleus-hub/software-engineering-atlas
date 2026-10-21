@@ -129,6 +129,20 @@ The browser asks a **recursive resolver**, usually run by the internet provider 
 
 That walk costs several round trips, so the answer is saved in the browser, the operating system, and the resolver, for as long as the record's **TTL** allows. Most lookups are answered from one of these caches in a millisecond or two.
 
+**Record types.** The authoritative server stores **records**, and each type answers a different question. The answer in step 3 is an `A` record. These are the ones worth knowing:
+
+| Type | What it answers | Example | Why it matters in design |
+|---|---|---|---|
+| **A** | Which IPv4 address does this name have? | `go.example.com` → `203.0.113.10` | The basic answer. With several A records, clients spread across the addresses, the simplest form of DNS load balancing (Basics 8). |
+| **AAAA** | Which IPv6 address does this name have? | `go.example.com` → `2001:db8::10` | The same as A, for IPv6. Most sites publish both. |
+| **CNAME** | Which *other name* is this name an alias for? | `go.example.com` → `go-lb.example.net` | Points your name at a provider's name, such as a CDN or cloud load balancer, so the provider can change its IP addresses without you. It costs one extra lookup, and it cannot be used on the bare domain (`example.com`). |
+| **ALIAS** (or ANAME) | The same as CNAME, but allowed on the bare domain | `example.com` → `go-lb.example.net` | Not a standard type: a feature of DNS providers, which look up the target and return its A records for you. Use it to point the bare domain at a cloud load balancer. |
+| **NS** | Which servers are authoritative for this domain? | `example.com` → `ns1.example.com` | The referral in step 2 of the picture. Moving to a new DNS provider means changing these, and they are cached for a day or more, so plan ahead. |
+| **MX** | Which servers receive email for this domain? | `example.com` → `mail.example.com` | Not on the request path, but a classic mistake to break while migrating DNS. |
+| **TXT** | Any text the domain owner wants to publish | `example.com` → `"site-verification=4f9a2c"` | Used to prove you own a domain, for example to get a TLS certificate, and for email security settings. |
+
+A name has either A/AAAA records or a CNAME, never both.
+
 **Choosing a TTL** is a trade-off between speed and flexibility:
 
 | | Short TTL (30–60 seconds) | Long TTL (hours) |
