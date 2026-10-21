@@ -169,9 +169,9 @@ The resolver then hands the answer back to the browser (step 8). Each question i
 
 **In one line:** TCP delivers everything, in order, but needs a handshake and can stall; UDP sends immediately, but packets may be lost.
 
-IP gets packets to the right *machine*. The transport layer gets them to the right *program* on that machine, using a **port** number: HTTPS listens on port 443, DNS on port 53. It also decides what to do about an awkward fact: data travels as separate packets of about 1,500 bytes each, and the network sometimes **loses** them, **reorders** them, or **delivers them twice**.
+An IP address only gets a packet to the right **machine**. But one machine runs many programs at once, such as a web server, a database, and a DNS server, so the packet must also reach the right **program**. That is the transport layer's first job, and it uses a **port number** to do it: a web server using HTTPS listens on port 443, and a DNS server listens on port 53. An address plus a port, such as `203.0.113.10:443`, points to exactly one program on one machine.
 
-There are two choices, and a simple way to picture them:
+The transport layer's second job is coping with an awkward fact about networks. Data does not travel in one piece: it is split into separate packets of about 1,500 bytes each, and every packet makes its own way across the network. Along the way, a busy router may drop a packet (**lost**), two packets may take different routes and arrive in the wrong order (**reordered**), or a packet may arrive twice (**duplicated**). TCP and UDP deal with this in opposite ways, and a simple way to picture the difference is:
 
 - **TCP is like a phone call.** You connect first, both sides confirm they can hear each other, and if a word is missed you ask "sorry, say that again?" Nothing is lost, and everything is heard in order.
 - **UDP is like sending postcards.** No setup: you just send. Most arrive, but some may get lost or arrive out of order, and nobody tells you.
@@ -184,10 +184,11 @@ There are two choices, and a simple way to picture them:
 
 | | TCP | UDP |
 |---|---|---|
-| Before sending data | A handshake (SYN, SYN-ACK, ACK): one round trip | Nothing; the first packet already carries data |
-| Delivery | Every byte arrives, in order, or you get an error | Packets may be lost, duplicated, or arrive out of order |
-| A packet is lost | Everything after it waits until it is resent | Nothing waits; the application decides what to do |
-| Used for | Web traffic (HTTP/1.1 and HTTP/2), databases, most calls between services | DNS lookups, video calls, games, and QUIC (which carries HTTP/3) |
+| **Before sending data** | The two sides first exchange a handshake (SYN, SYN-ACK, ACK) to set up a connection. This costs one round trip before any real data moves. | There is no setup at all. The very first packet already carries data, so no time is spent before the message goes out. |
+| **Delivery promise** | Every byte arrives exactly once, in the order it was sent. If that becomes impossible, for example because the other side disappears, the program gets an error instead of silently missing data. | There is no promise. Packets may be lost, duplicated, or arrive out of order, and UDP does not tell the program. |
+| **When a packet is lost** | TCP notices the gap and resends the missing packet. Everything sent after it waits until the resent packet arrives. | Nothing is resent, and nothing waits. The program decides whether the loss matters and what to do about it. |
+| **Typical uses** | Web traffic over HTTP/1.1 and HTTP/2, database connections, and most calls between services: anywhere missing or jumbled data would be a bug. | DNS lookups, video calls, online games, and QUIC (which carries HTTP/3): anywhere messages are tiny, or late data is useless. |
+| **Example** | **Loading the redirect.** The browser connects to `203.0.113.10:443`, sends `GET /summer-sale`, and receives the `302` response complete and in order, even if one of its packets had to be resent. | **Looking up the address.** The resolver sends one small packet to port 53 asking for `go.example.com`, and gets one packet back. If the answer is lost, it simply asks again after a short wait. |
 
 **TCP's catch: one lost packet makes everything behind it wait.** Because TCP hands data over strictly in order, packets that arrive after a gap are held back until the missing one is resent:
 
