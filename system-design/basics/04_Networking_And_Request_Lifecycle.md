@@ -246,16 +246,20 @@ Over HTTPS, they see only:
     a few kilobytes of scrambled bytes   the path, headers, and cookie are all hidden
 ```
 
-**How the connection is set up.** TLS 1.3, the current version, needs one round trip:
+**How the connection is set up.** Before any data is sent, the browser and the server run a short exchange called the **TLS handshake**. It has two jobs: agree on a secret key that only the two of them know, and prove that the server really is `go.example.com`. In TLS 1.3, the current version, it takes one round trip:
 
-1. **The browser says hello.** It lists the encryption methods it supports, and sends its half of a *key exchange*.
-2. **The server replies.** It picks a method, sends its half of the key exchange, its **certificate**, and a signature proving it holds the certificate's private key.
-3. **The browser checks the certificate.** Is it for `go.example.com`? Is it still valid? Is it signed by a certificate authority (CA) the browser already trusts? If any answer is no, the browser shows a warning and stops.
-4. **Both sides now share a secret key**, calculated from the two halves of the key exchange. Someone who recorded every message still cannot work it out. Everything from here on, starting with `GET /summer-sale`, is encrypted with that key.
+| Step | What happens | Why it matters |
+|---|---|---|
+| **1. The browser says hello** | It lists the encryption methods it supports, and sends its half of the secret key. | Both sides need to agree on *how* to encrypt, and start building a shared key. |
+| **2. The server says hello back** | It picks one method, sends its half of the key, and sends its **certificate**. | This completes the shared key, and shows who the server claims to be. |
+| **3. The browser checks the certificate** | Is it for `go.example.com`? Has it expired? Was it issued by an authority the browser trusts? | If any answer is wrong, the browser shows a warning and stops. This is what stops an impostor. |
+| **4. Both sides work out the same key** | Each side combines its own secret with the half it received, and gets the same key. | From here on, `GET /summer-sale` and everything after it is encrypted. |
 
-A **certificate** works like an ID card for a website. It contains the site's name, its public key, an expiry date, and the signature of the CA that issued it. Browsers and operating systems ship with a built-in list of trusted CAs, which is how a browser can trust a site it has never seen before.
+How can an eavesdropper see both halves and still not get the key? Each side keeps a random secret to itself and only ever sends a value *made from* that secret. Turning the two values into the key requires one of the secrets, and those never travel over the network.
 
-The older TLS 1.2 needs two round trips instead of one. TLS 1.3 can even let a returning visitor send data in its very first packet (called *0-RTT*), but an attacker can replay that data, so it is only safe for harmless requests such as `GET`.
+A **certificate** is a website's ID card. It states the site's name and an expiry date, and it is signed by a **certificate authority (CA)**: an organization that has checked that the owner really controls the domain. Browsers come with a built-in list of trusted CAs, which is how they can trust a site they have never visited. A stolen copy of the certificate is useless, because during the handshake the server must also prove it holds the matching **private key**, which never leaves the real server.
+
+**Versions.** The older TLS 1.2, still widely used, needs two round trips for the handshake instead of one. TLS 1.3 also has a shortcut for returning visitors, called *0-RTT*, which sends the request inside the very first message. An attacker could record that message and send it again, so 0-RTT is only used for requests that are harmless to repeat, such as `GET`.
 
 **Where should TLS end?** The point where traffic is decrypted is called **TLS termination**. Whoever decrypts the traffic needs the certificate, and is the only one that can read the request:
 
