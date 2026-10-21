@@ -248,13 +248,11 @@ Over HTTPS, they see only:
 
 **How the connection is set up.** Before any data is sent, the browser and the server run a short exchange called the **TLS handshake**. It has two jobs: agree on a secret key that only the two of them know, and prove that the server really is `go.example.com`.
 
-Three kinds of key are involved, and it helps to keep them apart. Each *key pair* is a private key, which is kept secret, plus a matching public key, which can be shared:
+Three kinds of key are involved, and it helps to keep them apart. A *key pair* is a private key, which is kept secret, plus a matching public key, which can be shared.
 
-| Key | Who has it | Sent over the network? | Used for |
-|---|---|---|---|
-| **Temporary key pair**, made fresh for this one connection | Browser and server each make their own | Only the public half | Working out the session key, then thrown away |
-| **Certificate key pair**, long-term | The public key is in the certificate; the private key stays on the server | Only the public key, inside the certificate | Proving the server's identity, by signing the handshake |
-| **Session key**, shared | Both sides calculate it | Never | Encrypting the actual data, such as `GET /summer-sale` |
+- The **temporary key pair** is made fresh for this one connection. The browser and the server each make their own, and only send the public half. They use these keys to work out the session key, then throw them away.
+- The **certificate key pair** is long-term. Its public key is written inside the certificate, which the server sends; its private key never leaves the server. The server uses that private key only to sign the handshake, which proves its identity.
+- The **session key** is the one that actually encrypts the data, such as `GET /summer-sale`. Both sides calculate it for themselves, so it is never sent over the network at all.
 
 In TLS 1.3, the current version, the handshake takes one round trip:
 
