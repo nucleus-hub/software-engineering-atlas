@@ -428,7 +428,7 @@ HttpClient client = HttpClient.newBuilder()
         .build();
 
 HttpRequest request = HttpRequest.newBuilder(URI.create("https://profile.internal/users/42"))
-        .timeout(Duration.ofMillis(300))              // the whole response must arrive within 300 ms
+        .timeout(Duration.ofMillis(300))              // the response must start arriving within 300 ms
         .GET()
         .build();
 
@@ -482,37 +482,38 @@ A timeout on each call is not enough, though; the timeouts also have to **fit to
 - **The top half follows the rule.** The load balancer waits up to 500 ms for the Link API, and the API gives itself a deadline of 300 ms, well inside that. Within those 300 ms, the cache gets up to 20 ms and the database up to 100 ms, and the rest is spare. Whatever happens, the API answers, or fails cleanly with a clear error, before the load balancer gives up.
 - **The bottom half breaks it.** The database call is allowed to wait 30 seconds, but the load balancer gives up after 500 ms and sends the user a `504 Gateway Timeout`. The user already has an error, yet the API thread and its database connection stay busy for up to another 29.5 seconds, doing work nobody will ever receive. Under load, these abandoned calls fill every pool, and the service falls over.
 
-**Four kinds of timeout.** A single call can get stuck at several different points, and each point has its own timeout:
+**Four kinds of timeout.** A single call goes through several phases, can get stuck in any of them, and each phase has its own timeout:
+
+```text
+  borrow a pooled     TCP + TLS          send the     server works, then
+  connection          handshakes         request      response bytes come back
+|-- pool wait -----|-- connect --------|------------|-- read ---------------------|
+|<------------------------ overall deadline: covers all of it ------------------->|
+```
 
 | Timeout | What it limits | A sensible value inside a data center |
 |---|---|---|
-| **Connect timeout** | How long to wait while setting up the TCP (and TLS) connection to the other machine. | 100–500 ms. A healthy host answers in about a millisecond, so a slow connect usually means the host is down or unreachable. |
-| **Read (response) timeout** | How long to wait for the response, after the request has been sent. | A little above the dependency's normal p99 latency (the time that 99% of its responses beat). Waiting longer rarely helps. |
-| **Pool wait timeout** | How long to wait for a free connection from the [connection pool](#keep-alive-and-connection-pools). | Tens of milliseconds. If no connection is free by then, waiting longer only builds a queue. |
-| **Overall deadline** | The total time for the whole request, across every call it makes. | Set from the latency your own callers expect, and always shorter than their timeout. |
+| **Pool wait timeout** | How long to wait for a free connection from the [connection pool](#keep-alive-and-connection-pools). Skipped if a connection is free. | Tens of milliseconds. If no connection is free by then, waiting longer only builds a queue. |
+| **Connect timeout** | How long to wait while opening a *new* connection: the TCP handshake, plus the TLS handshake for HTTPS. Skipped when a pooled connection is reused. | 100–500 ms. A healthy host answers in about a millisecond, so a slow connect usually means the host is down or unreachable. |
+| **Read (response) timeout** | How long to wait for the reply once the connection is ready and the request has been sent. This is the time the server spends doing the actual work, plus the time for the answer to travel back. | A little above the dependency's normal p99 latency (the time that 99% of its responses beat). Waiting longer rarely helps. |
+| **Overall deadline** | The total time for the whole request, from start to finish, across every phase and every call it makes. | Set from the latency your own callers expect, and always shorter than their timeout. |
 
-**Pass the deadline down.** The simplest way to follow the rule is to work out one deadline when the request arrives, and let every call use only the time that is still left. In the code below, the Link API received the request with a deadline of "now + 300 ms":
+**The read timeout, precisely.** The handshakes are already finished, so a read timeout firing means *the server is slow or stuck*, not that it cannot be reached. That distinction matters for retries: after a connect timeout, the request never reached the server, so retrying it is safe. After a read timeout, the server may have received the request and done the work, so only idempotent requests are safe to retry. There is also a catch. In most clients (OkHttp's `readTimeout`, Apache HttpClient's socket timeout, the `socketTimeout` setting of JDBC drivers) the read timeout limits the longest *silence* between two chunks of data, not the whole response. A server that sends one byte every 50 ms never trips a 100 ms read timeout, even if the full response takes a minute. That is why the overall deadline exists. (Java's built-in `HttpClient` has no separate read timeout. Its per-request `timeout(...)` limits how long you wait for the response to start arriving.)
 
-1. The cache gets at most 20 ms, so a slow cache cannot eat the whole budget.
-2. On a cache miss, the code checks how much time is left. If it is less than 10 ms, there is no point trying the database, so it fails straight away.
-3. Otherwise, the database gets 100 ms, or whatever time is left if that is less, so it can never run past the deadline.
+**Pass the deadline down.** The simplest way to follow the rule is to fix *one* deadline when the request arrives, and let every call it triggers use only the time that is still left. Here the Link API set `deadline` to 300 ms after the request arrived, and is now calling the link store over HTTP with the shared, pooled `client` from the [pooling section](#keep-alive-and-connection-pools):
 
 ```java
-LinkTarget resolve(String code, Instant deadline) {
-    Optional<String> cached = cache.get(code, Duration.ofMillis(20));    // a slow cache must not eat the budget
-    if (cached.isPresent()) {
-        return LinkTarget.of(cached.get());
-    }
-    Duration remaining = Duration.between(Instant.now(), deadline);
-    if (remaining.toMillis() < 10) {
-        throw new DeadlineExceededException(code);                         // too little time left to try: fail fast
-    }
-    Duration dbTimeout = remaining.compareTo(Duration.ofMillis(100)) < 0 ? remaining : Duration.ofMillis(100);
-    return linkStore.find(code, dbTimeout);                               // never waits past the caller's deadline
-}
+Duration left = Duration.between(Instant.now(), deadline);
+Duration timeout = Collections.min(List.of(Duration.ofMillis(100), left)); // own limit or time left, whichever is less
+
+HttpRequest request = HttpRequest.newBuilder(URI.create("https://link-store.internal/links/" + code))
+        .timeout(timeout)                                              // can never outlive our deadline
+        .header("X-Timeout-Ms", String.valueOf(timeout.toMillis()))    // the link store gets the same budget
+        .build();
+String target = client.send(request, HttpResponse.BodyHandlers.ofString()).body();
 ```
 
-gRPC does this automatically: the first caller's deadline travels with the request to every service it calls, so each one knows how much time is left.
+The header passes the budget along, so the link store can do the same thing for any call *it* makes. It carries a *number of milliseconds*, not a clock time such as "give up at 12:00:00.300". Clocks on different machines are never perfectly in sync, and a few milliseconds of drift is a large share of a 100 ms budget. gRPC does all of this for you: it sends the time left in a `grpc-timeout` header on every call, so each service down the chain knows how much time it has without any extra code.
 
 !!! warning "Retries multiply load"
     A timeout is often followed by a retry. That is fine at one layer, but dangerous at several. If three layers of services each retry three times, one user request can become 3 × 3 × 3 = **27** requests at the bottom layer, arriving exactly when that layer is already struggling. So retry at one layer only, wait a little longer before each new attempt, and only retry requests that are idempotent. See **Advanced 7 (Idempotency & Retries)**.
@@ -535,25 +536,25 @@ When a request is slow, the cause is almost always one of a few things. Knowing 
 
 | Latency source | What causes it | What reduces it |
 |---|---|---|
-| **Distance** | Round trips across long physical distances | Fewer round trips, and answering closer to users at the edge |
-| **Handshakes** | New TCP and TLS connections | Keep-alive, connection pools, TLS 1.3, and HTTP/3 |
-| **Queuing** | Requests waiting for a thread, a pooled connection, or a busy server | Headroom, right-sized pools, and shedding load before collapse |
-| **Serial calls** | Calling dependencies one after another when they could run in parallel | Making independent calls in parallel, or removing calls from the critical path |
-| **Large responses** | Many packets, plus TCP slow start on new connections | Compression, smaller payloads, and pagination |
-| **Packet loss** | A lost packet waiting to be resent | HTTP/3 on lossy networks, plus sensible timeouts |
+| **Distance** | Data cannot travel faster than light in fiber, so every round trip to a far-away server costs tens or hundreds of milliseconds. | Make fewer round trips, and answer from servers closer to the user, such as a CDN at the edge. |
+| **Handshakes** | Every new connection spends one round trip on the TCP handshake, plus one more on the TLS handshake for HTTPS, before any data moves. | Reuse connections with keep-alive and connection pools. TLS 1.3 and HTTP/3 also cut the number of handshake round trips. |
+| **Queuing** | The request is waiting its turn for a free thread, a pooled connection, or a busy server, and doing no useful work. | Keep spare capacity, size pools with Little's Law, and reject extra load early instead of letting the queue grow without limit. |
+| **Serial calls** | Dependencies are called one after another, so their times add up, even when the calls do not depend on each other. | Run independent calls in parallel, and move work the user does not need to wait for out of the request path. |
+| **Large responses** | A big response needs many packets, and a new TCP connection starts slowly (slow start), so it takes several round trips to arrive. | Compress responses, send only the fields the client needs, and split long lists into pages. |
+| **Packet loss** | A lost packet has to be noticed and sent again, which costs at least one extra round trip. Over TCP, everything behind it waits too. | Use HTTP/3 on lossy networks such as mobile, and set timeouts so a lost packet cannot stall a request forever. |
 
 Failures need the same attention, because each one looks different to the caller, and each one calls for a different response:
 
 | Failure | What the caller sees | Safe response |
 |---|---|---|
-| **DNS failure** | The name cannot be resolved | Fail fast with a clear error; rely on cached answers and redundant DNS providers. |
-| **Connection refused** | An immediate error, because nothing is listening on that port | Try another instance; this failure is fast and the request never started. |
-| **Connect timeout** | No answer to the handshake, often because the host is down or a firewall drops packets | Try another instance after a short connect timeout. |
-| **Read timeout** | The request was sent, but no response arrived in time | **The outcome is unknown**, because the server may have done the work. Retry only if the request is idempotent. |
-| **Connection reset mid-response** | The connection dropped partway through | Also an unknown outcome; treat it like a read timeout. |
-| **TLS failure** | Certificate expired, or does not match the name | Not retryable; alert immediately, as everyone is affected. |
-| **Pool exhausted** | No free connection within the acquisition timeout | Fail fast; it means a dependency is slow, so investigate that rather than growing the pool. |
-| **One lost packet** | A sudden delay, often around 200 ms, or a full second if the very first handshake packet was lost | Nothing to fix per request; it shows up in the p99, which is why percentiles matter. |
+| **DNS failure** | The hostname cannot be turned into an IP address, so the call fails before any connection is attempted. | Fail fast with a clear error. Cached DNS answers and a second DNS provider keep this rare. |
+| **Connection refused** | An immediate error: the host is reachable, but nothing is listening on that port, for example because the service crashed. | Try another instance. The request never reached any code, so retrying is always safe. |
+| **Connect timeout** | The handshake gets no answer at all, usually because the host is down or a firewall silently drops the packets. | Give up after a short connect timeout and try another instance. The request was never sent, so retrying is safe. |
+| **Read timeout** | The connection worked and the request was sent, but the response did not arrive in time. | **The outcome is unknown**, because the server may have done the work. Retry only if the request is idempotent. |
+| **Connection reset mid-response** | The connection drops partway through the response, for example because the server restarted. | The outcome is unknown here too, so treat it exactly like a read timeout. |
+| **TLS failure** | The handshake is rejected because the certificate has expired or does not match the hostname. | Do not retry, because it will fail the same way every time. Alert someone immediately, since every client is affected. |
+| **Pool exhausted** | No free connection became available within the pool wait timeout. | Fail fast. It usually means a dependency has slowed down, so fix that instead of making the pool bigger. |
+| **One lost packet** | A sudden pause of about 200 ms while the packet is resent, or about a full second if the very first handshake packet was lost. | Nothing to fix for a single request. It shows up in p99 latency, which is why you track percentiles, not averages. |
 
 The most important row is the **read timeout**. "I do not know whether it worked" is the hardest failure in distributed systems, and it is the reason idempotency exists.
 
@@ -617,7 +618,15 @@ These three problems increase in difficulty. Try each one on paper before openin
     An API serves users in Singapore from a data center about 70 ms away (round trip). How long do the round trips take for a cold request over TLS 1.2, a cold request over TLS 1.3, and a warm request?
 
 ??? success "Answer"
-    TLS 1.2 cold: 4 × 70 = **280 ms**. TLS 1.3 cold: 3 × 70 = **210 ms**. Warm: **70 ms**. Upgrading TLS saves one round trip, and reusing the connection saves two or three.
+    Count the round trips, then multiply by 70 ms. *Cold* means a brand-new connection, so the handshakes run first. *Warm* means a reused connection from keep-alive or a pool, so the handshakes are already done.
+
+    | Request | TCP handshake | TLS handshake | The request itself | Total |
+    |---|:---:|:---:|:---:|---|
+    | TLS 1.2, cold | 1 | 2 | 1 | 4 × 70 = **280 ms** |
+    | TLS 1.3, cold | 1 | 1 | 1 | 3 × 70 = **210 ms** |
+    | Warm | – | – | 1 | 1 × 70 = **70 ms** |
+
+    Upgrading to TLS 1.3 saves one round trip, because its handshake takes one round trip instead of two. Reusing the connection saves two or three, because it skips both handshakes entirely. So for far-away users, connection reuse is the bigger win.
 
 !!! question "Problem 2 (diagnosis): the slow checkout"
     A checkout service calls the payment provider over HTTPS for every order. The provider's own dashboard shows a p99 of 40 ms, but the checkout service measures 160 ms per call, and it is about 40 ms round trip from the provider. What is the most likely cause, and how do you confirm and fix it?
@@ -679,31 +688,14 @@ Other questions that come up, with the short version of each answer:
 
 ---
 
-## 8. Checklist and what comes next
+## 8. Key takeaways
 
-```text
-[ ] TRACE the request: DNS -> TCP -> TLS -> HTTP -> load balancer -> service -> data, and back
-[ ] COUNT the round trips, and multiply by the distance (about 1 ms per 100 km)
-[ ] REUSE connections: keep-alive at the edge, pooled connections to every dependency
-[ ] DECIDE where TLS ends, and automate certificate renewal
-[ ] CHOOSE methods and status codes deliberately (idempotency, 301 vs 302, 429, 503)
-[ ] SET a timeout on every call, each one shorter than its caller's, and pass deadlines down
-[ ] SIZE pools with Little's Law, and fail fast when they run out
-[ ] TREAT a read timeout as an unknown outcome, not a failure
-```
-
-This page skipped several topics on purpose. Here is where each one is covered once you have the right foundations:
-
-| Topic you may have heard about | Where it is covered |
-|---|---|
-| Layer 4 vs Layer 7 load balancing, reverse proxies, and Anycast | Basics 8: Load Balancing & Proxying |
-| CDNs, edge caching, and `Cache-Control` | Basics 9: Caching Core |
-| REST vs gRPC, WebSockets, and Server-Sent Events | Basics 7: API Design & Service Communication |
-| Resource design, authentication, and encryption at rest | Basics 6: API Correctness, Security & Resource Design |
-| Health checks, connection draining, and graceful shutdown | Basics 14: Availability & Deployment Fundamentals |
-| Thread pools, concurrency limits, and Little's Law in depth | Basics 16: Threads, Thread Pools, Parallelization |
-| How the system is split into services that call each other | Basics 5: Architecture Styles & Service Decomposition |
-| Retries, backoff, and idempotency keys | Advanced 7: Idempotency & Retries |
-| Circuit breakers and bulkheads | Advanced 11: Fault Tolerance, Resilience & Failure Handling |
-| Tail latency and load shedding | Advanced 10: Backpressure, Admission Control & Overload Protection |
-| Serving users from several regions | Advanced 15: Single Region vs Multi-Region Deployment |
+- **A request is a chain of round trips.** DNS, TCP, TLS, and HTTP all happen before your code runs, and for simple requests the network usually costs more than the code. Make requests faster by removing round trips (reuse connections), shortening them (answer closer to the user), or bounding them (timeouts).
+- **DNS is a cache with a time limit.** A change spreads only as old answers expire, so lower the TTL before a migration, not during it.
+- **Choose TCP when every byte must arrive in order, and UDP when late data is worthless.** Over TCP, one lost packet stalls everything behind it.
+- **End TLS where it pays off.** End it at the load balancer by default, re-encrypt to the servers when compliance requires it, and end it at the edge to save handshake time for distant users. The most common TLS outage is an expired certificate, so automate renewal.
+- **New connections are expensive, so reuse them.** Share one HTTP client or pool, and keep idle connections for less time than the network's idle timeout.
+- **HTTP/2 moved the bottleneck; HTTP/3 removes it.** HTTP/2 streams still share TCP's single ordered byte stream, so one lost packet stalls them all. HTTP/3 runs on QUIC, where each stream waits only for its own packets.
+- **Every network call needs a timeout, and inner timeouts must be shorter than outer ones.** Retries multiply load across layers, so retry only idempotent requests. A read timeout does not tell you whether the request was processed.
+- **Find the biggest slice of latency before optimizing anything.** In the redirect example, faster code could save 3 ms, while reusing connections saved 60 ms and ending TLS at the edge saved 70 ms.
+- **In interviews, networking hides inside every design.** For "what happens when you type a URL?", walk the lifecycle in order, then name what you would watch in production: DNS TTLs, certificate expiry, timeout budgets, and connection reuse.

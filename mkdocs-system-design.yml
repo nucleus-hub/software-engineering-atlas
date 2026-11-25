@@ -42,6 +42,9 @@ nav:
       - Creational & Structural Design Patterns: basics/03_LLD_Creational_And_Structural_Design_Patterns.md
       - Networking & Request Lifecycle: basics/04_Networking_And_Request_Lifecycle.md
       - Architecture Styles & Service Decomposition: basics/05_Architecture_Styles_And_Service_Decomposition.md
+      - API Correctness, Security & Resource Design: basics/06_API_Correctness_Security_And_Resource_Design.md
+      - API Design & Service Communication: basics/07_API_Design_And_Service_Communication.md
+      - Load Balancing & Proxying: basics/08_Load_Balancing_And_Proxying.md
 
 markdown_extensions:
   - admonition

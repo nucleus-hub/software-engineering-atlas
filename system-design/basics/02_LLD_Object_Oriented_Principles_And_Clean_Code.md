@@ -585,16 +585,16 @@ A low-level design (LLD) interview asks you to design the classes for a small sy
 | 5. Write code | Code the main flow, including at least one failure. | `notifyUser(...)`, retrying a send that timed out. |
 | 6. Show a change | Walk through a likely change, and say which classes it touches. Ideally that is one new class, and when it is not, say so. | Adding WhatsApp is one new `WhatsAppSender`. A daily summary edits `NotificationService`. |
 
-### Checklist
+---
 
-```text
-[ ] Keep each object's data private, and enforce its rules in one place.
-[ ] Let callers depend on what an object does, not on how it does it.
-[ ] Replace repeated type switches with an interface and one class per type.
-[ ] Use composition for capabilities; use inheritance only for a true, stable is-a.
-[ ] Aim for high cohesion inside classes and low coupling between them.
-[ ] Check each SOLID question: who changes it, can it extend, can it substitute,
-    does each caller use the whole interface, and can it run without real infrastructure?
-[ ] Apply DRY to knowledge, KISS to mechanisms, and YAGNI to guesses about the future.
-[ ] Show how a likely change becomes a new class, and admit which changes the design does not absorb.
-```
+## 10. Key takeaways
+
+- **Every principle answers one question: when something changes, how many places must you edit?** High cohesion inside classes and low coupling between them keep each likely change inside one class.
+- **Encapsulation keeps the rules with the data, and abstraction hides how the job is done.** Private fields with a public setter for each one are not encapsulation, so expose only methods that keep the object valid. Callers then depend on what an object does, and the "how" can change without touching them.
+- **Polymorphism replaces repeated type switches** when new types keep arriving, each with its own behavior. A plain `switch` is still fine for a small set of values that rarely changes.
+- **Prefer composition for capabilities.** Use inheritance only for a true, stable "is-a" relationship, where the subclass keeps every promise of its parent and the hierarchy stays shallow.
+- **SOLID is five questions.** Who asks for changes to this class? Can it be extended without editing it? Can a subclass stand in for its parent? Does each caller use the whole interface? Can the business logic run without real infrastructure?
+- **DRY applies to knowledge, KISS to mechanisms, and YAGNI to guesses about the future.** Two methods that only *look* the same may belong to different owners, and should stay apart.
+- **Design smells point to the broken principle.** A god class, a repeated type switch, a refused bequest, a fat interface, concrete coupling, and shotgun surgery each name the principle that fixes them.
+- **Refactor because of evidence, not taste.** Name the change that hurts, and make the smallest structural change that keeps it in one place.
+- **In the LLD round, finish by showing a change.** After clarifying, listing classes, defining interfaces, connecting them, and coding the main flow with one failure, walk through a likely change. Ideally it is one new class, and when it is not, say so.

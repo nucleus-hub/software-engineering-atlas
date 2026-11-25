@@ -50,6 +50,20 @@ def render(figures: dict[str, Callable[[], plt.Figure]], topic: str,
         print(f"wrote basics/assets/{topic}/{name}.png")
 
 
+def caps(ax: plt.Axes, x: float, y: float, text: str, *, color: str = GREY,
+         ha: str = "center", size: float = 8.5) -> None:
+    """Bold ALL-CAPS column or zone label."""
+    ax.text(x, y, text, ha=ha, va="center", fontsize=size, fontweight="bold",
+            color=color)
+
+
+def note(ax: plt.Axes, x: float, y: float, text: str, *, color: str = INK,
+         size: float = 8.6, ha: str = "center") -> None:
+    """Plain explanatory text, multi-line friendly."""
+    ax.text(x, y, text, ha=ha, va="center", fontsize=size, color=color,
+            linespacing=1.45)
+
+
 def badge(ax: plt.Axes, x: float, y: float, text: str, *, color: str = NAVY,
           size: float = 7.5) -> None:
     """Draw a numbered disc that is round on any aspect ratio and the same
@@ -106,6 +120,23 @@ def box(
     if subtitle:
         ax.text(x + width / 2, cy - 3.1, subtitle,
                 ha="center", va="center", fontsize=8.2, color=INK)
+
+
+def panel(ax: plt.Axes, x: float, y: float, width: float, height: float, title: str,
+          body: str, *, face: str = PALE, edge: str = BLUE, title_color: str = NAVY,
+          mono: bool = False) -> None:
+    """Tall box with the title pinned to the top and a body list below it.
+
+    box() centres its subtitle, which collides with the title once the body
+    runs to many lines; this keeps the two apart whatever the body length.
+    Set mono=True for code-like bodies such as requests and JSON.
+    """
+    box(ax, x, y, width, height, "", face=face, edge=edge)
+    ax.text(x + width / 2, y + height - 3, title, ha="center", va="center",
+            fontsize=10.5, fontweight="bold", color=title_color)
+    ax.text(x + width / 2, y + height - 7.5, body, ha="center", va="top",
+            fontsize=7.8 if mono else 8.2, color=INK, linespacing=1.45,
+            family="monospace" if mono else None)
 
 
 def arrow(

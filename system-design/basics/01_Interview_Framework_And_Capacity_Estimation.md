@@ -452,30 +452,14 @@ These three problems increase in difficulty. Try each one on paper before openin
 
 ---
 
-## 9. Checklist and what comes next
+## 9. Key takeaways
 
-```text
-[ ] CLARIFY the users, the top two or three use cases, and what is out of scope
-[ ] STATE your assumptions out loud and ask the interviewer to confirm them
-[ ] ESTIMATE peak read and write QPS, storage, bandwidth, cache size, and servers
-[ ] CONNECT every estimate to a design decision
-[ ] DEFINE the smallest API and data model that cover the use cases
-[ ] DRAW one diagram and justify every component with a number or requirement
-[ ] SUMMARIZE the design and say what you would change at ten times the traffic
-```
-
-This page skipped several topics on purpose. Here is where each one is covered once you have the right foundations:
-
-| Topic you may have heard about | Where it is covered |
-|---|---|
-| Combining the availability of several components, and removing single points of failure | Basics 14: Availability & Deployment Fundamentals |
-| Cache strategies, eviction, CDNs, and hit ratios | Basics 9: Caching Core |
-| Splitting data across machines, and database replicas | Basics 12: Data Partitioning, Sharding & Replication |
-| Queues and background processing | Basics 13: Asynchronous Processing Basics |
-| Generating unique short codes and IDs | Basics 15: Distributed ID Generation |
-| Concurrency, thread pools, and Little's Law | Basics 16: Threads, Thread Pools, Parallelization |
-| Retries, timeouts, circuit breakers, and bulkheads | Advanced 7, 10, and 11 |
-| Tail latency and overload protection | Advanced 10: Backpressure, Admission Control & Overload Protection |
-| Consistency versus availability (CAP) | Advanced 12: Data Consistency & Clock Synchronization |
-| SLIs, SLOs, and error budgets | Advanced 14: Observability, Monitoring & Alerting |
-| Hot keys and cache stampedes | Advanced 8: Distributed Caching & High-Concurrency Failures |
+- **The interview is a funnel, not a quiz.** Clarify, quantify, define the contract, design, stress, fail, and close, all in about 45 minutes. Interviewers grade a clear way of thinking, not a perfect architecture.
+- **Requirements come before boxes.** Sort what you learn into functional requirements, non-functional requirements, constraints, and what is out of scope. A non-functional requirement only helps when it is specific enough to check, such as "p99 under 100 ms".
+- **Ask only the questions whose answers change the design.** When the interviewer gives no number, propose one out loud and ask whether it sounds right. A stated assumption always beats a silent guess.
+- **Estimate in orders of magnitude.** Go from users to average QPS, then to peak QPS using the read/write ratio and a peak factor, then to storage, bandwidth, cache size, and servers. The difference between 8,000 and 80,000 requests per second matters; the difference between 8,000 and 8,400 does not.
+- **Every number must end in a decision.** If a number cannot change a decision, it is not worth computing. "About 8,000 redirects against 80 creates per second, and the data fits on one database" justified the whole URL shortener design.
+- **Know when a number is big.** Stateless servers scale by adding more of them. Writes in the low thousands per second are where one database starts to strain. Tens to a few hundred gigabytes fit in one machine's memory. Distance adds latency that only moving closer to users can remove.
+- **Justify every component, and say what is missing on purpose.** The URL shortener has no sharding, no second region, and no microservices, because no number asked for them.
+- **Quote latency as a percentile, never an average.** An average can look healthy while one request in a hundred is painfully slow.
+- **Close by saying what changes at ten times the traffic.** It shows you know where the design breaks first, and that you chose not to build for it yet.

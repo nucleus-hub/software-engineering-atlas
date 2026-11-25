@@ -20,6 +20,7 @@ from figure_style import (
     AMBER,
     AMBER_FACE,
     BLUE,
+    DEAD,
     GREEN,
     GREEN_FACE,
     GREY,
@@ -64,18 +65,6 @@ def outline(ax: plt.Axes, x: float, y: float, width: float, height: float,
     if label:
         ax.text(x + 1, y + height - 2.2, label, fontsize=7.5, color=color,
                 style="italic", va="center")
-
-
-def container(ax: plt.Axes, x: float, y: float, width: float, height: float,
-              title: str, subtitle: str = "", *, face: str = WHITE,
-              edge: str = NAVY) -> None:
-    """A box whose title sits at the top, leaving room for boxes inside it."""
-    box(ax, x, y, width, height, "", face=face, edge=edge)
-    ax.text(x + width / 2, y + height - 3, title, ha="center", va="center",
-            fontsize=10.5, fontweight="bold", color=NAVY)
-    if subtitle:
-        ax.text(x + width / 2, y + height - 7.5, subtitle, ha="center", va="center",
-                fontsize=8.2, color=INK)
 
 
 # ---------- figures --------------------------------------------------------------
@@ -218,43 +207,85 @@ def stateless_vs_stateful() -> plt.Figure:
     return fig
 
 
+def fields(ax: plt.Axes, cx: float, top: float, items: list[str], *,
+           columns: int = 1, gap: float = 4.2, col_width: float = 11) -> float:
+    """A bulleted list of model fields, one per line, split into columns.
+
+    Returns the y just below the last row, so callers can place text under it.
+    """
+    rows = math.ceil(len(items) / columns)
+    left = cx - col_width * columns / 2 + 1.5
+    for index, item in enumerate(items):
+        col, row = divmod(index, rows)
+        ax.text(left + col * col_width, top - row * gap, f"• {item}", ha="left",
+                va="center", fontsize=8.8, color=INK)
+    return top - rows * gap
+
+
 def bounded_contexts() -> plt.Figure:
-    fig, ax = canvas(15, 8)
-    heading(ax, "Bounded Contexts: One Word, Four Models",
-            "Each context keeps only the fields it needs, and one team owns it")
+    fig, ax = canvas(15, 9)
+    heading(ax, "Bounded Contexts: One Word, Four Meanings",
+            "Each context keeps only the fields it needs, and only those fields cross "
+            "its boundary")
+
     contexts = [
-        (3, 50, "Link management", "code, long URL, owner,\ntitle, tags, expiry",
-         "links team", NAVY, PALE),
-        (37, 50, "Redirect", "code -> long URL\n(nothing else)", "platform team", BLUE,
-         MIST),
-        (71, 50, "Analytics", "code + clicks per day,\ncountry, referrer", "data team",
-         GREEN, GREEN_FACE),
-        (3, 6, "Accounts & billing", "one unit of the\nplan's link quota",
-         "growth team", AMBER, AMBER_FACE),
+        (2, 46, 32, "Link management", "links team", NAVY, PALE,
+         ["code", "long URL", "owner", "title", "tags", "expiry"], 2, ""),
+        (38, 46, 32, "Redirect", "platform team", BLUE, MIST,
+         ["code", "long URL"], 1, "all a redirect needs"),
+        (74, 46, 32, "Analytics", "data team", GREEN, GREEN_FACE,
+         ["code", "clicks per day", "country", "referrer"], 2, ""),
+        (2, 4, 30, "Accounts & billing", "growth team", AMBER, AMBER_FACE,
+         ["1 unit of the plan's quota"], 1, "URL and title don't matter here"),
     ]
-    for x, y, name, model, team, color, face in contexts:
-        box(ax, x, y, 26, 28, "", face=face, edge=color)
-        ax.text(x + 13, y + 24, name, ha="center", va="center", fontsize=11,
+    for x, y, height, name, team, color, face, items, columns, aside in contexts:
+        top = y + height
+        box(ax, x, y, 24, height, "", face=face, edge=color)
+        ax.text(x + 12, top - 4, name, ha="center", va="center", fontsize=11,
                 fontweight="bold", color=NAVY)
-        ax.plot([x + 3, x + 23], [y + 20, y + 20], color=LINE, linewidth=1.2)
-        caps(ax, x + 13, y + 16.5, "\"LINK\" MEANS", size=7.4)
-        note(ax, x + 13, y + 10.5, model, size=8.8)
-        caps(ax, x + 13, y + 3.5, f"OWNED BY: {team.upper()}", color=color, size=7.4)
+        ax.plot([x + 3, x + 21], [top - 7.5, top - 7.5], color=LINE, linewidth=1.2)
+        caps(ax, x + 12, top - 11, "HERE, \"LINK\" MEANS", size=7.4)
+        below = fields(ax, x + 12, top - 15.5, items, columns=columns,
+                       col_width=11 if columns == 2 else 18)
+        if aside:
+            note(ax, x + 12, below + 0.5, f"({aside})", size=7.8, color=GREY)
+        caps(ax, x + 12, y + 3.5, f"OWNED BY: {team.upper()}", color=color, size=7.4)
 
-    arrow(ax, (29.5, 68), (36.5, 68), color=AMBER, dashed=True)
-    note(ax, 33, 73.5, "LinkCreated\nLinkDeleted", size=7.6, color=AMBER)
-    arrow(ax, (63.5, 68), (70.5, 68), color=AMBER, dashed=True)
-    note(ax, 67, 73.5, "LinkClicked", size=7.6, color=AMBER)
-    arrow(ax, (16, 49.5), (16, 34.5), color=BLUE)
-    note(ax, 17.2, 42, "\"may this user create a link?\"", size=7.8, color=BLUE, ha="left")
+    # Events: the arrow says what happened, the text under it says what data travels.
+    for x_start, name, payload in [
+        (26.5, "LinkCreated\nLinkDeleted", "carries:\ncode, long URL"),
+        (62.5, "LinkClicked", "carries: code, time,\ncountry, referrer"),
+    ]:
+        arrow(ax, (x_start, 62), (x_start + 11, 62), color=AMBER, dashed=True)
+        ax.text(x_start + 5.5, 67.5, name, ha="center", va="center", fontsize=7.8,
+                fontweight="bold", color=AMBER, linespacing=1.4)
+        note(ax, x_start + 5.5, 56.5, payload, size=7.6, color=AMBER)
 
-    caps(ax, 66, 30, "HOW THE CONTEXTS TALK", size=8)
-    ax.plot([45, 51], [23, 23], color=BLUE, linewidth=1.8)
-    note(ax, 53, 23, "synchronous API call: the caller needs the answer now", ha="left")
-    ax.plot([45, 51], [16, 16], color=AMBER, linewidth=1.8, linestyle="--")
-    note(ax, 53, 16, "event: \"this happened\", consumers react in their own time",
+    # A synchronous call: a question goes down, an answer comes back up.
+    arrow(ax, (10, 45.5), (10, 34.5), color=BLUE)
+    arrow(ax, (14, 34.5), (14, 45.5), color=BLUE)
+    note(ax, 16.5, 42, "↓ asks: may this owner create a link?", size=7.8, color=BLUE,
          ha="left")
-    note(ax, 45, 8, "No context reads another context's tables.", ha="left", size=8.8,
+    note(ax, 16.5, 38, "↑ answers: yes, 37 of 50 used", size=7.8, color=BLUE,
+         ha="left")
+
+    # The alternative these contexts replace.
+    box(ax, 32, 4, 36, 30, "", face=RED_FACE, edge=RED)
+    caps(ax, 50, 30, "WITHOUT BOUNDED CONTEXTS", color=RED, size=8)
+    ax.text(50, 25.5, "one shared Link class", ha="center", va="center",
+            fontsize=10.5, fontweight="bold", color=NAVY)
+    note(ax, 50, 18.5, "code, long URL, owner, title, tags, expiry,\n"
+                       "clicks per day, country, referrer, quota unit, ...", size=8.2)
+    note(ax, 50, 9.5, "Every team edits it, and no team owns it.\n"
+                      "An analytics change can break redirects.", size=8.4, color=RED)
+
+    caps(ax, 74, 30, "HOW THE CONTEXTS TALK", ha="left", size=8)
+    ax.plot([74, 79], [23.5, 23.5], color=BLUE, linewidth=1.8)
+    note(ax, 81, 23.5, "call: the caller waits\nfor the answer", ha="left", size=8.2)
+    ax.plot([74, 79], [15.5, 15.5], color=AMBER, linewidth=1.8, linestyle="--")
+    note(ax, 81, 15.5, "event: \"this happened\";\nothers react in their own time",
+         ha="left", size=8.2)
+    note(ax, 74, 7.5, "No context reads another\ncontext's tables.", ha="left", size=8.4,
          color=NAVY)
     return fig
 
@@ -303,89 +334,161 @@ def database_ownership() -> plt.Figure:
     return fig
 
 
+def _instance_row(ax: plt.Axes, left: float, *, upward: bool) -> list[float]:
+    """Draw analytics-1..3 along the bottom (the third one crashed) and link each
+    to the box above. Upward = heartbeats to a registry; downward = traffic from
+    a load balancer. Returns the x centre of each instance."""
+    centres = []
+    for index in range(3):
+        x = left + index * 10
+        centre = x + 4
+        centres.append(centre)
+        crashed = index == 2
+        box(ax, x, 21, 8, 9, f"analytics-{index + 1}", "crashed" if crashed else "healthy",
+            face=DEAD if crashed else GREEN_FACE, edge=GREY if crashed else GREEN,
+            title_color=GREY if crashed else NAVY)
+        if crashed:
+            ax.plot([centre, centre], [31, 63], color=LINE, linewidth=1.6, linestyle="--")
+            ax.plot(centre, 47, marker="X", markersize=13, color=RED)
+        elif upward:
+            arrow(ax, (centre, 30.8), (centre, 63.2), color=GREY, dashed=True)
+        else:
+            arrow(ax, (centre, 63.2), (centre, 30.8), color=GREEN)
+    return centres
+
+
 def service_discovery() -> plt.Figure:
     fig, ax = canvas(15, 7.5)
     heading(ax, "Service Discovery: Finding a Healthy Instance",
             "Instances come and go, so callers look them up by name instead of "
             "hard-coding addresses")
-    caps(ax, 24, 82, "CLIENT-SIDE DISCOVERY", color=NAVY, size=9.5)
-    caps(ax, 75, 82, "SERVER-SIDE DISCOVERY", color=GREEN, size=9.5)
-    ax.plot([50, 50], [8, 85], color=LINE, linewidth=1.2)
+    caps(ax, 25, 81, "CLIENT-SIDE DISCOVERY: THE CALLER LOOKS IT UP", color=NAVY, size=9.5)
+    caps(ax, 76, 81, "SERVER-SIDE DISCOVERY: THE PLATFORM LOOKS IT UP", color=GREEN,
+         size=9.5)
+    ax.plot([50, 50], [6, 84], color=LINE, linewidth=1.2)
 
-    box(ax, 16, 62, 16, 8, "Registry", "Eureka, Consul", face=MIST)
-    box(ax, 2, 32, 12, 9, "Link API", "the caller", face=WHITE, edge=NAVY)
-    for index in range(3):
-        y = 50 - index * 13
-        box(ax, 36, y, 11, 7, f"analytics-{index + 1}", "instance", face=GREEN_FACE,
-            edge=GREEN)
-        arrow(ax, (37, y + 7.5), (31 - index * 2.5, 61.5), color=GREY, dashed=True)
-    note(ax, 41.5, 66, "register +\nheartbeat", size=7.5, color=GREY)
-    arrow(ax, (9, 41.8), (16, 61.5), color=NAVY)
-    badge(ax, 15, 50, "1")
-    note(ax, 16.6, 50, "where is\nanalytics?", size=7.5, ha="left")
-    arrow(ax, (14.6, 36.5), (35.5, 40.5), color=GREEN)
-    badge(ax, 24, 41.5, "2", color=GREEN)
-    note(ax, 24, 32, "pick one from the list,\ncall it directly", size=7.6, color=GREEN)
-    note(ax, 24, 14, "The caller needs a discovery library.\nNo extra hop, but every "
-         "language must implement it.", size=8.4)
+    # Client side: instances report to a registry; the caller asks, then calls directly.
+    box(ax, 20, 64, 28, 9, "Registry", "keeps the list of healthy instances", face=MIST)
+    box(ax, 2, 40, 11, 9, "Link API", "the caller", face=WHITE, edge=NAVY)
+    first, second, _ = _instance_row(ax, 20, upward=True)
+    badge(ax, (first + second) / 2, 54, "1", color=GREY)
+    note(ax, (first + second) / 2, 46, "register and\nsend heartbeats", size=7.5, color=GREY)
+    arrow(ax, (7.5, 49.8), (19.4, 68.5), color=NAVY)
+    badge(ax, 13.5, 59, "2")
+    note(ax, 11.6, 59, "ask where\nanalytics is", size=7.5, ha="right")
+    arrow(ax, (13.6, 42), (19.4, 26), color=GREEN)
+    badge(ax, 16.5, 34, "3", color=GREEN)
+    note(ax, 14.6, 32, "call one\ndirectly", size=7.5, color=GREEN, ha="right")
+    note(ax, 25, 11, "The caller uses a discovery library, such as Eureka or Consul.\n"
+         "There is no extra network hop, but every language needs that library.", size=8.4)
 
-    box(ax, 53, 40, 12, 9, "Link API", "calls a name", face=WHITE, edge=NAVY)
-    box(ax, 70, 40, 12, 9, "analytics", "stable name / LB", face=MIST)
-    arrow(ax, (65.6, 44.5), (69.4, 44.5), color=NAVY)
-    for index in range(3):
-        y = 56 - index * 13
-        box(ax, 87, y, 11, 7, f"pod {index + 1}", "instance", face=GREEN_FACE, edge=GREEN)
-        arrow(ax, (82.6, 44.5), (86.4, y + 3.5), color=GREEN)
-    box(ax, 70, 64, 12, 7, "Control plane", "tracks healthy pods", face=WHITE, edge=GREY,
-        title_color=GREY)
-    arrow(ax, (76, 63.3), (76, 49.8), color=GREY, dashed=True)
-    note(ax, 75, 14, "The platform keeps the name pointing at healthy instances.\n"
-         "Examples: a Kubernetes Service, or a cloud load balancer.", size=8.4)
+    # Server side: the caller only knows the name; the load balancer picks an instance.
+    box(ax, 71, 64, 28, 9, "Load balancer", "behind the name \"analytics\"", face=MIST)
+    box(ax, 53, 40, 11, 9, "Link API", "the caller", face=WHITE, edge=NAVY)
+    first, second, _ = _instance_row(ax, 71, upward=False)
+    arrow(ax, (58.5, 49.8), (70.4, 68.5), color=NAVY)
+    badge(ax, 64.5, 59, "1")
+    note(ax, 62.6, 59, "call the name\n\"analytics\"", size=7.5, ha="right")
+    badge(ax, (first + second) / 2, 54, "2", color=GREEN)
+    note(ax, (first + second) / 2, 46, "forward to a\nhealthy instance", size=7.5,
+         color=GREEN)
+    note(ax, 76, 11, "The platform does the lookup, for example a Kubernetes Service.\n"
+         "The caller stays simple, at the cost of one small extra network hop.", size=8.4)
     return fig
 
 
+def _zone(ax: plt.Axes, x: float, y: float, width: float, height: float,
+          title: str, detail: str, *, color: str) -> None:
+    """A dashed box around one part that deploys on its own, labelled top-left
+    with its name and the need that justifies it."""
+    outline(ax, x, y, width, height, color=color)
+    caps(ax, x + 1.5, y + height - 2.5, title, color=color, ha="left", size=8.8)
+    note(ax, x + 1.5, y + height - 6, detail, ha="left", size=8.2)
+
+
 def url_shortener_year_two() -> plt.Figure:
-    fig, ax = canvas(16, 8.5)
+    """Two numbered trails: 1-4 (navy) create a link, A-D (green) follow one."""
+    fig, ax = canvas(16, 10)
     heading(ax, "URL Shortener, Year Two: Split Only Where the Needs Differ",
-            "One service extracted for the redirect path; everything else stays a "
-            "modular monolith")
-    box(ax, 2, 44, 9, 12, "Users", "browsers", face=WHITE, edge=NAVY)
-    box(ax, 15, 44, 11, 12, "Edge + LB", "routes by path")
-    arrow(ax, (11.5, 50), (14.5, 50), color=NAVY)
+            "Follow 1-4 to see a link being created, and A-D to see a short link "
+            "being followed")
 
-    box(ax, 32, 66, 17, 12, "Redirect service", "stateless · 99.99%", face=MIST)
-    box(ax, 64, 66, 15, 12, "Redirect store", "code -> URL, key-value", face=WHITE,
+    def step(x: float, y: float, text: str) -> None:
+        badge(ax, x, y, text, color=GREEN if text.isalpha() else NAVY, size=8)
+
+    # Users reach a load balancer, which sends each request on by its URL path.
+    box(ax, 1, 46, 8, 10, "Users", "browsers", face=WHITE, edge=NAVY)
+    box(ax, 13, 46, 11, 10, "Load balancer", "routes by URL path")
+    arrow(ax, (9.5, 51), (12.5, 51), color=NAVY)
+    arrow(ax, (24.8, 54), (30.4, 68.5), color=BLUE)
+    step(26.5, 58.4, "A")
+    note(ax, 25.8, 66, "GET /abc123\n~20,000 requests/s", size=7.8, color=BLUE, ha="right")
+    arrow(ax, (24.8, 47), (30.4, 28.5), color=NAVY)
+    step(27.6, 37.8, "1")
+    note(ax, 25.8, 33, "POST /app/links\nall /app pages:\n~250 requests/s", size=7.8,
+         color=NAVY, ha="right")
+
+    # The redirect path, extracted because it alone needs 99.99%.
+    _zone(ax, 29, 62, 35, 22, "REDIRECT PATH", "its own service · needs 99.99%",
+          color=BLUE)
+    box(ax, 31, 64.5, 13, 9, "Redirect service", "replies with a 302", face=MIST)
+    box(ax, 50, 64.5, 12, 9, "Redirect store", "short code → long URL", face=WHITE,
         edge=BLUE)
-    arrow(ax, (49.5, 72), (63.5, 72), color=BLUE, label="read")
-    arrow(ax, (26.5, 54), (31.5, 70), color=BLUE, label="GET /{code}")
+    arrow(ax, (44.6, 71.5), (49.4, 71.5), color=BLUE)
+    step(47, 71.5, "B")
+    arrow(ax, (44.6, 66.5), (49.4, 66.5), color=BLUE)
+    step(47, 66.5, "4")
 
-    container(ax, 32, 10, 28, 40, "Link management app",
-              "one deployable · 99.9%", edge=NAVY)
-    for index, name in enumerate(("Links", "Accounts", "Billing", "Dashboards")):
-        mx = 33.5 + (index % 2) * 13
-        my = 26 - (index // 2) * 12
-        box(ax, mx, my, 11, 7, name, "module", face=PALE, edge=BLUE)
-    arrow(ax, (26.5, 47), (31.5, 40), color=NAVY, label="/app")
-    box(ax, 64, 14, 15, 11, "Main database", "a schema per module", face=WHITE, edge=NAVY)
-    arrow(ax, (60.5, 19.5), (63.5, 19.5), color=NAVY)
+    # The event bus sits between the parts, so none of them waits on another.
+    box(ax, 33, 46, 24, 9, "Event bus", "holds each event until it is read",
+        face=AMBER_FACE, edge=AMBER, title_color=AMBER)
+    arrow(ax, (34.5, 63.8), (34.5, 55.7), color=AMBER, dashed=True)
+    step(34.5, 59.8, "C")
+    note(ax, 32.8, 59.8, "LinkClicked", size=7.4, color=AMBER, ha="right")
+    arrow(ax, (41, 55.7), (41, 63.8), color=AMBER, dashed=True)
+    step(41, 59.8, "4")
+    note(ax, 42.8, 59.8, "LinkCreated", size=7.4, color=AMBER, ha="left")
 
-    box(ax, 64, 42, 15, 10, "Event bus", "durable queue", face=AMBER_FACE, edge=AMBER,
-        title_color=AMBER)
-    arrow(ax, (60.5, 44), (63.5, 46), color=AMBER, dashed=True)
-    note(ax, 62, 39.5, "LinkCreated", size=7.4, color=AMBER)
-    arrow(ax, (42, 65.3), (66, 52.8), color=AMBER, dashed=True)
-    note(ax, 49, 56.5, "LinkClicked", size=7.4, color=AMBER)
-    arrow(ax, (75, 52.8), (75, 65.3), color=AMBER)
-    note(ax, 79, 59, "keep the\ncopy fresh", size=7.4, color=AMBER, ha="left")
+    # Everything else stays one modular monolith with one database.
+    _zone(ax, 29, 2, 35, 41, "LINK MANAGEMENT APP",
+          "one modular monolith · needs 99.9%", color=NAVY)
+    box(ax, 31, 24, 13, 8, "Links module", "validates the link", face=MIST)
+    box(ax, 50, 24, 12, 8, "Main database", "link + outbox row", face=WHITE, edge=NAVY)
+    arrow(ax, (44.6, 28), (49.4, 28), color=NAVY)
+    step(47, 32, "2")
+    arrow(ax, (56, 32.7), (56, 45.3), color=AMBER, dashed=True)
+    step(56, 39, "3")
+    note(ax, 57.6, 39, "outbox relay\npublishes", size=7.4, color=AMBER, ha="left")
+    for index, name in enumerate(("Accounts", "Billing", "Dashboards")):
+        box(ax, 31 + index * 11, 6, 9, 6, name, face=PALE, edge=BLUE)
+    note(ax, 46.5, 16.5, "other modules, each with its own schema", size=7.4, color=GREY)
 
-    box(ax, 85, 42, 13, 10, "Click workers", "batch + aggregate", face=AMBER_FACE,
+    # Analytics, separate because recording clicks is background work.
+    _zone(ax, 70.5, 3, 28.5, 81, "ANALYTICS", "runs separately, in the background",
+          color=AMBER)
+    box(ax, 72, 46, 24, 9, "Click workers", "count clicks in batches", face=AMBER_FACE,
         edge=AMBER, title_color=AMBER)
-    arrow(ax, (79.5, 47), (84.5, 47), color=AMBER)
-    box(ax, 85, 14, 13, 11, "Analytics store", "columnar", face=WHITE, edge=AMBER,
-        title_color=AMBER)
-    arrow(ax, (91.5, 41.3), (91.5, 25.8), color=AMBER)
-    arrow(ax, (86, 13), (60.8, 11.5), color=GREY, dashed=True)
-    note(ax, 72, 8.5, "dashboards query", size=7.4, color=GREY)
+    arrow(ax, (57.6, 50.5), (71.4, 50.5), color=AMBER, dashed=True)
+    step(64.5, 50.5, "D")
+    note(ax, 64.5, 54, "LinkClicked", size=7.4, color=AMBER)
+    box(ax, 72, 6, 24, 9, "Analytics store", "click totals per link", face=WHITE,
+        edge=AMBER, title_color=AMBER)
+    arrow(ax, (84, 45.3), (84, 15.7), color=AMBER)
+    note(ax, 85.5, 30, "save click\ntotals", size=7.4, color=AMBER, ha="left")
+    arrow(ax, (62.6, 9), (71.4, 10), color=BLUE)
+    note(ax, 67.2, 15, "asks the\nanalytics API\nfor totals", size=7.4, color=BLUE)
+
+    # Legend.
+    caps(ax, 1.5, 27, "HOW TO READ IT", ha="left", size=8)
+    ax.plot([1.5, 5.5], [22.5, 22.5], color=BLUE, linewidth=1.8)
+    note(ax, 6.5, 22.5, "call: the caller\nwaits for the answer", ha="left", size=8)
+    ax.plot([1.5, 5.5], [16.5, 16.5], color=AMBER, linewidth=1.8, linestyle="--")
+    note(ax, 6.5, 16.5, "event: sent now,\nread later", ha="left", size=8)
+    outline(ax, 1.5, 9, 4, 3.5)
+    note(ax, 6.5, 10.75, "dashed box: one part\nthat deploys on its own", ha="left", size=8)
+    step(2.5, 4, "1")
+    step(4.5, 4, "A")
+    note(ax, 6.5, 4, "1-4 create a link,\nA-D follow one", ha="left", size=8)
     return fig
 
 

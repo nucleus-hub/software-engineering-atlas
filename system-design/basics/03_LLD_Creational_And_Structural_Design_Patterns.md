@@ -651,24 +651,14 @@ The last row matters. A new step in the workflow is exactly what the facade is s
 
 ---
 
-## 8. Final revision checklist
+## 8. Key takeaways
 
-```text
-[ ] NAME the expected change before naming any pattern
-[ ] START with a constructor or static factory; add patterns only for real variation
-[ ] CREATE objects at the composition root; inject them instead of using global access
-[ ] FACTORY METHOD only when a subclass chooses which object to create, inside fixed steps
-[ ] ABSTRACT FACTORY only when several objects must always match, like a theme
-[ ] BUILDER for many optional fields or cross-field rules; validate once in build()
-[ ] PROTOTYPE copies deeply wherever state is mutable
-[ ] ADAPTER keeps vendor types at the edge and translates errors, not just data
-[ ] DECORATOR chains are short, built in one place, and their order is deliberate
-[ ] FACADE orchestrates steps but holds no business rules
-[ ] PROXY makes hidden cost visible: naming, docs, and timeouts
-[ ] TELL look-alikes apart by intent, not by code shape
-[ ] DEFEND each pattern: the change it absorbs, its cost, the test that proves it
-[ ] REMOVE any pattern whose change never arrived
-```
-
-!!! success "The Staff-level finish"
-    Patterns are vocabulary for trade-offs that already exist in the design. Justify each one by the change it contains and the cost it adds, then show the simpler design you would use if that change never arrived.
+- **Start from the expected change, never from the pattern.** If you cannot name the change a pattern absorbs, plain code is the right answer.
+- **Every pattern has a cost.** It adds classes, and an extra step for everyone reading the code. Its value is the one change it makes cheap, plus a shared vocabulary for describing designs.
+- **Create objects at the composition root, and inject them.** Classes receive what they need through their constructors, instead of calling `new` or reaching for globals. This is what makes every other pattern swappable and testable.
+- **Pick a creational pattern by the problem it solves.** Use constructors and static factories first. Use Factory Method when a subclass chooses which object to create inside fixed steps, Abstract Factory when several objects must always match, Builder for many optional fields validated once in `build()`, and Prototype when copying beats building, copying mutable state deeply. Prefer one injected instance over a Singleton.
+- **Pick a structural pattern by the problem it solves.** An Adapter translates one wrong interface, including its errors, and keeps vendor types at the edge. A Decorator adds one feature, in a deliberate and tested order. A Facade gives one simple entry point and holds no business rules. A Proxy controls access to the real object, and must not hide what that access costs.
+- **Tell look-alike patterns apart by intent, not code shape.** Decorator and Proxy, or Adapter and Facade, can look identical. Why the extra class exists is what separates them.
+- **Justify every pattern in one sentence.** "Given change X, use pattern A instead of simpler option B, because it keeps that change inside C. It costs D. Prove it with test E, and revisit when F happens."
+- **Patterns fail in recognizable ways.** Watch for a factory with only one product, a singleton holding mutable state, decorators in the wrong order, an adapter that leaks vendor types or misreports errors, a facade that became a god class, and shallow copies.
+- **Removing a pattern is as much a design skill as adding one.** Patterns are vocabulary for trade-offs that already exist. Show the simpler design you would use if the expected change never arrived.

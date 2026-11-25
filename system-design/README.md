@@ -99,33 +99,33 @@ structuring system design interviews.
 - [x] Worked example: payment gateway (Facade, Builder, simple factory, Decorators, Adapters, and a change walkthrough)
 
 ### 4. Networking & Request Lifecycle
-- [ ] DNS resolution, caching, and common failure modes
-- [ ] TCP vs UDP; TLS termination and HTTPS
-- [ ] HTTP/1.1 vs HTTP/2 vs HTTP/3
-- [ ] Connection pooling, keep-alive, and timeout budgets
-- [ ] Request path: client → DNS/CDN → load balancer → service → database
-- [ ] Latency sources and network failure modes
-- [ ] Worked example: one URL-shortener redirect, cold vs warm, end to end
+- [x] DNS resolution, caching, and common failure modes
+- [x] TCP vs UDP; TLS termination and HTTPS
+- [x] HTTP/1.1 vs HTTP/2 vs HTTP/3
+- [x] Connection pooling, keep-alive, and timeout budgets
+- [x] Request path: client → DNS/CDN → load balancer → service → database
+- [x] Latency sources and network failure modes
+- [x] Worked example: one URL-shortener redirect, cold vs warm, end to end
 
 ### 5. Architecture Styles & Service Decomposition
-- [ ] Layered architecture and modular monoliths vs microservices
-- [ ] Stateless vs stateful services
-- [ ] Service boundaries, ownership, and bounded contexts
-- [ ] Shared database vs database per service
-- [ ] Service discovery and configuration management
-- [ ] Worked example: URL shortener, year two (split only where the numbers disagree)
+- [x] Layered architecture and modular monoliths vs microservices
+- [x] Stateless vs stateful services
+- [x] Service boundaries, ownership, domain-driven design, and bounded contexts
+- [x] Shared database vs database per service
+- [x] Service discovery and configuration management
+- [x] Worked example: URL shortener, year two (split only where the numbers disagree)
 
 ### 6. API Correctness, Security & Resource Design
-- [ ] Resource-oriented API design; pagination, filtering, sorting, and partial updates
-- [ ] Authentication vs authorization; sessions, cookies, OAuth 2.0, OIDC, and JWT trade-offs
-- [ ] Request validation, standardized errors, timeouts, and request-size limits
-- [ ] Secrets handling and encryption in transit and at rest
+- [x] Resource-oriented API design; pagination, filtering, sorting, and partial updates
+- [x] Authentication vs authorization; sessions, cookies, OAuth 2.0, OIDC, and JWT trade-offs
+- [x] Request validation, standardized errors, timeouts, and request-size limits
+- [x] Secrets handling and encryption in transit and at rest
 
 ### 7. API Design & Service Communication
-- [ ] **Protocols & paradigms:** REST vs gRPC vs GraphQL
-- [ ] WebSockets, long polling, Server-Sent Events (SSE)
-- [ ] **Lifecycle:** synchronous vs asynchronous communication
-- [ ] Versioning strategies, backward compatibility, schema evolution
+- [x] **Protocols & paradigms:** REST vs gRPC vs GraphQL
+- [x] WebSockets, long polling, Server-Sent Events (SSE)
+- [x] **Lifecycle:** synchronous vs asynchronous communication
+- [x] Versioning strategies, backward compatibility, schema evolution
 
 ### 8. Load Balancing & Proxying
 - [ ] **Types:** Layer 4 (transport), Layer 7 (application), DNS-based
